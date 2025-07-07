@@ -1,7 +1,11 @@
 import { app, shell, BrowserWindow, ipcMain, screen, globalShortcut, Tray, Menu } from 'electron'
 import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
-import icon from '../../resources/icon.png?asset'
+// 导入不同平台的图标
+import iconPng from '../../resources/icon.png?asset'
+import iconIco from '../../build/icon/icons/icon.ico?asset'
+import iconIcns from '../../build/icon/icons/16x16.png?asset'
+import iconLinux from '../../build/icon/icons/32x32.png?asset'
 import store from './store'
 import ipcManager from './ipc-manager'
 import clipboardManager from './clipboard-manager'
@@ -78,7 +82,33 @@ function calculateWindowPosition(): { x: number, y: number, width: number, heigh
   }
 }
 
+/**
+ * 根据操作系统平台选择合适的托盘图标
+ */
+function getTrayIcon(): string {
+  switch (process.platform) {
+    case 'win32':
+      return iconIco
+    case 'darwin':
+      return iconIcns
+    case 'linux':
+      return iconLinux
+    default:
+      return iconPng
+  }
+}
 
+/**
+ * 根据操作系统平台选择合适的窗口图标
+ */
+function getWindowIcon(): string {
+  switch (process.platform) {
+    case 'linux':
+      return iconLinux
+    default:
+      return iconPng
+  }
+}
 
 /**
  * 显示 overlay 窗口
@@ -217,7 +247,7 @@ function createTray(): void {
   }
 
   // 创建任务栏图标
-  tray = new Tray(icon)
+  tray = new Tray(getTrayIcon())
 
   // 设置任务栏图标的工具提示
   tray.setToolTip('Super Paste - 剪贴板管理工具')
@@ -293,7 +323,7 @@ function createWindow(): void {
     show: false,
     hasShadow: false,
     autoHideMenuBar: true,
-    ...(process.platform === 'linux' ? { icon } : {}),
+    ...(process.platform === 'linux' ? { icon: getWindowIcon() } : {}),
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       sandbox: false
@@ -369,7 +399,7 @@ function createOverlayWindow(): void {
     show: false,
     type: 'utility',
     transparent: true,
-    ...(process.platform === 'linux' ? { icon } : {}),
+    ...(process.platform === 'linux' ? { icon: getWindowIcon() } : {}),
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       sandbox: false,
@@ -502,187 +532,187 @@ if (!gotTheLock) {
   // initialization and is ready to create browser windows.
   // Some APIs can only be used after this event occurs.
   app.whenReady().then(() => {
-  // Set app user model id for windows
-  electronApp.setAppUserModelId('com.electron')
+    // Set app user model id for windows
+    electronApp.setAppUserModelId('com.electron')
 
-  // 创建任务栏图标
-  createTray()
+    // 创建任务栏图标
+    createTray()
 
-  // 初始化 IPC 管理器
-  ipcManager.initialize()
+    // 初始化 IPC 管理器
+    ipcManager.initialize()
 
-  // 初始化剪贴板管理器
-  clipboardManager.initialize({
-    checkInterval: 200,
-    enableAutoSave: true
-  })
+    // 初始化剪贴板管理器
+    clipboardManager.initialize({
+      checkInterval: 200,
+      enableAutoSave: true
+    })
 
-  // 启动剪贴板监听
-  clipboardManager.startListening()
+    // 启动剪贴板监听
+    clipboardManager.startListening()
 
-  // 创建示例标签数据（仅在开发环境或首次运行时）
-  createSampleTagsIfNeeded()
+    // 创建示例标签数据（仅在开发环境或首次运行时）
+    createSampleTagsIfNeeded()
 
-  // 预先创建 overlay 窗口（初始化状态，保持隐藏）
-  // 全局快捷键将在窗口的 ready-to-show 事件中初始化
-  createOverlayWindow()
+    // 预先创建 overlay 窗口（初始化状态，保持隐藏）
+    // 全局快捷键将在窗口的 ready-to-show 事件中初始化
+    createOverlayWindow()
 
-  // Default open or close DevTools by F12 in development
-  // and ignore CommandOrControl + R in production.
-  // see https://github.com/alex8088/electron-toolkit/tree/master/packages/utils
-  app.on('browser-window-created', (_, window) => {
-    optimizer.watchWindowShortcuts(window)
-  })
+    // Default open or close DevTools by F12 in development
+    // and ignore CommandOrControl + R in production.
+    // see https://github.com/alex8088/electron-toolkit/tree/master/packages/utils
+    app.on('browser-window-created', (_, window) => {
+      optimizer.watchWindowShortcuts(window)
+    })
 
-  // IPC handlers for overlay window
-  ipcMain.on('open-overlay-window', () => {
-    if (overlayWindow) {
-      // 窗口已存在，切换显示状态
-      toggleOverlayWindow()
-    } else {
-      // 窗口不存在，创建新窗口并显示
-      createOverlayWindow()
-      showOverlayWindow()
-    }
-  })
-
-  ipcMain.on('close-overlay-window', () => {
-    closeOverlayWindow()
-  })
-
-  // 监听前端动画完成消息
-  ipcMain.on('open-overlay-finished', () => {
-    if (getOverlayState() === OverlayState.OPENING) {
-      setOverlayState(OverlayState.OPENED)
-    }
-  })
-
-  // IPC handlers for store operations
-  ipcMain.handle('store-get', (_, key: string, defaultValue?: any) => {
-    try {
-      return { success: true, data: store.get(key, defaultValue) }
-    } catch (error) {
-      return { success: false, error: (error as Error).message }
-    }
-  })
-  ipcMain.on('store-get-on', (event, key) => {
-    const val = store?.get(key)
-    event.returnValue = val
-  })
-
-  ipcMain.handle('store-set', (_, key: string, value: any) => {
-    try {
-      store.raw_set(key, value)
-
-      // 如果更新的是全局快捷键配置，重新初始化快捷键
-      if (key === STORE_KEY.SETTINGS_GLOBAL_SHORTCUT) {
-        // 先取消所有已注册的快捷键（除了ESC键，它是在overlay窗口中注册的）
-        globalShortcut.unregisterAll()
-        // 重新初始化全局快捷键
-        initializeGlobalShortcut()
+    // IPC handlers for overlay window
+    ipcMain.on('open-overlay-window', () => {
+      if (overlayWindow) {
+        // 窗口已存在，切换显示状态
+        toggleOverlayWindow()
+      } else {
+        // 窗口不存在，创建新窗口并显示
+        createOverlayWindow()
+        showOverlayWindow()
       }
+    })
 
-      // 如果更新的是最大历史记录数量配置，使用防抖更新剪贴板管理器配置
-      if (key === STORE_KEY.SETTINGS_MAX_HISTORY_SIZE) {
-        debounceExecution(
-          'update-max-history-size',
-          () => {
-            console.log('[防抖] 执行最大历史记录数量配置更新')
-            clipboardManager.updateMaxHistorySizeFromStore()
-          },
-          800 // 800ms 防抖延迟
-        )
+    ipcMain.on('close-overlay-window', () => {
+      closeOverlayWindow()
+    })
+
+    // 监听前端动画完成消息
+    ipcMain.on('open-overlay-finished', () => {
+      if (getOverlayState() === OverlayState.OPENING) {
+        setOverlayState(OverlayState.OPENED)
       }
+    })
 
-      // 如果更新的是最大保存时间配置，使用防抖更新历史记录清理器配置
-      if (key === STORE_KEY.SETTINGS_MAX_KEEP_TIME) {
-        debounceExecution(
-          'update-max-keep-time',
-          () => {
-            console.log('[防抖] 执行最大保存时间配置更新')
-            clipboardManager.updateMaxKeepTimeFromStore()
-          },
-          2000 // 2000ms 防抖延迟
-        )
+    // IPC handlers for store operations
+    ipcMain.handle('store-get', (_, key: string, defaultValue?: any) => {
+      try {
+        return { success: true, data: store.get(key, defaultValue) }
+      } catch (error) {
+        return { success: false, error: (error as Error).message }
       }
+    })
+    ipcMain.on('store-get-on', (event, key) => {
+      const val = store?.get(key)
+      event.returnValue = val
+    })
 
-      return { success: true }
-    } catch (error) {
-      return { success: false, error: (error as Error).message }
-    }
+    ipcMain.handle('store-set', (_, key: string, value: any) => {
+      try {
+        store.raw_set(key, value)
+
+        // 如果更新的是全局快捷键配置，重新初始化快捷键
+        if (key === STORE_KEY.SETTINGS_GLOBAL_SHORTCUT) {
+          // 先取消所有已注册的快捷键（除了ESC键，它是在overlay窗口中注册的）
+          globalShortcut.unregisterAll()
+          // 重新初始化全局快捷键
+          initializeGlobalShortcut()
+        }
+
+        // 如果更新的是最大历史记录数量配置，使用防抖更新剪贴板管理器配置
+        if (key === STORE_KEY.SETTINGS_MAX_HISTORY_SIZE) {
+          debounceExecution(
+            'update-max-history-size',
+            () => {
+              console.log('[防抖] 执行最大历史记录数量配置更新')
+              clipboardManager.updateMaxHistorySizeFromStore()
+            },
+            800 // 800ms 防抖延迟
+          )
+        }
+
+        // 如果更新的是最大保存时间配置，使用防抖更新历史记录清理器配置
+        if (key === STORE_KEY.SETTINGS_MAX_KEEP_TIME) {
+          debounceExecution(
+            'update-max-keep-time',
+            () => {
+              console.log('[防抖] 执行最大保存时间配置更新')
+              clipboardManager.updateMaxKeepTimeFromStore()
+            },
+            2000 // 2000ms 防抖延迟
+          )
+        }
+
+        return { success: true }
+      } catch (error) {
+        return { success: false, error: (error as Error).message }
+      }
+    })
+
+
+
+    createWindow()
+
+    app.on('activate', function () {
+      // On macOS it's common to re-create a window in the app when the
+      // dock icon is clicked and there are no other windows open.
+      if (BrowserWindow.getAllWindows().length === 0) {
+        createWindow()
+      } else if (mainWindow && !mainWindow.isDestroyed()) {
+        // 如果主窗口存在但被隐藏，则显示它
+        if (!mainWindow.isVisible()) {
+          mainWindow.show()
+        }
+        // 确保窗口获得焦点
+        mainWindow.focus()
+      }
+    })
   })
 
-
-
-  createWindow()
-
-  app.on('activate', function () {
-    // On macOS it's common to re-create a window in the app when the
-    // dock icon is clicked and there are no other windows open.
-    if (BrowserWindow.getAllWindows().length === 0) {
-      createWindow()
-    } else if (mainWindow && !mainWindow.isDestroyed()) {
-      // 如果主窗口存在但被隐藏，则显示它
-      if (!mainWindow.isVisible()) {
-        mainWindow.show()
-      }
-      // 确保窗口获得焦点
-      mainWindow.focus()
-    }
+  // 当所有窗口关闭时不退出应用，因为我们有任务栏图标
+  // 用户可以通过任务栏图标的退出菜单来退出应用
+  app.on('window-all-closed', () => {
+    // 不自动退出应用，保持任务栏图标运行
+    // if (process.platform !== 'darwin') {
+    //   app.quit()
+    // }
   })
-})
 
-// 当所有窗口关闭时不退出应用，因为我们有任务栏图标
-// 用户可以通过任务栏图标的退出菜单来退出应用
-app.on('window-all-closed', () => {
-  // 不自动退出应用，保持任务栏图标运行
-  // if (process.platform !== 'darwin') {
-  //   app.quit()
-  // }
-})
+  // 应用退出前清理资源
+  app.on('before-quit', () => {
+    // 停止剪贴板监听
+    clipboardManager.stopListening()
 
-// 应用退出前清理资源
-app.on('before-quit', () => {
-  // 停止剪贴板监听
-  clipboardManager.stopListening()
+    // 销毁历史记录清理器
+    clipboardHistoryCleaner.destroy()
 
-  // 销毁历史记录清理器
-  clipboardHistoryCleaner.destroy()
+    // 清理所有防抖定时器
+    clearAllDebounceTimers()
+    console.log('[应用退出] 已清理所有防抖定时器')
 
-  // 清理所有防抖定时器
-  clearAllDebounceTimers()
-  console.log('[应用退出] 已清理所有防抖定时器')
+    // 关闭数据库连接
+    clipboardDatabase.close()
 
-  // 关闭数据库连接
-  clipboardDatabase.close()
+    // 清理 IPC 事件处理器
+    ipcManager.cleanup()
 
-  // 清理 IPC 事件处理器
-  ipcManager.cleanup()
+    // 销毁任务栏图标
+    if (tray && !tray.isDestroyed()) {
+      tray.destroy()
+      tray = null
+    }
 
-  // 销毁任务栏图标
-  if (tray && !tray.isDestroyed()) {
-    tray.destroy()
-    tray = null
-  }
+    // 销毁主窗口
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.destroy()
+      mainWindow = null
+    }
 
-  // 销毁主窗口
-  if (mainWindow && !mainWindow.isDestroyed()) {
-    mainWindow.destroy()
-    mainWindow = null
-  }
+    // 销毁 overlay 窗口
+    if (overlayWindow && !overlayWindow.isDestroyed()) {
+      overlayWindow.destroy()
+      overlayWindow = null
+    }
 
-  // 销毁 overlay 窗口
-  if (overlayWindow && !overlayWindow.isDestroyed()) {
-    overlayWindow.destroy()
-    overlayWindow = null
-  }
+    // 重置overlay状态
+    setOverlayState(OverlayState.CLOSED)
 
-  // 重置overlay状态
-  setOverlayState(OverlayState.CLOSED)
-
-  // 取消所有全局快捷键注册
-  globalShortcut.unregisterAll()
-})
+    // 取消所有全局快捷键注册
+    globalShortcut.unregisterAll()
+  })
 
 } // 结束单实例锁定的 else 块
 

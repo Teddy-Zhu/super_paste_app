@@ -16,6 +16,7 @@ const isListeningForShortcut = ref(false)
 const pressedKeys = ref<Set<string>>(new Set())
 const shortcutPreview = ref('')
 const shortcutError = ref('')
+const validShortcutDetected = ref(false) // 标记是否检测到有效快捷键
 
 // 计算属性：用于显示的快捷键格式
 const displayShortcut = computed(() => {
@@ -78,7 +79,7 @@ const toggleAutoStart = () => {
 }
 
 // 更新最大历史记录数量
-const updateMaxHistorySize = (value: number) => {
+const updateMaxHistorySize = (value: number): void => {
   // 确保值在合理范围内
   const clampedValue = Math.max(10, Math.min(1000, value))
   settingsStore.maxHistorySize = clampedValue
@@ -86,7 +87,7 @@ const updateMaxHistorySize = (value: number) => {
 }
 
 // 更新最大保存时间
-const updateMaxKeepTime = (value: number) => {
+const updateMaxKeepTime = (value: number): void => {
   // 确保值在合理范围内，-1 表示不限制，否则最少1天，最多365天
   let clampedValue = value
   if (value !== -1) {
@@ -96,14 +97,52 @@ const updateMaxKeepTime = (value: number) => {
   console.log('最大保存时间:', clampedValue === -1 ? '不限制' : `${clampedValue}天`)
 }
 
-
-
 // 设置全局快捷键（存储 Electron Accelerator 格式）
-const setGlobalShortcut = (electronAccelerator: string) => {
+const setGlobalShortcut = (electronAccelerator: string): void => {
   // 存储 Electron Accelerator 格式，用于实际的快捷键注册
   settingsStore.globalShortcut = electronAccelerator
   console.log('全局快捷键已保存 (Electron格式):', electronAccelerator)
   console.log('显示格式:', convertElectronAcceleratorToDisplay(electronAccelerator))
+}
+
+// 保存检测到的有效快捷键
+const saveDetectedShortcut = (): void => {
+  // 生成 Electron Accelerator 格式的快捷键（用于存储和实际注册）
+  const electronAccelerator = Array.from(pressedKeys.value)
+    .sort((a, b) => {
+      // 修饰键排序：Control, Meta, Alt, Shift, 其他键
+      const order = ['Control', 'Meta', 'Alt', 'Shift']
+      const aIndex = order.indexOf(a)
+      const bIndex = order.indexOf(b)
+      if (aIndex !== -1 && bIndex !== -1) return aIndex - bIndex
+      if (aIndex !== -1) return -1
+      if (bIndex !== -1) return 1
+      return a.localeCompare(b)
+    })
+    .map(formatKeyForElectron)
+    .join('+')
+
+  // 生成用户友好的显示格式
+  const displayFormat = Array.from(pressedKeys.value)
+    .sort((a, b) => {
+      const order = ['Control', 'Meta', 'Alt', 'Shift']
+      const aIndex = order.indexOf(a)
+      const bIndex = order.indexOf(b)
+      if (aIndex !== -1 && bIndex !== -1) return aIndex - bIndex
+      if (aIndex !== -1) return -1
+      if (bIndex !== -1) return 1
+      return a.localeCompare(b)
+    })
+    .map(formatKeyForDisplay)
+    .join('+')
+
+  console.log('快捷键设置成功:')
+  console.log('  - 存储格式 (Electron Accelerator):', electronAccelerator)
+  console.log('  - 显示格式 (用户友好):', displayFormat)
+
+  // 保存到存储（Electron Accelerator 格式）
+  setGlobalShortcut(electronAccelerator)
+  stopListeningForShortcut()
 }
 
 // Electron Accelerator 键盘按键映射
@@ -244,11 +283,12 @@ const startListeningForShortcut = () => {
 }
 
 // 停止监听快捷键
-const stopListeningForShortcut = () => {
+const stopListeningForShortcut = (): void => {
   isListeningForShortcut.value = false
   pressedKeys.value.clear()
   shortcutPreview.value = ''
   shortcutError.value = ''
+  validShortcutDetected.value = false
 
   console.log('停止监听快捷键输入')
 
@@ -258,14 +298,22 @@ const stopListeningForShortcut = () => {
 }
 
 // 处理按键按下
-const handleKeyDown = (event: KeyboardEvent) => {
+const handleKeyDown = (event: KeyboardEvent): void => {
   event.preventDefault()
   event.stopPropagation()
 
   if (!isListeningForShortcut.value) return
 
+  // 标准化按键名称（将字母键转为小写，保持修饰键原样）
+  let normalizedKey = event.key
+  if (event.key.length === 1 && /[A-Z]/.test(event.key)) {
+    normalizedKey = event.key.toLowerCase()
+  }
+
   // 添加按键到集合
-  pressedKeys.value.add(event.key)
+  pressedKeys.value.add(normalizedKey)
+
+  console.log('按键按下:', event.key, '标准化后:', normalizedKey, '当前按键集合:', Array.from(pressedKeys.value))
 
   // 更新预览
   updateShortcutPreview()
@@ -274,101 +322,129 @@ const handleKeyDown = (event: KeyboardEvent) => {
 // 验证快捷键是否有效
 const validateShortcut = (keys: Set<string>): { valid: boolean; error: string } => {
   const keyArray = Array.from(keys)
+  console.log('验证快捷键，按键数组:', keyArray)
 
   // 检查键数量：最少2个，最多3个
   if (keyArray.length < 2) {
+    console.log('验证失败：键数量不足，当前数量:', keyArray.length)
     return { valid: false, error: '至少需要2个键' }
   }
   if (keyArray.length > 3) {
+    console.log('验证失败：键数量过多，当前数量:', keyArray.length)
     return { valid: false, error: '最多只能3个键' }
   }
 
   // 检查是否包含至少一个修饰键（Ctrl、Cmd、Alt、Shift）
   const modifierKeys = ['Control', 'Meta', 'Alt', 'Shift']
   const hasModifier = keyArray.some(key => modifierKeys.includes(key))
+  console.log('修饰键检查，找到的修饰键:', keyArray.filter(key => modifierKeys.includes(key)))
+
   if (!hasModifier) {
+    console.log('验证失败：缺少修饰键')
     return { valid: false, error: '必须包含至少一个修饰键（Ctrl、Cmd、Alt、Shift）' }
   }
 
   // 检查是否至少有一个非修饰键
   const nonModifierKeys = keyArray.filter(key => !modifierKeys.includes(key))
+  console.log('非修饰键:', nonModifierKeys)
+
   if (nonModifierKeys.length === 0) {
+    console.log('验证失败：缺少非修饰键')
     return { valid: false, error: '需要至少一个字母或数字键' }
   }
 
+  console.log('验证成功：快捷键有效')
   return { valid: true, error: '' }
 }
 
 // 处理按键释放
-const handleKeyUp = (event: KeyboardEvent) => {
+const handleKeyUp = (event: KeyboardEvent): void => {
   event.preventDefault()
   event.stopPropagation()
 
   if (!isListeningForShortcut.value) return
 
-  // 如果释放的是修饰键，继续监听
-  if (['Control', 'Meta', 'Alt', 'Shift'].includes(event.key)) {
+  console.log('按键释放:', event.key, '当前按键集合:', Array.from(pressedKeys.value), '有效快捷键已检测:', validShortcutDetected.value)
+
+  // 如果已经检测到有效快捷键，直接保存
+  if (validShortcutDetected.value) {
+    console.log('检测到有效快捷键，立即保存')
+    saveDetectedShortcut()
     return
   }
 
-  // 验证快捷键是否有效
-  const validation = validateShortcut(pressedKeys.value)
-  if (validation.valid) {
-    // 生成 Electron Accelerator 格式的快捷键（用于存储和实际注册）
-    const electronAccelerator = Array.from(pressedKeys.value)
-      .sort((a, b) => {
-        // 修饰键排序：Control, Meta, Alt, Shift, 其他键
-        const order = ['Control', 'Meta', 'Alt', 'Shift']
-        const aIndex = order.indexOf(a)
-        const bIndex = order.indexOf(b)
-        if (aIndex !== -1 && bIndex !== -1) return aIndex - bIndex
-        if (aIndex !== -1) return -1
-        if (bIndex !== -1) return 1
-        return a.localeCompare(b)
-      })
-      .map(formatKeyForElectron)
-      .join('+')
-
-    // 生成用户友好的显示格式
-    const displayFormat = Array.from(pressedKeys.value)
-      .sort((a, b) => {
-        const order = ['Control', 'Meta', 'Alt', 'Shift']
-        const aIndex = order.indexOf(a)
-        const bIndex = order.indexOf(b)
-        if (aIndex !== -1 && bIndex !== -1) return aIndex - bIndex
-        if (aIndex !== -1) return -1
-        if (bIndex !== -1) return 1
-        return a.localeCompare(b)
-      })
-      .map(formatKeyForDisplay)
-      .join('+')
-
-    console.log('快捷键设置成功:')
-    console.log('  - 存储格式 (Electron Accelerator):', electronAccelerator)
-    console.log('  - 显示格式 (用户友好):', displayFormat)
-
-    // 保存到存储（Electron Accelerator 格式）
-    setGlobalShortcut(electronAccelerator)
-    stopListeningForShortcut()
-  } else {
-    // 显示错误信息并清除当前按键
-    shortcutError.value = validation.error
-    pressedKeys.value.clear()
-    shortcutPreview.value = ''
-
-    console.log('快捷键验证失败:', validation.error)
-
-    // 3秒后清除错误信息
-    setTimeout(() => {
-      shortcutError.value = ''
-    }, 3000)
+  // 如果释放的是修饰键，继续监听
+  if (['Control', 'Meta', 'Alt', 'Shift'].includes(event.key)) {
+    console.log('释放的是修饰键，继续监听')
+    return
   }
+
+  // 使用短暂延迟确保所有按键都已记录
+  setTimeout(() => {
+    console.log('延迟后开始验证快捷键，当前按键集合:', Array.from(pressedKeys.value))
+
+    // 验证快捷键是否有效
+    const validation = validateShortcut(pressedKeys.value)
+    console.log('验证结果:', validation)
+
+    if (validation.valid) {
+      // 生成 Electron Accelerator 格式的快捷键（用于存储和实际注册）
+      const electronAccelerator = Array.from(pressedKeys.value)
+        .sort((a, b) => {
+          // 修饰键排序：Control, Meta, Alt, Shift, 其他键
+          const order = ['Control', 'Meta', 'Alt', 'Shift']
+          const aIndex = order.indexOf(a)
+          const bIndex = order.indexOf(b)
+          if (aIndex !== -1 && bIndex !== -1) return aIndex - bIndex
+          if (aIndex !== -1) return -1
+          if (bIndex !== -1) return 1
+          return a.localeCompare(b)
+        })
+        .map(formatKeyForElectron)
+        .join('+')
+
+      // 生成用户友好的显示格式
+      const displayFormat = Array.from(pressedKeys.value)
+        .sort((a, b) => {
+          const order = ['Control', 'Meta', 'Alt', 'Shift']
+          const aIndex = order.indexOf(a)
+          const bIndex = order.indexOf(b)
+          if (aIndex !== -1 && bIndex !== -1) return aIndex - bIndex
+          if (aIndex !== -1) return -1
+          if (bIndex !== -1) return 1
+          return a.localeCompare(b)
+        })
+        .map(formatKeyForDisplay)
+        .join('+')
+
+      console.log('快捷键设置成功:')
+      console.log('  - 存储格式 (Electron Accelerator):', electronAccelerator)
+      console.log('  - 显示格式 (用户友好):', displayFormat)
+
+      // 保存到存储（Electron Accelerator 格式）
+      setGlobalShortcut(electronAccelerator)
+      stopListeningForShortcut()
+    } else {
+      // 显示错误信息并清除当前按键
+      shortcutError.value = validation.error
+      pressedKeys.value.clear()
+      shortcutPreview.value = ''
+
+      console.log('快捷键验证失败:', validation.error)
+
+      // 3秒后清除错误信息
+      setTimeout(() => {
+        shortcutError.value = ''
+      }, 3000)
+    }
+  }, 50) // 50ms 延迟确保所有按键事件都已处理
 }
 
 // 更新快捷键预览（显示用户友好的格式）
-const updateShortcutPreview = () => {
+const updateShortcutPreview = (): void => {
   if (pressedKeys.value.size === 0) {
     shortcutPreview.value = ''
+    validShortcutDetected.value = false
     return
   }
 
@@ -391,8 +467,11 @@ const updateShortcutPreview = () => {
   const validation = validateShortcut(pressedKeys.value)
   if (!validation.valid) {
     shortcutPreview.value = `${displayKeys} (${validation.error})`
+    validShortcutDetected.value = false
   } else {
     shortcutPreview.value = displayKeys
+    validShortcutDetected.value = true
+    console.log('检测到有效快捷键，标记为可保存')
   }
 
   console.log('快捷键预览更新:', shortcutPreview.value)
@@ -567,13 +646,8 @@ onUnmounted(() => {
       </div>
 
       <nav class="sidebar-nav">
-        <div  
-          v-for="section in settingSections"
-          :key="section.id"
-          class="nav-item"
-          :class="{ active: activeSection === section.id }"
-          @click="setActiveSection(section.id)"
-        >
+        <div v-for="section in settingSections" :key="section.id" class="nav-item"
+          :class="{ active: activeSection === section.id }" @click="setActiveSection(section.id)">
           <component :is="section.icon" class="nav-icon" />
           <span class="nav-text">{{ section.name }}</span>
         </div>
@@ -598,11 +672,7 @@ onUnmounted(() => {
             </div>
             <div class="setting-control">
               <label class="toggle-switch">
-                <input
-                  type="checkbox"
-                  :checked="settingsStore.autoStart"
-                  @change="toggleAutoStart"
-                >
+                <input type="checkbox" :checked="settingsStore.autoStart" @change="toggleAutoStart">
                 <span class="toggle-slider"></span>
               </label>
             </div>
@@ -616,15 +686,9 @@ onUnmounted(() => {
             </div>
             <div class="setting-control">
               <div class="number-input-container">
-                <input
-                  type="number"
-                  :value="settingsStore.maxHistorySize"
-                  @input="updateMaxHistorySize(parseInt(($event.target as HTMLInputElement).value) || 100)"
-                  min="10"
-                  max="1000"
-                  step="10"
-                  class="number-input"
-                >
+                <input type="number" :value="settingsStore.maxHistorySize"
+                  @input="updateMaxHistorySize(parseInt(($event.target as HTMLInputElement).value) || 100)" min="10"
+                  max="1000" step="10" class="number-input">
                 <span class="number-unit">条</span>
               </div>
             </div>
@@ -638,15 +702,9 @@ onUnmounted(() => {
             </div>
             <div class="setting-control">
               <div class="number-input-container">
-                <input
-                  type="number"
-                  :value="settingsStore.maxKeepTime"
-                  @input="updateMaxKeepTime(parseInt(($event.target as HTMLInputElement).value) || -1)"
-                  min="-1"
-                  max="365"
-                  step="1"
-                  class="number-input"
-                >
+                <input type="number" :value="settingsStore.maxKeepTime"
+                  @input="updateMaxKeepTime(parseInt(($event.target as HTMLInputElement).value) || -1)" min="-1"
+                  max="365" step="1" class="number-input">
                 <span class="number-unit">{{ settingsStore.maxKeepTime === -1 ? '不限制' : '天' }}</span>
               </div>
             </div>
@@ -676,11 +734,7 @@ onUnmounted(() => {
 
         <!-- 创建新标签按钮 -->
         <div class="tag-actions">
-          <button
-            class="create-tag-button"
-            @click="startCreateTag"
-            :disabled="isCreatingTag || isEditingTag"
-          >
+          <button class="create-tag-button" @click="startCreateTag" :disabled="isCreatingTag || isEditingTag">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <line x1="12" y1="5" x2="12" y2="19"></line>
               <line x1="5" y1="12" x2="19" y2="12"></line>
@@ -699,13 +753,7 @@ onUnmounted(() => {
             <!-- 标签名称 -->
             <div class="form-group">
               <label class="form-label">标签名称</label>
-              <input
-                type="text"
-                v-model="tagForm.name"
-                class="form-input"
-                placeholder="请输入标签名称"
-                maxlength="20"
-              />
+              <input type="text" v-model="tagForm.name" class="form-input" placeholder="请输入标签名称" maxlength="20" />
             </div>
 
             <!-- 标签颜色 -->
@@ -713,33 +761,19 @@ onUnmounted(() => {
               <label class="form-label">标签颜色</label>
               <div class="color-picker">
                 <div class="color-options">
-                  <div
-                    v-for="color in presetColors"
-                    :key="color"
-                    class="color-option"
-                    :class="{ active: tagForm.color === color }"
-                    :style="{ backgroundColor: color }"
-                    @click="tagForm.color = color"
-                  ></div>
+                  <div v-for="color in presetColors" :key="color" class="color-option"
+                    :class="{ active: tagForm.color === color }" :style="{ backgroundColor: color }"
+                    @click="tagForm.color = color"></div>
                 </div>
-                <input
-                  type="color"
-                  v-model="tagForm.color"
-                  class="color-input"
-                />
+                <input type="color" v-model="tagForm.color" class="color-input" />
               </div>
             </div>
 
             <!-- 标签描述 -->
             <div class="form-group">
               <label class="form-label">描述（可选）</label>
-              <textarea
-                v-model="tagForm.description"
-                class="form-textarea"
-                placeholder="请输入标签描述"
-                maxlength="100"
-                rows="3"
-              ></textarea>
+              <textarea v-model="tagForm.description" class="form-textarea" placeholder="请输入标签描述" maxlength="100"
+                rows="3"></textarea>
             </div>
 
             <!-- 表单按钮 -->
@@ -768,11 +802,7 @@ onUnmounted(() => {
           </div>
 
           <div v-else class="tags-grid">
-            <div
-              v-for="tag in allTags"
-              :key="tag.id"
-              class="tag-card"
-            >
+            <div v-for="tag in allTags" :key="tag.id" class="tag-card">
               <div class="tag-card-header">
                 <div class="tag-info">
                   <div class="tag-color-dot" :style="{ backgroundColor: tag.color }"></div>
@@ -788,7 +818,8 @@ onUnmounted(() => {
                   <button class="tag-action-button danger" @click="deleteTag(tag)">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                       <polyline points="3,6 5,6 21,6"></polyline>
-                      <path d="m19,6v14a2,2 0 0,1 -2,2H7a2,2 0 0,1 -2,-2V6m3,0V4a2,2 0 0,1 2,-2h4a2,2 0 0,1 2,2v2"></path>
+                      <path d="m19,6v14a2,2 0 0,1 -2,2H7a2,2 0 0,1 -2,-2V6m3,0V4a2,2 0 0,1 2,-2h4a2,2 0 0,1 2,2v2">
+                      </path>
                     </svg>
                   </button>
                 </div>
@@ -826,35 +857,21 @@ onUnmounted(() => {
             <div class="setting-control">
               <div class="shortcut-input">
                 <div class="shortcut-display">
-                  <input
-                    type="text"
-                    :value="displayShortcut"
-                    readonly
+                  <input type="text" :value="displayShortcut" readonly
                     :placeholder="isListeningForShortcut ? '请按下快捷键组合...' : '点击设置快捷键'"
-                    :class="['shortcut-field', { 'listening': isListeningForShortcut, 'preview': shortcutPreview, 'empty': !hasShortcut }]"
-                  >
+                    :class="['shortcut-field', { 'listening': isListeningForShortcut, 'preview': shortcutPreview, 'empty': !hasShortcut }]">
                 </div>
                 <div class="shortcut-buttons">
                   <template v-if="!isListeningForShortcut">
-                    <button
-                      class="shortcut-button primary"
-                      @click="startListeningForShortcut"
-                    >
+                    <button class="shortcut-button primary" @click="startListeningForShortcut">
                       {{ hasShortcut ? '重新设置' : '设置快捷键' }}
                     </button>
-                    <button
-                      v-if="hasShortcut"
-                      class="shortcut-button danger"
-                      @click="clearShortcut"
-                    >
+                    <button v-if="hasShortcut" class="shortcut-button danger" @click="clearShortcut">
                       清除
                     </button>
                   </template>
                   <template v-else>
-                    <button
-                      class="shortcut-button secondary"
-                      @click="cancelShortcutSetting"
-                    >
+                    <button class="shortcut-button secondary" @click="cancelShortcutSetting">
                       取消
                     </button>
                     <span class="shortcut-hint">按下快捷键组合，释放最后一个键完成设置</span>
@@ -1103,11 +1120,11 @@ onUnmounted(() => {
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
 }
 
-input:checked + .toggle-slider {
+input:checked+.toggle-slider {
   background-color: #4a9eff;
 }
 
-input:checked + .toggle-slider:before {
+input:checked+.toggle-slider:before {
   transform: translateX(24px);
 }
 
@@ -1129,8 +1146,6 @@ input:checked + .toggle-slider:before {
   transform: translateY(-1px);
   box-shadow: 0 4px 12px rgba(74, 158, 255, 0.3);
 }
-
-
 
 /* 数字输入框 */
 .number-input-container {
@@ -1217,9 +1232,12 @@ input:checked + .toggle-slider:before {
 }
 
 @keyframes pulse {
-  0%, 100% {
+
+  0%,
+  100% {
     box-shadow: 0 0 0 3px rgba(255, 149, 0, 0.1);
   }
+
   50% {
     box-shadow: 0 0 0 3px rgba(255, 149, 0, 0.2);
   }
