@@ -262,9 +262,24 @@ export class ClipboardDataConverter {
 
   /**
    * 生成内容哈希值用于比较
+   * 优化版本：对于图片内容，使用更高效的哈希策略，避免大图片造成CPU压力
    */
   static generateContentHash(content: ClipboardContent): string {
-    const contentStr = JSON.stringify(content)
+    // 创建一个优化的内容对象用于哈希计算
+    const optimizedContent: ClipboardContent = {}
+
+    // 直接复制非图片内容
+    if (content.text) optimizedContent.text = content.text
+    if (content.html) optimizedContent.html = content.html
+    if (content.rtf) optimizedContent.rtf = content.rtf
+    if (content.bookmark) optimizedContent.bookmark = content.bookmark
+
+    // 对图片内容进行优化处理
+    if (content.image) {
+      optimizedContent.image = ClipboardDataConverter.generateImageHash(content.image)
+    }
+
+    const contentStr = JSON.stringify(optimizedContent)
     let hash = 0
     for (let i = 0; i < contentStr.length; i++) {
       const char = contentStr.charCodeAt(i)
@@ -272,6 +287,40 @@ export class ClipboardDataConverter {
       hash = hash & hash
     }
     return hash.toString()
+  }
+
+  /**
+   * 生成图片内容的轻量级哈希
+   * 使用采样策略而不是完整内容，大幅减少CPU消耗
+   */
+  private static generateImageHash(imageData: string): string {
+    if (!imageData) return ''
+
+    const dataLength = imageData.length
+
+    // 小图片（<= 4KB base64）直接使用完整数据
+    if (dataLength <= 4096) {
+      return imageData
+    }
+
+    // 大图片使用采样策略：
+    // 1. 数据头部（包含格式信息）
+    // 2. 数据长度
+    // 3. 每隔一定间隔采样
+    // 4. 数据尾部
+    const head = imageData.substring(0, 512)  // 头部512字节
+    const tail = imageData.substring(dataLength - 512)  // 尾部512字节
+
+    // 中间部分采样：每隔1000字节取32字节
+    let samples = ''
+    const sampleInterval = 1000
+    const sampleSize = 32
+    for (let i = 1000; i < dataLength - 1000; i += sampleInterval) {
+      samples += imageData.substring(i, Math.min(i + sampleSize, dataLength))
+    }
+
+    // 组合采样数据
+    return `${head}|${dataLength}|${samples}|${tail}`
   }
 
   /**
@@ -334,11 +383,6 @@ export class ClipboardDataConverter {
 
     // HTML 类型处理
     if (content.html) {
-      // 检测是否为链接
-      const htmlContent = content.html.toLowerCase()
-      if (htmlContent.includes('<a ') && htmlContent.includes('href=')) {
-        return 'link'
-      }
       return 'html'
     }
 

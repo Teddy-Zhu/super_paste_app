@@ -224,8 +224,6 @@ const getTypeLabel = (type: string): string => {
       return 'Image'
     case 'html':
       return 'Text'
-    case 'link':
-      return 'Link'
     case 'url':
       return 'URL'
     case 'file_path':
@@ -287,7 +285,6 @@ const getCardTheme = (parseType: string): string => {
     'text': 'blue',
     'image': 'green',
     'html': 'purple',
-    'link': 'orange',
     'url': 'orange',
     'file_path': 'teal',
     'email': 'red',
@@ -344,7 +341,7 @@ const handleClick = () => {
       </div>
 
       <!-- HTML 内容预览 -->
-      <div class="card-rich-preview" v-else-if="(item.parseType === 'html' || item.parseType === 'link') && item.content.html">
+      <div class="card-rich-preview" v-else-if="item.parseType === 'html' && item.content.html">
         <div class="rich-content" v-html="htmlContent"></div>
       </div>
 

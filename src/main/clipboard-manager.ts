@@ -25,6 +25,7 @@ class ClipboardManager {
   private isListening: boolean = false
   private checkTimer: NodeJS.Timeout | null = null
   private lastClipboardHash: string = ''
+  private lastQuickHash: string = ''
   private historyItems: ClipboardItem[] = []
 
   private constructor() {
@@ -89,6 +90,8 @@ class ClipboardManager {
 
       // 初始化时获取当前剪贴板内容哈希
       this.lastClipboardHash = this.generateClipboardHash()
+      // 初始化快速哈希
+      this.hasQuickClipboardChange()
 
       console.log('[剪贴板管理器] 已初始化，配置:', this.config)
       console.log('[剪贴板管理器] 从数据库加载了', this.historyItems.length, '条历史记录')
@@ -96,6 +99,8 @@ class ClipboardManager {
       console.error('[剪贴板管理器] 初始化失败:', error)
       // 即使数据库初始化失败，也要继续初始化剪贴板管理器
       this.lastClipboardHash = this.generateClipboardHash()
+      // 初始化快速哈希
+      this.hasQuickClipboardChange()
     }
   }
 
@@ -136,9 +141,18 @@ class ClipboardManager {
 
   /**
    * 检查剪贴板内容变化
+   * 优化版本：使用快速检查避免不必要的图片数据读取
    */
   private checkClipboardChange(): void {
     try {
+      // 首先进行快速检查：只检查是否有内容和基本格式
+      const hasQuickChange = this.hasQuickClipboardChange()
+
+      if (!hasQuickChange) {
+        return
+      }
+
+      // 如果快速检查发现变化，再进行完整的哈希计算
       const currentHash = this.generateClipboardHash()
 
       if (currentHash && currentHash !== this.lastClipboardHash) {
@@ -151,10 +165,74 @@ class ClipboardManager {
           const clipboardContent = this.getCurrentClipboardContent()
           this.saveClipboardItem(clipboardContent)
         }
+
+        console.log('[剪贴板管理器] 检测到剪贴板变化')
       }
     } catch (error) {
       console.error('[剪贴板管理器] 检查剪贴板变化失败:', error)
     }
+  }
+
+  /**
+   * 快速检查剪贴板是否有变化
+   * 只检查基本信息，避免读取大图片数据
+   */
+  private hasQuickClipboardChange(): boolean {
+    try {
+      const { clipboard } = require('electron')
+
+      // 检查文本内容
+      const text = clipboard.readText()
+      const html = clipboard.readHTML()
+      const rtf = clipboard.readRTF()
+      const bookmark = clipboard.readBookmark()
+
+      // 检查图片是否存在（不读取具体内容）
+      const image = clipboard.readImage()
+      const hasImage = !image.isEmpty()
+
+      // 生成快速哈希（不包含图片具体内容）
+      const quickContent = {
+        text: text || undefined,
+        html: html || undefined,
+        rtf: rtf || undefined,
+        bookmark: bookmark?.title ? JSON.stringify(bookmark) : undefined,
+        hasImage: hasImage
+      }
+
+      const quickHash = this.generateQuickHash(quickContent)
+
+      // 如果没有上次的快速哈希，说明是第一次检查
+      if (!this.lastQuickHash) {
+        this.lastQuickHash = quickHash
+        return true
+      }
+
+      // 比较快速哈希
+      const hasChange = quickHash !== this.lastQuickHash
+      if (hasChange) {
+        this.lastQuickHash = quickHash
+      }
+
+      return hasChange
+    } catch (error) {
+      console.error('[剪贴板管理器] 快速检查失败:', error)
+      return true // 出错时假设有变化，进行完整检查
+    }
+  }
+
+  /**
+   * 生成快速哈希
+   */
+  private generateQuickHash(content: any): string {
+    const contentStr = JSON.stringify(content)
+    let hash = 0
+    for (let i = 0; i < contentStr.length; i++) {
+      const char = contentStr.charCodeAt(i)
+      hash = ((hash << 5) - hash) + char
+      hash = hash & hash
+    }
+    return hash.toString()
   }
 
   /**
