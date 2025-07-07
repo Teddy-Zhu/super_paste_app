@@ -1,0 +1,811 @@
+<script setup lang="ts">
+import type { ClipboardItem } from '@renderer/api/types'
+import { computed, ref } from 'vue'
+import { convertRtfToHtml } from 'rtf-to-html-converter'
+import DOMPurify from 'dompurify'
+import IconFile from '~icons/mdi/file'
+import IconFileMultiple from '~icons/mdi/file-multiple'
+
+interface Props {
+  item: ClipboardItem
+  index: number
+  isSelected: boolean
+}
+
+const props = defineProps<Props>()
+
+const emit = defineEmits<{
+  click: [itemId: string]
+}>()
+
+// 计算 RTF 内容的 HTML 表示（使用 rtf-to-html-converter 和 DOMPurify）
+const rtfToHtml = computed(() => {
+  if (!props.item.content.rtf) return ''
+
+  try {
+    const htmlContent = convertRtfToHtml(props.item.content.rtf)
+    const cleanHtml = htmlContent || '<p>富文本内容</p>'
+    return DOMPurify.sanitize(cleanHtml)
+  } catch (error) {
+    console.warn('RTF 转换失败:', error)
+    return DOMPurify.sanitize('<p>富文本内容</p>')
+  }
+})
+
+// 计算 HTML 内容（用于原生渲染，使用 DOMPurify 清理）
+const htmlContent = computed(() => {
+  if (!props.item.content.html) return ''
+  return DOMPurify.sanitize(props.item.content.html)
+})
+
+// 获取内容预览文本
+const getContentPreview = (item: ClipboardItem): string => {
+  const content = item.content
+
+  if (content.text) {
+    return content.text.length > 150 ? content.text.substring(0, 150) + '...' : content.text
+  }
+
+  if (content.html) {
+    // 移除HTML标签，只显示文本内容
+    const textContent = content.html.replace(/<[^>]*>/g, '')
+    return textContent.length > 150 ? textContent.substring(0, 150) + '...' : textContent
+  }
+
+  if (content.image) {
+    return 'Image content'
+  }
+
+  if (content.rtf) {
+    return 'Rich text content'
+  }
+
+  if (content.bookmark) {
+    try {
+      const bookmark = JSON.parse(content.bookmark)
+      return bookmark.title || bookmark.url || 'Bookmark'
+    } catch {
+      return 'Bookmark'
+    }
+  }
+
+  return 'Unknown content'
+}
+
+// 获取内容标题
+// const getContentTitle = (item: ClipboardItem): string => {
+//   const content = item.content
+
+//   if (content.text) {
+//     const firstLine = content.text.split('\n')[0]
+//     return firstLine.length > 50 ? firstLine.substring(0, 50) + '...' : firstLine
+//   }
+
+//   if (content.html) {
+//     const textContent = content.html.replace(/<[^>]*>/g, '')
+//     const firstLine = textContent.split('\n')[0]
+//     return firstLine.length > 50 ? firstLine.substring(0, 50) + '...' : firstLine
+//   }
+
+//   if (content.image) {
+//     return 'Image'
+//   }
+
+//   if (content.rtf) {
+//     return 'Rich Text Document'
+//   }
+
+//   if (content.bookmark) {
+//     try {
+//       const bookmark = JSON.parse(content.bookmark)
+//       return bookmark.title || bookmark.url || 'Link'
+//     } catch {
+//       return 'Link'
+//     }
+//   }
+
+//   return 'Unknown Content'
+// }
+
+// 格式化时间为英文
+const formatTime = (timestamp: number): string => {
+  const now = new Date()
+  const date = new Date(timestamp)
+  const diffMs = now.getTime() - date.getTime()
+  const diffMins = Math.floor(diffMs / (1000 * 60))
+  const diffHours = Math.floor(diffMs / (1000 * 60 * 60))
+  const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24))
+
+  if (diffMins < 1) {
+    return 'just now'
+  } else if (diffMins < 60) {
+    return `${diffMins} minute${diffMins > 1 ? 's' : ''} ago`
+  } else if (diffHours < 24) {
+    return `${diffHours} hour${diffHours > 1 ? 's' : ''} ago`
+  } else if (diffDays < 7) {
+    return `${diffDays} day${diffDays > 1 ? 's' : ''} ago`
+  } else {
+    return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+  }
+}
+
+// 存储图片尺寸信息
+const imageDimensions = ref<{ width: number; height: number } | null>(null)
+
+// 处理图片加载完成事件
+const handleImageLoad = (event: Event) => {
+  const img = event.target as HTMLImageElement
+  if (img) {
+    imageDimensions.value = {
+      width: img.naturalWidth,
+      height: img.naturalHeight
+    }
+  }
+}
+
+// 解析文件路径
+const parseFilePaths = computed(() => {
+  if (props.item.parseType !== 'file_path' || !props.item.content.text) {
+    return []
+  }
+
+  const text = props.item.content.text.trim()
+  // 按行分割，过滤空行
+  const paths = text.split('\n').filter(path => path.trim().length > 0)
+
+  return paths.map(path => {
+    const trimmedPath = path.trim()
+    // 获取文件名（路径的最后一部分）
+    const fileName = trimmedPath.split(/[/\\]/).pop() || trimmedPath
+    return {
+      fullPath: trimmedPath,
+      fileName: fileName
+    }
+  })
+})
+
+// 获取文件显示名称
+const getFileDisplayName = computed(() => {
+  const files = parseFilePaths.value
+  if (files.length === 0) return ''
+
+  if (files.length === 1) {
+    return files[0].fileName
+  } else {
+    return `${files[0].fileName} 等${files.length}个文件`
+  }
+})
+
+// 获取内容字符数
+const getCharacterCount = (item: ClipboardItem): string => {
+  const content = item.content
+
+  if (item.parseType === 'file_path') {
+    const fileCount = parseFilePaths.value.length
+    if (fileCount > 0) {
+      return `${fileCount} 个文件`
+    }
+    return 'File Path'
+  }
+  if (content.text) {
+    return `${content.text.length} character${content.text.length !== 1 ? 's' : ''}`
+  }
+
+  if (content.html) {
+    const textContent = content.html.replace(/<[^>]*>/g, '')
+    return `${textContent.length} character${textContent.length !== 1 ? 's' : ''}`
+  }
+
+  if (content.image) {
+    if (imageDimensions.value) {
+      return `${imageDimensions.value.width} × ${imageDimensions.value.height}`
+    }
+    return 'Image'
+  }
+
+
+  if (content.rtf) {
+    return 'Rich Text'
+  }
+
+  if (content.bookmark) {
+    return 'Link'
+  }
+
+  return ''
+}
+
+// 获取类型标签
+const getTypeLabel = (type: string): string => {
+  switch (type) {
+    case 'text':
+      return 'Text'
+    case 'image':
+      return 'Image'
+    case 'html':
+      return 'Text'
+    case 'link':
+      return 'Link'
+    case 'url':
+      return 'URL'
+    case 'file_path':
+      return 'File'
+    case 'email':
+      return 'Email'
+    case 'phone':
+      return 'Phone'
+    case 'code':
+      return 'Code'
+    case 'rtf':
+      return 'RTF'
+    case 'bookmark':
+      return 'Link'
+    case 'color':
+      return 'Color'
+    case 'empty':
+      return 'Empty'
+    default:
+      return 'Text'
+  }
+}
+
+// 检测是否为颜色类型并获取颜色值
+const colorValue = computed(() => {
+  if (props.item.parseType === 'color' && props.item.content.text) {
+    const text = props.item.content.text.trim()
+    const colorRegex = /^#[0-9a-fA-F]{6}$|^#[0-9a-fA-F]{8}$/
+    if (colorRegex.test(text)) {
+      return text
+    }
+  }
+  return null
+})
+
+// 计算颜色的反色
+const getContrastColor = computed(() => {
+  if (!colorValue.value) return '#000000'
+
+  // 移除 # 号
+  const hex = colorValue.value.replace('#', '')
+
+  // 获取 RGB 值
+  const r = parseInt(hex.substring(0, 2), 16)
+  const g = parseInt(hex.substring(2, 4), 16)
+  const b = parseInt(hex.substring(4, 6), 16)
+
+  // 计算亮度 (使用 YIQ 公式)
+  const yiq = ((r * 299) + (g * 587) + (b * 114)) / 1000
+
+  // 根据亮度返回黑色或白色
+  return yiq >= 128 ? '#000000' : '#ffffff'
+})
+
+// 获取卡片主题色
+const getCardTheme = (parseType: string): string => {
+  // 根据 parseType 分配主题色
+  const themeMap: Record<string, string> = {
+    'text': 'blue',
+    'image': 'green',
+    'html': 'purple',
+    'link': 'orange',
+    'url': 'orange',
+    'file_path': 'teal',
+    'email': 'red',
+    'phone': 'red',
+    'code': 'purple',
+    'rtf': 'blue',
+    'bookmark': 'orange',
+    'color': 'green',
+    'empty': 'gray'
+  }
+
+  return themeMap[parseType] || 'blue'
+}
+
+// 处理点击事件
+const handleClick = () => {
+  emit('click', props.item.id)
+}
+</script>
+
+<template>
+  <div
+    class="clipboard-card"
+    :class="[
+      `theme-${getCardTheme(item.parseType)}`,
+      { 'selected': isSelected }
+    ]"
+    @click="handleClick"
+  >
+    <!-- 卡片头部 -->
+    <div class="card-header">
+      <div class="header-left">
+        <span class="type-label">{{ getTypeLabel(item.parseType) }}</span>
+        <span class="time-label">{{ formatTime(item.timestamp) }}</span>
+      </div>
+      <!-- 应用图标独占右上角 -->
+      <div v-if="item.sourceAppInfo?.icon" class="app-icon">
+        <img :src="item.sourceAppInfo.icon" :alt="item.sourceAppInfo.application" />
+      </div>
+    </div>
+
+    <!-- 卡片主要内容 -->
+    <div class="card-main">
+      <!-- <h3 class="card-title">{{ getContentTitle(item) }}</h3> -->
+
+      <!-- RTF 内容预览 - 如果存在 HTML 则优先使用 HTML -->
+      <div class="card-rich-preview" v-if="item.parseType === 'rtf' && item.content.html">
+        <div class="rich-content" v-html="htmlContent"></div>
+      </div>
+
+      <!-- RTF 内容预览 - 仅当没有 HTML 时使用 RTF 转换 -->
+      <div class="card-rich-preview" v-else-if="item.parseType === 'rtf' && item.content.rtf">
+        <div class="rich-content" v-html="rtfToHtml"></div>
+      </div>
+
+      <!-- HTML 内容预览 -->
+      <div class="card-rich-preview" v-else-if="(item.parseType === 'html' || item.parseType === 'link') && item.content.html">
+        <div class="rich-content" v-html="htmlContent"></div>
+      </div>
+
+      <!-- 颜色预览 -->
+      <div class="card-color" v-else-if="item.parseType === 'color' && colorValue" :style="{ backgroundColor: colorValue }">
+        <div class="color-display">
+          <span class="color-text" :style="{ color: getContrastColor }">{{ colorValue }}</span>
+        </div>
+      </div>
+
+      <!-- 图片预览 -->
+      <div class="card-image" v-else-if="item.parseType === 'image' && item.content.image">
+        <img :src="item.content.image" alt="Image preview" @load="handleImageLoad" />
+      </div>
+
+      <!-- 文件路径预览 -->
+      <div class="card-file" v-else-if="item.parseType === 'file_path' && parseFilePaths.length > 0">
+        <div class="file-icons">
+          <!-- 单个文件显示 -->
+          <div v-if="parseFilePaths.length === 1" class="file-icon single">
+            <IconFile class="file-icon-svg" />
+          </div>
+          <!-- 多个文件显示 -->
+          <div v-else class="file-icon multiple">
+            <IconFileMultiple class="file-icon-svg" />
+          </div>
+        </div>
+        <div class="file-name">{{ getFileDisplayName }}</div>
+      </div>
+
+      <!-- 其他类型内容预览 -->
+      <div class="card-preview" v-else-if="item.parseType !== 'image' && item.parseType !== 'color' && item.parseType !== 'file_path'">
+        {{ getContentPreview(item) }}
+      </div>
+    </div>
+
+    <!-- 卡片底部信息 -->
+    <div class="card-footer">
+      <span class="character-count">{{ getCharacterCount(item) }}</span>
+    </div>
+
+    <!-- 选中指示器 -->
+    <div v-if="isSelected" class="selection-indicator"></div>
+  </div>
+</template>
+
+<style scoped>
+.clipboard-card {
+  /* CSS 变量定义 */
+  --card-main-padding: 12px;
+
+  background: linear-gradient(135deg, #ffffff 0%, #fafbfc 100%);
+  border-radius: 16px;
+  cursor: pointer;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  overflow: hidden;
+  box-shadow:
+    0 1px 3px rgba(0, 0, 0, 0.08),
+    0 1px 2px rgba(0, 0, 0, 0.06);
+  width: 300px;
+  height: 76vh;
+  flex-shrink: 0;
+  border: 1px solid rgb(197 197 197 / 80%);
+  backdrop-filter: blur(10px);
+}
+
+.clipboard-card:hover {
+  transform: translateY(-2px);
+  box-shadow:
+    0 8px 25px rgba(0, 0, 0, 0.12),
+    0 4px 10px rgba(0, 0, 0, 0.08);
+  border-color: rgba(255, 255, 255, 0.9);
+}
+
+.clipboard-card.selected {
+  transform: translateY(-2x);
+  box-shadow:
+    0 8px 25px rgba(59, 130, 246, 0.25),
+    0 4px 10px rgba(59, 130, 246, 0.15);
+  border-color: rgba(59, 130, 246, 0.3);
+}
+
+
+
+/* 卡片主题色 */
+.theme-green .type-label {
+  background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+  color: white;
+  box-shadow: 0 2px 4px rgba(16, 185, 129, 0.3);
+}
+
+.theme-blue .type-label {
+  background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+  color: white;
+  box-shadow: 0 2px 4px rgba(59, 130, 246, 0.3);
+}
+
+.theme-red .type-label {
+  background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+  color: white;
+  box-shadow: 0 2px 4px rgba(239, 68, 68, 0.3);
+}
+
+.theme-orange .type-label {
+  background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+  color: white;
+  box-shadow: 0 2px 4px rgba(245, 158, 11, 0.3);
+}
+
+.theme-purple .type-label {
+  background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%);
+  color: white;
+  box-shadow: 0 2px 4px rgba(139, 92, 246, 0.3);
+}
+
+.theme-teal .type-label {
+  background: linear-gradient(135deg, #06b6d4 0%, #0891b2 100%);
+  color: white;
+  box-shadow: 0 2px 4px rgba(6, 182, 212, 0.3);
+}
+
+.theme-gray .type-label {
+  background: linear-gradient(135deg, #6b7280 0%, #4b5563 100%);
+  color: white;
+  box-shadow: 0 2px 4px rgba(107, 114, 128, 0.3);
+}
+
+/* 卡片组件 */
+.card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  padding-left: 16px;
+  padding-right: 16px;
+  padding-top: 10px;
+  padding-bottom: 4px;
+  border-bottom: 1px solid rgba(243, 244, 246, 0.8);
+  gap: 12px;
+  flex-shrink: 0;
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.9) 0%, rgba(248, 250, 252, 0.9) 100%);
+}
+
+.header-left {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  flex: 1;
+}
+
+.app-icon {
+  width: 54px;
+  height: 54px;
+  overflow: hidden;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(255, 255, 255, 0.8);
+}
+
+.app-icon img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.type-label {
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  padding: 6px 12px;
+  border-radius: 8px;
+  /* background: linear-gradient(135deg, #6b7280 0%, #4b5563 100%); */
+  color: white;
+  display: inline-block;
+  width: fit-content;
+  max-width: 80px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  /* transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1); */
+  /* border: 1px solid rgba(255, 255, 255, 0.2); */
+}
+
+
+.time-label {
+  font-size: 11px;
+  color: #64748b;
+  font-weight: 600;
+  line-height: 1.3;
+  margin-top: 4px;
+  opacity: 0.8;
+  transition: opacity 0.3s ease;
+}
+
+.clipboard-card:hover .time-label {
+  opacity: 1;
+}
+
+.card-main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  padding: var(--card-main-padding);
+  overflow: hidden;
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.95) 0%, rgba(250, 251, 252, 0.95) 100%);
+}
+
+.card-title {
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 1.4;
+  margin: 0;
+  color: #1e293b;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  letter-spacing: -0.025em;
+}
+
+.card-preview {
+  font-size: 14px;
+  line-height: 1.6;
+  color: #475569;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  font-weight: 500;
+  word-wrap: break-word;
+}
+
+.card-rich-preview {
+  flex: 1;
+  overflow: hidden;
+  /* border-radius: 12px; */
+  /* background: linear-gradient(135deg, rgba(248, 250, 252, 0.8) 0%, rgba(241, 245, 249, 0.8) 100%);
+  border: 1px solid rgba(226, 232, 240, 0.6);
+  backdrop-filter: blur(5px); */
+}
+
+.rich-content {
+  height: 100%;
+  max-height: 200px;
+  color: #475569;
+  font-size: 14px;
+  line-height: 1.6;
+  overflow: hidden;
+  word-wrap: break-word;
+  word-break: break-word;
+  font-weight: 500;
+}
+
+.rich-content p {
+  margin: 0 0 8px 0;
+}
+
+.rich-content h1,
+.rich-content h2,
+.rich-content h3,
+.rich-content h4,
+.rich-content h5,
+.rich-content h6 {
+  margin: 12px 0 8px 0;
+  font-weight: 700;
+  color: #1e293b;
+}
+
+.rich-content ul,
+.rich-content ol {
+  margin: 8px 0;
+  padding-left: 24px;
+}
+
+.rich-content li {
+  margin: 4px 0;
+}
+
+.rich-content a {
+  color: #3b82f6;
+  text-decoration: none;
+  font-weight: 600;
+  transition: color 0.3s ease;
+}
+
+.rich-content a:hover {
+  color: #2563eb;
+  text-decoration: underline;
+}
+
+.rich-content strong {
+  font-weight: 700;
+  color: #1e293b;
+}
+
+.rich-content em {
+  font-style: italic;
+  color: #64748b;
+}
+
+.card-image {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: calc(-1 * var(--card-main-padding));
+  overflow: hidden;
+  /* background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+  border-radius: 12px; */
+}
+
+.card-image img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  /* border-radius: 12px;
+  box-shadow:
+    0 4px 8px rgba(0, 0, 0, 0.08),
+    0 2px 4px rgba(0, 0, 0, 0.06); */
+  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.card-image img:hover {
+  transform: scale(1.02);
+}
+
+.card-file {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  padding: 24px;
+  /* background: linear-gradient(135deg, rgba(248, 250, 252, 0.8) 0%, rgba(241, 245, 249, 0.8) 100%); */
+  margin: calc(-1 * var(--card-main-padding));
+}
+
+.file-icons {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 72px;
+  width: 72px;
+  background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+  border-radius: 16px;
+  box-shadow:
+    0 4px 8px rgba(59, 130, 246, 0.3),
+    0 2px 4px rgba(59, 130, 246, 0.2);
+}
+
+.file-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.file-icon:hover {
+  transform: scale(1.1);
+}
+
+.file-icon-svg {
+  width: 36px;
+  height: 36px;
+  color: white;
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.1));
+}
+
+.file-name {
+  font-size: 15px;
+  font-weight: 600;
+  color: #1e293b;
+  text-align: center;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  letter-spacing: -0.025em;
+}
+
+.card-color {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: calc(-1 * var(--card-main-padding));
+  padding: var(--card-main-padding);
+  /* border-radius: 12px; */
+  overflow: hidden;
+}
+
+.color-display {
+  width: 100%;
+  height: 100%;
+  min-height: 140px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  /* border-radius: 12px; */
+  /* box-shadow:
+    inset 0 2px 4px rgba(0, 0, 0, 0.1),
+    0 4px 8px rgba(0, 0, 0, 0.08); */
+  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.color-display:hover {
+  transform: scale(1.5);
+}
+
+.color-text {
+  font-size: 28px;
+  font-weight: 700;
+  font-family: 'SF Mono', 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+  letter-spacing: 0.5px;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+}
+
+.card-footer {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 8px;
+  border-top: 1px solid rgba(226, 232, 240, 0.8);
+  flex-shrink: 0;
+  background: linear-gradient(135deg, rgba(248, 250, 252, 0.9) 0%, rgba(241, 245, 249, 0.9) 100%);
+}
+
+.character-count {
+  font-size: 12px;
+  color: #64748b;
+  font-weight: 600;
+  letter-spacing: 0.025em;
+  opacity: 0.8;
+  transition: opacity 0.3s ease;
+}
+
+.clipboard-card:hover .character-count {
+  opacity: 1;
+}
+
+.selection-indicator {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  border: 3px solid #3b82f6;
+  border-radius: 16px;
+  pointer-events: none;
+  background: linear-gradient(135deg, rgba(59, 130, 246, 0.05) 0%, rgba(37, 99, 235, 0.05) 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.2),
+    0 0 0 1px rgba(59, 130, 246, 0.1);
+}
+</style>
