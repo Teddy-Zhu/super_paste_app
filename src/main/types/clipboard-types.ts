@@ -369,9 +369,10 @@ export class ClipboardDataConverter {
       if (urlRegex.test(text)) {
         return 'url'
       }
-      // 检测文件路径
-      const filePathRegex = /^[a-zA-Z]:\\|^\/|^\.\/|^\.\.\/|.*\.[a-zA-Z0-9]+$/
-      if (filePathRegex.test(text)) {
+      // 检测文件路径（只检测 file:// 开头的内容，支持多个文件换行分隔）
+      const lines = text.split('\n').map(line => line.trim()).filter(line => line.length > 0)
+      const allLinesAreFiles = lines.length > 0 && lines.every(line => line.startsWith('file://'))
+      if (allLinesAreFiles) {
         return 'file_path'
       }
       // 检测邮箱

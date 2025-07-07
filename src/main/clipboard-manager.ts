@@ -1,4 +1,4 @@
-import { clipboard, BrowserWindow } from 'electron'
+import { clipboard, BrowserWindow , nativeImage } from 'electron'
 import clipboardDatabase from './clipboard-database'
 import clipboardHistoryCleaner from './clipboard-history-cleaner'
 import store from './store'
@@ -179,7 +179,6 @@ class ClipboardManager {
    */
   private hasQuickClipboardChange(): boolean {
     try {
-      const { clipboard } = require('electron')
 
       // 检查文本内容
       const text = clipboard.readText()
@@ -569,7 +568,6 @@ class ClipboardManager {
 
         if (content.image) {
           try {
-            const nativeImage = require('electron').nativeImage
             const image = nativeImage.createFromDataURL(content.image)
             if (!image.isEmpty()) {
               clipboardData.image = image
