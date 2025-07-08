@@ -40,9 +40,9 @@ let removeTagsUpdateListener: (() => void) | null = null
  * 设置动画状态
  */
 function setAnimationState(newState: AnimationState): void {
-  const oldState = currentAnimationState.value
+  // const oldState = currentAnimationState.value
   currentAnimationState.value = newState
-  console.log(`[前端] 动画状态变更: ${oldState} -> ${newState}`)
+  // console.log(`[前端] 动画状态变更: ${oldState} -> ${newState}`)
 
   // 更新兼容性标记
   isSlideInComplete.value = newState === AnimationState.ACTIVE
@@ -106,7 +106,7 @@ const closeWindow = async () => {
   // 等待动画完成后关闭窗口
   watch(playState, (newState) => {
     if (newState === 'finished') {
-      console.log('[前端] 滑出动画完成，通知后端关闭窗口')
+      // console.log('[前端] 滑出动画完成，通知后端关闭窗口')
       resetState()
       send('close-overlay-window')
     }
@@ -183,6 +183,7 @@ const handleKeyNavigation = (event: KeyboardEvent) => {
       switch (event.key) {
         case 'Escape':
           event.preventDefault()
+          console.log('esc1')
           toggleSearch()
           break
         case 'ArrowDown':
@@ -951,20 +952,29 @@ const resetState = () => {
 }
 
 // 处理主进程发送的关闭窗口事件
-const handleCloseWindow = () => {
+const handleCloseWindow = (force: boolean = false) => {
   console.log(`[前端] 收到关闭窗口信号，当前状态: ${currentAnimationState.value}`)
 
   // 只有在活跃状态时才响应关闭事件
   if (currentAnimationState.value === AnimationState.ACTIVE) {
-    // 检查搜索框状态
-    if (isSearchVisible.value && searchText.value.trim()) {
-      // 搜索框为展示状态且有值，清空搜索框的值并返回
-      console.log('[前端] 搜索框有值，清空搜索框并返回')
-      searchText.value = ''
-      // 触发搜索以重新加载默认数据
-      performSearch('')
-      return
+    if (!force) {
+      // 检查搜索框状态
+      if (isSearchVisible.value && searchText.value.trim()) {
+        // 搜索框为展示状态且有值，清空搜索框的值并返回
+        console.log('[前端] 搜索框有值，清空搜索框并返回')
+        searchText.value = ''
+        // 触发搜索以重新加载默认数据
+        performSearch('')
+        return
+      }
+
+      // 如果搜索框没有值，需要切换搜索框状态为隐藏状态
+      if (isSearchVisible.value && !searchText.value.trim()) {
+        console.log('[前端] 搜索框无值，切换为隐藏状态')
+        toggleSearch()
+      }
     }
+
 
     closeWindow()
   } else {

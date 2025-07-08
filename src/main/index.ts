@@ -142,7 +142,7 @@ function showOverlayWindow(): void {
   }
 }
 
-function hideOverlayWindowBackend(): void {
+function hideOverlayWindowBackend(force = false): void {
   if (!overlayWindow) {
     return
   }
@@ -156,7 +156,7 @@ function hideOverlayWindowBackend(): void {
   setOverlayState(OverlayState.CLOSING)
 
   // 发送关闭信号到前端
-  overlayWindow.webContents.send('trigger-close-window')
+  overlayWindow.webContents.send('trigger-close-window', force)
 }
 /**
  * 隐藏 overlay 窗口
@@ -188,7 +188,7 @@ function hideOverlayWindow(): void {
  * 切换 overlay 窗口显示状态
  * 如果窗口已显示则隐藏，否则显示
  */
-function toggleOverlayWindow(): void {
+function toggleOverlayWindow(force = false): void {
   if (!overlayWindow) {
     return
   }
@@ -202,7 +202,7 @@ function toggleOverlayWindow(): void {
       break
 
     case OverlayState.OPENED:
-      hideOverlayWindowBackend()
+      hideOverlayWindowBackend(force)
       break
 
     case OverlayState.OPENING:
@@ -264,7 +264,7 @@ function createTray(): void {
     {
       label: '快捷面板',
       click: () => {
-        toggleOverlayWindow()
+        toggleOverlayWindow(true)
       }
     },
     {
@@ -283,7 +283,7 @@ function createTray(): void {
 
   // 设置左键点击事件（显示快捷面板）
   tray.on('click', () => {
-    toggleOverlayWindow()
+    toggleOverlayWindow(true)
   })
 
   // 设置双击事件（显示主窗口）
