@@ -127,8 +127,9 @@ function showOverlayWindow(): void {
   setOverlayState(OverlayState.OPENING)
 
   // 显示并聚焦窗口
-  overlayWindow.show()
   overlayWindow.setBounds(overlayWindow.getBounds());
+  overlayWindow.show()
+
   overlayWindow.focus()
 
   // 注册全局 ESC 键监听（如果还没注册的话）
@@ -316,6 +317,7 @@ function initializeGlobalShortcut(): void {
 }
 
 function createWindow(): void {
+  
   // Create the browser window.
   mainWindow = new BrowserWindow({
     width: 900,
@@ -333,6 +335,9 @@ function createWindow(): void {
   mainWindow.on('ready-to-show', () => {
     // 不自动显示主窗口，由用户通过任务栏图标手动打开
     // mainWindow?.show()
+    // if (is.dev) {
+    //   mainWindow?.webContents.openDevTools()
+    // }
   })
 
   // 监听主窗口显示事件
@@ -404,7 +409,8 @@ function createOverlayWindow(): void {
       preload: join(__dirname, '../preload/index.js'),
       sandbox: false,
       nodeIntegration: false,
-      contextIsolation: true
+      contextIsolation: true,
+      backgroundThrottling: false
     }
   })
   overlayWindow.on('ready-to-show', () => {

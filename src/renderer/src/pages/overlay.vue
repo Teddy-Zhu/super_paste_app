@@ -383,19 +383,21 @@ let isScrolling = false
 // 标记是否由键盘导航触发的选择变化
 let isKeyboardNavigation = false
 
+
+
 // 将选中的元素滚动到可视区域
 const scrollToSelectedItem = () => {
   if (!clipboardScrollRef.value || clipboardHistory.value.length === 0) return
-  
+
   const container = clipboardScrollRef.value
   const cardWidth = 300 + 32 // 卡片宽度 + gap
   const selectedCardLeft = selectedIndex.value * cardWidth
   const selectedCardRight = selectedCardLeft + 300
-  
+
   const containerScrollLeft = container.scrollLeft
   const containerWidth = container.clientWidth
   const containerScrollRight = containerScrollLeft + containerWidth
-  
+
   // 检查选中的卡片是否在可视区域内
   if (selectedCardLeft < containerScrollLeft) {
     // 选中卡片在左侧外部，滚动到该卡片的左边缘
@@ -413,48 +415,76 @@ const scrollToSelectedItem = () => {
   }
 }
 
-// 处理鼠标滚轮事件
+// 处理鼠标滚轮和触摸板事件
 const handleWheel = (event: WheelEvent) => {
   // 只有在活跃状态且有剪贴板历史时才响应滚轮事件
-  if (currentAnimationState.value !== AnimationState.ACTIVE || 
-      !clipboardScrollRef.value || 
-      clipboardHistory.value.length === 0) {
+  if (currentAnimationState.value !== AnimationState.ACTIVE ||
+    !clipboardScrollRef.value ||
+    clipboardHistory.value.length === 0) {
     return
   }
-  
-  // 阻止默认的垂直滚动
+
+  // 阻止默认的滚动行为
   event.preventDefault()
-  
+
   // 节流控制，防止过度频繁的滚动
   if (isScrolling) return
-  
+
   isScrolling = true
-  
-  // 计算平滑滚动的目标位置
-  const scrollAmount = event.deltaY * 10
+
+  // 检查是否为水平滚动（触摸板左右滑动）
+  const isHorizontalScroll = Math.abs(event.deltaX) > Math.abs(event.deltaY)
+
+  // 确定滚动方向和滚动量
+  let scrollAmount = 0
+  // let scrollDirection = ''
+
+  if (isHorizontalScroll && Math.abs(event.deltaX) > 3) {
+    // 触摸板水平滑动 - 进行水平滚动
+    scrollAmount = event.deltaX * 6 // 水平滚动速度调节，稍微降低敏感度
+    // scrollDirection = event.deltaX > 0 ? '向右' : '向左'
+    // console.log('[前端] 触摸板水平滑动:', { deltaX: event.deltaX, deltaY: event.deltaY, scrollDirection })
+  } else {
+    // 垂直滚动 - 也进行水平滚动（保持原有行为）
+    scrollAmount = event.deltaY * 10
+    // scrollDirection = event.deltaY > 0 ? '向下转右' : '向上转左'
+  }
+
   const currentScrollLeft = clipboardScrollRef.value.scrollLeft
   const maxScrollLeft = clipboardScrollRef.value.scrollWidth - clipboardScrollRef.value.clientWidth
-  
+
   // 边界检查，确保不会超出滚动范围
   const targetScrollLeft = Math.max(0, Math.min(maxScrollLeft, currentScrollLeft + scrollAmount))
-  
+
   // 如果已经到达边界，不执行滚动
   if (targetScrollLeft === currentScrollLeft) {
     isScrolling = false
     return
   }
-  
+
   // 使用平滑滚动
   clipboardScrollRef.value.scrollTo({
     left: targetScrollLeft,
     behavior: 'smooth'
   })
-  
-  // 重置节流标志
+
+  if (isHorizontalScroll) {
+    // console.log('[前端] 水平滚动执行:', {
+    //   scrollAmount,
+    //   currentScrollLeft,
+    //   targetScrollLeft,
+    //   scrollDirection
+    // })
+  }
+
+  // 重置节流标志，水平滚动使用更短的间隔以提高响应性
+  const throttleDelay = isHorizontalScroll ? 10 : 30
   setTimeout(() => {
     isScrolling = false
-  }, 50) // 50ms 节流间隔
+  }, throttleDelay)
 }
+
+
 
 // 搜索状态
 const isSearchVisible = ref(false)
@@ -580,7 +610,7 @@ const toggleSearch = async (withBuffer = false) => {
 
   if (isSearchVisible.value) {
     // 隐藏搜索框，显示标签组 - 同时进行动画
-    console.log('[前端] 开始隐藏搜索框，显示标签组')
+    // console.log('[前端] 开始隐藏搜索框，显示标签组')
 
     // 设置动画状态
     isSearchAnimating.value = true
@@ -597,7 +627,7 @@ const toggleSearch = async (withBuffer = false) => {
       new Promise<void>((resolve) => {
         watch(searchCollapseState, (newState) => {
           if (newState === 'finished') {
-            console.log('[前端] 搜索框缩回动画完成')
+            // console.log('[前端] 搜索框缩回动画完成')
             resolve()
           }
         })
@@ -605,7 +635,7 @@ const toggleSearch = async (withBuffer = false) => {
       new Promise<void>((resolve) => {
         watch(tabsShowState, (newState) => {
           if (newState === 'finished') {
-            console.log('[前端] 标签组显示动画完成')
+            // console.log('[前端] 标签组显示动画完成')
             resolve()
           }
         })
@@ -617,7 +647,7 @@ const toggleSearch = async (withBuffer = false) => {
     isSearchAnimating.value = false
   } else {
     // 显示搜索框，隐藏标签组 - 同时进行动画
-    console.log('[前端] 开始显示搜索框，隐藏标签组')
+    // console.log('[前端] 开始显示搜索框，隐藏标签组')
 
     // 标记正在打开搜索框
     isOpeningSearch.value = true
@@ -667,7 +697,7 @@ const toggleSearch = async (withBuffer = false) => {
       // 追加缓冲区内容到现有搜索文本
       searchText.value += inputBuffer.value
       inputBuffer.value = '' // 清空缓冲区
-      console.log('[前端] 缓冲区内容已应用到搜索框:', searchText.value)
+      // console.log('[前端] 缓冲区内容已应用到搜索框:', searchText.value)
       // 触发搜索
       debouncedSearch(searchText.value)
     }
@@ -794,7 +824,7 @@ const loadTagStats = async () => {
     }
 
     tagStats.value = stats
-    console.log('[前端] 标签统计数据加载完成:', stats)
+    // console.log('[前端] 标签统计数据加载完成:', stats)
   } catch (error) {
     console.error('[前端] 加载标签统计数据失败:', error)
     tagStats.value = {}
@@ -976,7 +1006,7 @@ onMounted(() => {
   // 在组件挂载时就绑定键盘事件监听器
   document.addEventListener('keydown', handleKeyNavigation)
 
-  // 添加滚轮事件监听器
+  // 添加滚轮事件监听器（支持触摸板手势）
   document.addEventListener('wheel', handleWheel, { passive: false })
 
   // 预加载剪贴板历史以提高首次显示速度
@@ -1080,31 +1110,19 @@ onUnmounted(() => {
 
         <!-- 搜索输入框 -->
         <div ref="searchContainerRef" v-show="showSearchContainer" class="search-container">
-          <input
-            type="text"
-            class="search-input"
-            placeholder="Search clipboard history..."
-            v-model="searchText"
-            @input="handleSearchInput"
-            @keydown.escape="handleSearchEscape"
-          />
+          <input type="text" class="search-input" placeholder="Search clipboard history..." v-model="searchText"
+            @input="handleSearchInput" @keydown.escape="handleSearchEscape" />
         </div>
 
         <!-- 标签组 -->
         <div ref="tabsContainerRef" v-show="showTabsContainer" class="tabs-container">
-          <div v-for="tab in tabs" :key="tab.id"
-               class="tab"
-               :class="{
-                 active: tab.active,
-                 'has-count': tab.count > 0,
-                 'switching': isTagSwitching && tab.active
-               }"
-               tabindex="0"
-               role="button"
-               :aria-label="`Switch to ${tab.label} tag${tab.count > 0 ? ` (${tab.count} items)` : ''}`"
-               @click="switchTag(tab.id)"
-               @keydown.enter="switchTag(tab.id)"
-               @keydown.space.prevent="switchTag(tab.id)">
+          <div v-for="tab in tabs" :key="tab.id" class="tab" :class="{
+            active: tab.active,
+            'has-count': tab.count > 0,
+            'switching': isTagSwitching && tab.active
+          }" tabindex="0" role="button"
+            :aria-label="`Switch to ${tab.label} tag${tab.count > 0 ? ` (${tab.count} items)` : ''}`"
+            @click="switchTag(tab.id)" @keydown.enter="switchTag(tab.id)" @keydown.space.prevent="switchTag(tab.id)">
             <span class="tab-dot" :style="{ backgroundColor: tab.color }"></span>
             <span class="tab-label">{{ tab.label }}</span>
             <span v-if="tab.count > 0" class="tab-count">{{ tab.count }}</span>
@@ -1147,14 +1165,8 @@ onUnmounted(() => {
         <!-- 剪贴板历史横向滚动 -->
         <div v-else ref="clipboardScrollRef" class="clipboard-scroll-container">
           <transition-group name="clipboard-list" tag="div" class="clipboard-list-wrapper">
-            <ClipboardCard
-              v-for="(item, index) in clipboardHistory"
-              :key="item.id"
-              :item="item"
-              :index="index"
-              :is-selected="index === selectedIndex"
-              @click="restoreClipboardContent"
-            />
+            <ClipboardCard v-for="(item, index) in clipboardHistory" :key="item.id" :item="item" :index="index"
+              :is-selected="index === selectedIndex" @click="restoreClipboardContent" />
           </transition-group>
         </div>
       </div>
@@ -1173,7 +1185,7 @@ onUnmounted(() => {
   justify-content: center;
   align-items: flex-end;
   z-index: 9999;
-  background:transparent;
+  background: transparent;
 }
 
 .overlay-content {
@@ -1197,7 +1209,8 @@ onUnmounted(() => {
   background: #fef9e6;
   border-bottom: 1px solid #f0f0f0;
   backdrop-filter: blur(20px);
-  height: 56px; /* 固定高度 */
+  height: 56px;
+  /* 固定高度 */
   min-height: 56px;
   max-height: 56px;
   box-sizing: border-box;
@@ -1363,13 +1376,15 @@ onUnmounted(() => {
 
 .tab-label {
   font-size: 14px;
-  font-weight: 600; /* 固定字体粗细，避免宽度变化 */
+  font-weight: 600;
+  /* 固定字体粗细，避免宽度变化 */
   user-select: none;
 }
 
 .tab-count {
   font-size: 11px;
-  font-weight: 600; /* 固定字体粗细，避免宽度变化 */
+  font-weight: 600;
+  /* 固定字体粗细，避免宽度变化 */
   padding: 2px 6px;
   border-radius: 10px;
   min-width: 18px;
@@ -1420,9 +1435,12 @@ onUnmounted(() => {
 }
 
 @keyframes pulse {
-  0%, 100% {
+
+  0%,
+  100% {
     opacity: 1;
   }
+
   50% {
     opacity: 0.6;
   }
@@ -1435,6 +1453,7 @@ onUnmounted(() => {
     opacity: 0;
     transform: translateX(-20px);
   }
+
   to {
     opacity: 1;
     transform: translateX(0);
@@ -1492,6 +1511,7 @@ onUnmounted(() => {
 
 /* 减少动画偏好支持 */
 @media (prefers-reduced-motion: reduce) {
+
   .tab,
   .tab-dot,
   .tab-label,
@@ -1622,6 +1642,4 @@ onUnmounted(() => {
 .clipboard-scroll-container::-webkit-scrollbar-thumb:hover {
   background: #a8b1b8;
 }
-
-
 </style>
