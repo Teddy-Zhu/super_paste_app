@@ -75,7 +75,7 @@ class IpcManager {
       try {
         // 如果没有传入筛选选项，使用原有的简单获取方法
         if (!options || (Object.keys(options).length === 1 && 'limit' in options)) {
-          const history = clipboardManager.getHistory(options?.limit)
+          const history = await clipboardManager.getHistory(options?.limit)
           return {
             success: true,
             data: history
@@ -83,7 +83,7 @@ class IpcManager {
         }
 
         // 使用新的搜索方法
-        const history = clipboardManager.searchHistory(options)
+        const history = await clipboardManager.searchHistory(options)
         return {
           success: true,
           data: history
@@ -100,7 +100,7 @@ class IpcManager {
     // 还原剪贴板内容
     ipcMain.handle('clipboard-restore', async (_, itemId: string) => {
       try {
-        const success = clipboardManager.restoreClipboard(itemId)
+        const success = await clipboardManager.restoreClipboard(itemId)
         return {
           success,
           message: success ? '剪贴板内容已还原' : '还原失败，未找到指定项目'
@@ -117,7 +117,7 @@ class IpcManager {
     // 删除剪贴板历史项
     ipcMain.handle('clipboard-delete-item', async (_, itemId: string) => {
       try {
-        const success = clipboardManager.deleteHistoryItem(itemId)
+        const success = await clipboardManager.deleteHistoryItem(itemId)
         return {
           success,
           message: success ? '剪贴板项已删除' : '删除失败，未找到指定项目'
@@ -134,7 +134,7 @@ class IpcManager {
     // 清空剪贴板历史
     ipcMain.handle('clipboard-clear-history', async () => {
       try {
-        clipboardManager.clearHistory()
+        await clipboardManager.clearHistory()
         return {
           success: true,
           message: '剪贴板历史已清空'
@@ -151,9 +151,10 @@ class IpcManager {
     // 获取剪贴板管理器状态
     ipcMain.handle('clipboard-get-status', async () => {
       try {
-        const isListening = clipboardManager.isListeningActive()
-        const config = clipboardManager.getConfig()
-        const historyCount = clipboardManager.getHistory().length
+        const isListening = await clipboardManager.isListeningActive()
+        const config = await clipboardManager.getConfig()
+        const history = await clipboardManager.getHistory()
+        const historyCount = history.length
         
         return {
           success: true,
@@ -175,7 +176,7 @@ class IpcManager {
     // 启动剪贴板监听
     ipcMain.handle('clipboard-start-listening', async () => {
       try {
-        clipboardManager.startListening()
+        await clipboardManager.startListening()
         return {
           success: true,
           message: '剪贴板监听已启动'
@@ -192,7 +193,7 @@ class IpcManager {
     // 停止剪贴板监听
     ipcMain.handle('clipboard-stop-listening', async () => {
       try {
-        clipboardManager.stopListening()
+        await clipboardManager.stopListening()
         return {
           success: true,
           message: '剪贴板监听已停止'
@@ -209,7 +210,7 @@ class IpcManager {
     // 更新剪贴板管理器配置
     ipcMain.handle('clipboard-update-config', async (_, config: Partial<ClipboardManagerConfig>) => {
       try {
-        clipboardManager.updateConfig(config)
+        await clipboardManager.updateConfig(config)
         return {
           success: true,
           message: '剪贴板配置已更新'
@@ -226,7 +227,7 @@ class IpcManager {
     // 获取所有标签
     ipcMain.handle('get-all-tags', async () => {
       try {
-        const tags = clipboardManager.getAllTagGroups()
+        const tags = await clipboardManager.getAllTagGroups()
         return {
           success: true,
           data: tags
@@ -243,7 +244,7 @@ class IpcManager {
     // 创建标签
     ipcMain.handle('create-tag', async (_, data: { name: string; color: string; description?: string }) => {
       try {
-        const tagId = clipboardManager.createTagGroup(data.name, data.color, data.description)
+        const tagId = await clipboardManager.createTagGroup(data.name, data.color, data.description)
         if (tagId) {
           // 通知前端标签数据已更新
           this.notifyTagsUpdated()
@@ -270,7 +271,7 @@ class IpcManager {
     // 更新标签
     ipcMain.handle('update-tag', async (_, data: { tagId: string; updates: { name?: string; color?: string; description?: string } }) => {
       try {
-        const success = clipboardManager.updateTagGroup(data.tagId, data.updates)
+        const success = await clipboardManager.updateTagGroup(data.tagId, data.updates)
         if (success) {
           // 通知前端标签数据已更新
           this.notifyTagsUpdated()
@@ -291,7 +292,7 @@ class IpcManager {
     // 删除标签
     ipcMain.handle('delete-tag', async (_, tagId: string) => {
       try {
-        const success = clipboardManager.deleteTagGroup(tagId)
+        const success = await clipboardManager.deleteTagGroup(tagId)
         if (success) {
           // 通知前端标签数据已更新
           this.notifyTagsUpdated()

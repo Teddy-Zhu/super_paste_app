@@ -17,7 +17,7 @@ import { debounceExecution, clearAllDebounceTimers } from './utils/common'
 let overlayWindow: BrowserWindow | null = null
 let mainWindow: BrowserWindow | null = null
 let tray: Tray | null = null
-
+// app.disableHardwareAcceleration()
 // Overlay窗口状态枚举
 enum OverlayState {
   CLOSED = 'CLOSED',           // 窗口已关闭/隐藏
@@ -471,10 +471,10 @@ function closeOverlayWindow(): void {
 /**
  * 创建示例标签数据（如果不存在）
  */
-function createSampleTagsIfNeeded(): void {
+async function createSampleTagsIfNeeded(): Promise<void> {
   try {
     // 检查是否已有标签数据
-    const existingTags = clipboardManager.getAllTagGroups()
+    const existingTags = await clipboardManager.getAllTagGroups()
 
     if (existingTags.length === 0) {
       console.log('[主进程] 创建示例标签数据')
@@ -537,7 +537,7 @@ if (!gotTheLock) {
   // This method will be called when Electron has finished
   // initialization and is ready to create browser windows.
   // Some APIs can only be used after this event occurs.
-  app.whenReady().then(() => {
+  app.whenReady().then(async () => {
     // Set app user model id for windows
     electronApp.setAppUserModelId('com.electron')
 
@@ -548,16 +548,16 @@ if (!gotTheLock) {
     ipcManager.initialize()
 
     // 初始化剪贴板管理器
-    clipboardManager.initialize({
+    await clipboardManager.initialize({
       checkInterval: 200,
       enableAutoSave: true
     })
 
     // 启动剪贴板监听
-    clipboardManager.startListening()
+    await clipboardManager.startListening()
 
     // 创建示例标签数据（仅在开发环境或首次运行时）
-    createSampleTagsIfNeeded()
+    await createSampleTagsIfNeeded()
 
     // 预先创建 overlay 窗口（初始化状态，保持隐藏）
     // 全局快捷键将在窗口的 ready-to-show 事件中初始化
