@@ -94,6 +94,8 @@ const loadClipboardHistory = async (options?: ClipboardHistoryQueryOptions): Pro
 
     // 数据加载完成后，确保选中的项目可见
     nextTick(() => {
+      // 确保 smooth-scrollbar 已初始化
+      scrollManagement.initializeScrollbar()
       scrollManagement.scrollToSelectedItem()
     })
 
@@ -105,10 +107,10 @@ const loadClipboardHistory = async (options?: ClipboardHistoryQueryOptions): Pro
     const overlayError = error instanceof OverlayError
       ? error
       : new OverlayError(
-          '加载剪贴板历史时发生未知错误',
-          OverlayErrorCode.CLIPBOARD_LOAD_FAILED,
-          { originalError: error, options }
-        )
+        '加载剪贴板历史时发生未知错误',
+        OverlayErrorCode.CLIPBOARD_LOAD_FAILED,
+        { originalError: error, options }
+      )
 
     // 重置为空数组，确保UI不会崩溃
     clipboardHistory.value = []
@@ -260,10 +262,10 @@ const restoreClipboardContent = async (itemId: string): Promise<void> => {
     const overlayError = error instanceof OverlayError
       ? error
       : new OverlayError(
-          '还原剪贴板时发生未知错误',
-          OverlayErrorCode.CLIPBOARD_LOAD_FAILED,
-          { originalError: error, itemId }
-        )
+        '还原剪贴板时发生未知错误',
+        OverlayErrorCode.CLIPBOARD_LOAD_FAILED,
+        { originalError: error, itemId }
+      )
 
     console.error('[前端] 剪贴板还原错误:', overlayError)
     // 可以在这里添加用户通知逻辑，比如显示错误提示
@@ -653,6 +655,12 @@ onMounted(async () => {
     await Promise.allSettled(preloadPromises)
     console.log('[前端] 数据预加载完成')
 
+    // 初始化 smooth-scrollbar（在数据加载完成后）
+    nextTick(() => {
+      scrollManagement.initializeScrollbar()
+      console.log('[前端] smooth-scrollbar 已初始化')
+    })
+
     // 监听剪贴板历史更新通知（使用节流避免频繁更新）
     removeClipboardUpdateListener = onSimple('clipboard-history-updated', (data) => {
       console.log('[前端] 收到剪贴板历史更新通知:', data)
@@ -754,6 +762,14 @@ onUnmounted(() => {
       console.warn('[前端] 清理搜索逻辑资源失败:', error)
     }
 
+    // 清理 smooth-scrollbar 实例
+    try {
+      scrollManagement.destroyScrollbar()
+      console.log('[前端] smooth-scrollbar 实例已清理')
+    } catch (error) {
+      console.warn('[前端] 清理 smooth-scrollbar 实例失败:', error)
+    }
+
     console.log('[前端] Overlay 组件资源清理完成')
   } catch (error) {
     console.error('[前端] Overlay 组件资源清理失败:', error)
@@ -777,8 +793,9 @@ onUnmounted(() => {
 
         <!-- 搜索输入框 -->
         <div ref="searchContainerRef" v-show="searchAnimation.showSearchContainer" class="search-container">
-          <input type="text" class="search-input" placeholder="Search clipboard history..." :value="searchLogic.searchText.value"
-            @input="searchLogic.handleSearchInput" @keydown.escape="handleSearchEscape" />
+          <input type="text" class="search-input" placeholder="Search clipboard history..."
+            :value="searchLogic.searchText.value" @input="searchLogic.handleSearchInput"
+            @keydown.escape="handleSearchEscape" />
         </div>
 
         <!-- 标签组 -->
@@ -789,7 +806,8 @@ onUnmounted(() => {
             'switching': tagManagement.isTagSwitching.value && tab.active
           }" tabindex="0" role="button"
             :aria-label="`Switch to ${tab.label} tag${tab.count > 0 ? ` (${tab.count} items)` : ''}`"
-            @click="handleTagSwitch(tab.id)" @keydown.enter="handleTagSwitch(tab.id)" @keydown.space.prevent="handleTagSwitch(tab.id)">
+            @click="handleTagSwitch(tab.id)" @keydown.enter="handleTagSwitch(tab.id)"
+            @keydown.space.prevent="handleTagSwitch(tab.id)">
             <span class="tab-dot" :style="{ backgroundColor: tab.color }"></span>
             <span class="tab-label">{{ tab.label }}</span>
             <span v-if="tab.count > 0" class="tab-count">{{ tab.count }}</span>
@@ -1231,9 +1249,15 @@ onUnmounted(() => {
   padding-top: 15px;
   padding-left: 20px;
   padding-bottom: 15px;
-  overflow-x: auto;
-  overflow-y: hidden;
-  scroll-behavior: smooth;
+  /* smooth-scrollbar 会处理滚动，移除原生滚动设置 */
+  overflow: hidden;
+  /* 为 smooth-scrollbar 提供足够的高度 */
+  /* height: calc(100vh - 56px - 30px); 减去工具栏高度和内边距 */
+}
+
+:global(.clipboard-scroll-container .scroll-content) {
+  transition: transform 0.4s ease;
+
 }
 
 .clipboard-list-wrapper {
@@ -1292,21 +1316,22 @@ onUnmounted(() => {
   height: 0;
 }
 
-.clipboard-scroll-container::-webkit-scrollbar {
-  height: 0px;
+/* smooth-scrollbar 样式覆盖 - 确保滚动条完全隐藏 */
+.clipboard-scroll-container :deep(.scrollbar-track) {
+  display: none !important;
 }
 
-.clipboard-scroll-container::-webkit-scrollbar-track {
-  background: #f1f3f4;
-  border-radius: 3px;
+.clipboard-scroll-container :deep(.scrollbar-thumb) {
+  display: none !important;
 }
 
-.clipboard-scroll-container::-webkit-scrollbar-thumb {
-  background: #c1c8cd;
-  border-radius: 3px;
+.clipboard-scroll-container :deep(.scrollbar-track-x),
+.clipboard-scroll-container :deep(.scrollbar-track-y) {
+  display: none !important;
 }
 
-.clipboard-scroll-container::-webkit-scrollbar-thumb:hover {
-  background: #a8b1b8;
+.clipboard-scroll-container :deep(.scrollbar-thumb-x),
+.clipboard-scroll-container :deep(.scrollbar-thumb-y) {
+  display: none !important;
 }
 </style>

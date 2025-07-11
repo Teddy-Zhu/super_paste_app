@@ -46,6 +46,7 @@
     "pinia-plugin-persistedstate": "^4.4.1",
     "prettier": "^3.5.3",
     "rtf-to-html-converter": "^1.2.4",
+    "smooth-scrollbar": "^8.8.4",
     "typescript": "^5.8.3",
     "unplugin-auto-import": "^19.3.0",
     "unplugin-icons": "^22.1.0",
@@ -64,6 +65,7 @@
     "onlyBuiltDependencies": [
       "@paymoapp/active-window",
       "better-sqlite3",
+      "core-js",
       "electron",
       "esbuild",
       "get-windows",

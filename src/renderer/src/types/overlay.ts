@@ -102,6 +102,8 @@ export interface ScrollManager {
   scrollToSelectedItem: () => void
   handleWheel: (event: WheelEvent) => void
   ensureSelectedItemVisible: () => void
+  initializeScrollbar: () => void
+  destroyScrollbar: () => void
 }
 
 // 标签数据类型
