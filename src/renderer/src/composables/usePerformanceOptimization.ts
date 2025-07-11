@@ -257,12 +257,12 @@ export function useBatchUpdate<T>(
   const timeoutRef = ref<NodeJS.Timeout | null>(null)
 
   const addUpdate = (item: T) => {
-    pendingUpdates.value.push(item)
-    
+    (pendingUpdates.value as T[]).push(item)
+
     if (!timeoutRef.value) {
       timeoutRef.value = setTimeout(() => {
         if (pendingUpdates.value.length > 0) {
-          updateFn([...pendingUpdates.value])
+          updateFn([...(pendingUpdates.value as T[])])
           pendingUpdates.value = []
         }
         timeoutRef.value = null
@@ -275,9 +275,9 @@ export function useBatchUpdate<T>(
       clearTimeout(timeoutRef.value)
       timeoutRef.value = null
     }
-    
+
     if (pendingUpdates.value.length > 0) {
-      updateFn([...pendingUpdates.value])
+      updateFn([...(pendingUpdates.value as T[])])
       pendingUpdates.value = []
     }
   }

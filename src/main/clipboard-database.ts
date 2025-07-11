@@ -515,6 +515,31 @@ class ClipboardDatabase {
   }
 
   /**
+   * 获取指定时间戳之前的过期记录ID列表（排除有标签的记录）
+   */
+  public getExpiredRecordIds(beforeTimestamp: number): string[] {
+    if (!this.db) throw new Error('数据库未初始化')
+
+    try {
+      const querySQL = `
+        SELECT content_id
+        FROM clipboard_history
+        WHERE timestamp < ?
+        AND content_id NOT IN (
+          SELECT DISTINCT content_id FROM clipboard_history_tags
+        )
+      `
+      const stmt = this.db.prepare(querySQL)
+      const results = stmt.all(beforeTimestamp) as Array<{ content_id: string }>
+
+      return results.map(result => result.content_id)
+    } catch (error) {
+      console.error('[剪贴板数据库] 获取过期记录ID失败:', error)
+      return []
+    }
+  }
+
+  /**
    * 获取数据库实例（用于高级操作，如事务）
    */
   public getDatabase(): Database.Database | null {

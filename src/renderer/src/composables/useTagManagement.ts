@@ -121,10 +121,10 @@ export function useTagManagement(
 
   return {
     // 状态
-    allTags: readonly(allTags),
-    activeTagId: readonly(activeTagId),
-    isTagSwitching: readonly(isTagSwitching),
-    tagStats: readonly(tagStats),
+    allTags,
+    activeTagId,
+    isTagSwitching,
+    tagStats,
     tabs,
 
     // 方法

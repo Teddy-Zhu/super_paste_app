@@ -4,7 +4,6 @@
  */
 
 import { ref, nextTick, readonly } from 'vue'
-import type { ClipboardHistoryQueryOptions } from '@renderer/api/types'
 import type { SearchManager } from '@renderer/types/overlay'
 import { useDebounce } from './usePerformanceOptimization'
 

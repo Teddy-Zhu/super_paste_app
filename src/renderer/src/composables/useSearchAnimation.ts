@@ -182,8 +182,8 @@ export function useSearchAnimation(
     isSearchVisible: readonly(isSearchVisible),
     isSearchAnimating: readonly(isSearchAnimating),
     isOpeningSearch: readonly(isOpeningSearch),
-    showSearchContainer: readonly(showSearchContainer),
-    showTabsContainer: readonly(showTabsContainer),
+    showSearchContainer,
+    showTabsContainer,
 
     // 内部状态修改方法（仅供内部使用）
     _setSearchVisible: (value: boolean) => { isSearchVisible.value = value },

@@ -2,7 +2,6 @@ import clipboardDatabase from '../clipboard-database'
 import type { 
   ClipboardContent, 
   TagGroup, 
-  AppInfo,
   ClipboardHistoryRecord,
   TagGroupRecord,
   AppInfoRecord,
@@ -129,7 +128,28 @@ export class DatabaseService {
    * 创建标签组
    */
   public createTagGroup(params: { name: string, color: string, description?: string }): string | null {
-    return clipboardDatabase.createTagGroup(params.name, params.color, params.description)
+    try {
+      // 生成标签ID和时间戳
+      const tagId = `tag_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`
+      const now = Date.now()
+
+      // 构造TagGroup对象
+      const tag: TagGroup = {
+        id: tagId,
+        name: params.name,
+        color: params.color,
+        description: params.description,
+        createdAt: now,
+        updatedAt: now
+      }
+
+      // 调用数据库方法创建标签组
+      const success = clipboardDatabase.createTagGroup(tag)
+      return success ? tagId : null
+    } catch (error) {
+      console.error('[数据库服务] 创建标签组失败:', error)
+      return null
+    }
   }
 
   /**
@@ -171,7 +191,7 @@ export class DatabaseService {
    * 获取标签统计信息
    */
   public getTagStats(): Array<{ tagId: string, tagName: string, recordCount: number }> {
-    return clipboardDatabase.getTagStats()
+    return clipboardDatabase.getTagGroupStats()
   }
 
   // ==================== 应用信息操作 ====================
