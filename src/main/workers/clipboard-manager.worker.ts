@@ -1,4 +1,5 @@
 import { parentPort } from 'node:worker_threads'
+import { HashUtils } from '../utils/common'
 import type {
   WorkerMessage,
   WorkerRequest,
@@ -179,14 +180,7 @@ class ClipboardManagerWorker {
    * 生成快速哈希
    */
   private generateQuickHash(content: any): string {
-    const contentStr = JSON.stringify(content)
-    let hash = 0
-    for (let i = 0; i < contentStr.length; i++) {
-      const char = contentStr.charCodeAt(i)
-      hash = ((hash << 5) - hash) + char
-      hash = hash & hash
-    }
-    return hash.toString()
+    return HashUtils.generateQuickHash(content)
   }
 
   /**
@@ -295,15 +289,7 @@ class ClipboardManagerWorker {
         orderDirection: 'DESC'
       })
 
-      this.historyItems = recordsWithTags.map((recordWithTags: any) => {
-        const tags = recordWithTags.tags.map((tagRecord: any) =>
-          ClipboardDataConverter.tagRecordToTag(tagRecord)
-        )
-        const sourceAppInfo = recordWithTags.appInfo ?
-          ClipboardDataConverter.appRecordToAppInfo(recordWithTags.appInfo) :
-          undefined
-        return ClipboardDataConverter.recordToItem(recordWithTags, tags, sourceAppInfo)
-      })
+      this.historyItems = ClipboardDataConverter.batchRecordsToItems(recordsWithTags)
 
       console.log('[剪贴板管理器 Worker] 从数据库加载了', this.historyItems.length, '条历史记录')
     } catch (error) {
@@ -692,15 +678,7 @@ class ClipboardManagerWorker {
         orderDirection: 'DESC'
       })
 
-      return recordsWithTags.map((recordWithTags: any) => {
-        const tags = recordWithTags.tags.map((tagRecord: any) =>
-          ClipboardDataConverter.tagRecordToTag(tagRecord)
-        )
-        const sourceAppInfo = recordWithTags.appInfo ?
-          ClipboardDataConverter.appRecordToAppInfo(recordWithTags.appInfo) :
-          undefined
-        return ClipboardDataConverter.recordToItem(recordWithTags, tags, sourceAppInfo)
-      })
+      return ClipboardDataConverter.batchRecordsToItems(recordsWithTags)
     } catch (error) {
       console.error('[剪贴板管理器 Worker] 按标签筛选记录失败:', error)
       return []
@@ -718,15 +696,7 @@ class ClipboardManagerWorker {
         orderDirection: 'DESC'
       })
 
-      return recordsWithTags.map((recordWithTags: any) => {
-        const tags = recordWithTags.tags.map((tagRecord: any) =>
-          ClipboardDataConverter.tagRecordToTag(tagRecord)
-        )
-        const sourceAppInfo = recordWithTags.appInfo ?
-          ClipboardDataConverter.appRecordToAppInfo(recordWithTags.appInfo) :
-          undefined
-        return ClipboardDataConverter.recordToItem(recordWithTags, tags, sourceAppInfo)
-      })
+      return ClipboardDataConverter.batchRecordsToItems(recordsWithTags)
     } catch (error) {
       console.error('[剪贴板管理器 Worker] 按解析类型筛选记录失败:', error)
       return []
@@ -768,15 +738,7 @@ class ClipboardManagerWorker {
         orderDirection: options.orderDirection || 'DESC'
       })
 
-      return recordsWithTags.map((recordWithTags: any) => {
-        const tags = recordWithTags.tags.map((tagRecord: any) =>
-          ClipboardDataConverter.tagRecordToTag(tagRecord)
-        )
-        const sourceAppInfo = recordWithTags.appInfo ?
-          ClipboardDataConverter.appRecordToAppInfo(recordWithTags.appInfo) :
-          undefined
-        return ClipboardDataConverter.recordToItem(recordWithTags, tags, sourceAppInfo)
-      })
+      return ClipboardDataConverter.batchRecordsToItems(recordsWithTags)
     } catch (error) {
       console.error('[剪贴板管理器 Worker] 搜索历史记录失败:', error)
       return []

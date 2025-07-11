@@ -1,34 +1,33 @@
 <script setup lang="ts">
 import { nextTick } from 'vue'
 import { send, onSimple } from '@renderer/api'
-import { clipboard, tags } from '@renderer/api/renderer-api'
-import type { ClipboardItem, ClipboardHistoryQueryOptions, TagGroup } from '@renderer/api/types'
+import { clipboard } from '@renderer/api/renderer-api'
+import type { ClipboardItem, ClipboardHistoryQueryOptions } from '@renderer/api/types'
+import {
+  OverlayError,
+  OverlayErrorCode,
+  isClipboardItem
+} from '@renderer/types/overlay'
 
+// 导入 composables
+import { useOverlayAnimation, AnimationState } from '@renderer/composables/useOverlayAnimation'
+import { useSearchAnimation } from '@renderer/composables/useSearchAnimation'
+import { useSearch } from '@renderer/composables/useSearch'
+import { useKeyboardNavigation } from '@renderer/composables/useKeyboardNavigation'
+import { useScrollManagement } from '@renderer/composables/useScrollManagement'
+import { useTagManagement } from '@renderer/composables/useTagManagement'
+import { useThrottle } from '@renderer/composables/usePerformanceOptimization'
+// import { useEventListenerManager, useMemoryLeakGuard } from '@renderer/composables/usePerformanceOptimization'
+
+// DOM 引用
 const overlayContentRef = ref<HTMLElement>()
 const clipboardScrollRef = ref<HTMLElement>()
+const searchContainerRef = ref<HTMLElement>()
+const tabsContainerRef = ref<HTMLElement>()
 
 // 剪贴板历史记录
 const clipboardHistory = ref<ClipboardItem[]>([])
 const selectedIndex = ref(0)
-
-// 动画配置
-const ANIMATION_DURATION = 200
-const SLIDE_IN_EASING = 'cubic-bezier(0.25, 0.46, 0.45, 0.94)'
-const SLIDE_OUT_EASING = 'cubic-bezier(0.55, 0.06, 0.68, 0.19)'
-
-// 前端动画状态枚举
-enum AnimationState {
-  IDLE = 'IDLE',                    // 空闲状态
-  SLIDING_IN = 'SLIDING_IN',        // 正在滑入
-  ACTIVE = 'ACTIVE',                // 活跃状态（可交互）
-  SLIDING_OUT = 'SLIDING_OUT'       // 正在滑出
-}
-
-// 当前动画状态
-const currentAnimationState = ref<AnimationState>(AnimationState.IDLE)
-
-// 标记载入动画是否完成（保持向后兼容）
-const isSlideInComplete = ref(false)
 
 // 存储监听器取消函数
 let removeSlideInListener: (() => void) | null = null
@@ -36,95 +35,30 @@ let removeCloseListener: (() => void) | null = null
 let removeClipboardUpdateListener: (() => void) | null = null
 let removeTagsUpdateListener: (() => void) | null = null
 
-/**
- * 设置动画状态
- */
-function setAnimationState(newState: AnimationState): void {
-  // const oldState = currentAnimationState.value
-  currentAnimationState.value = newState
-  // console.log(`[前端] 动画状态变更: ${oldState} -> ${newState}`)
+// 监听器状态标志
+let isCloseListenerSetup = false
 
-  // 更新兼容性标记
-  isSlideInComplete.value = newState === AnimationState.ACTIVE
-}
+// 初始化 composables
+const overlayAnimation = useOverlayAnimation(overlayContentRef)
+const searchAnimation = useSearchAnimation(searchContainerRef, tabsContainerRef)
 
-/**
- * 检查是否可以开始关闭动画
- */
-function canStartClosing(): boolean {
-  return currentAnimationState.value === AnimationState.ACTIVE
-}
+// 创建节流的剪贴板历史更新函数（500ms 节流，避免频繁更新）
+const [throttledLoadClipboardHistory, cancelThrottledLoad] = useThrottle(
+  () => {
+    console.log('[前端] 执行节流的剪贴板历史更新')
+    loadClipboardHistory().catch(error => {
+      console.warn('[前端] 节流重新加载剪贴板历史失败:', error)
+    })
+  },
+  500 // 500ms 节流间隔
+)
 
-/**
- * 检查是否正在进行动画
- */
-function isAnimating(): boolean {
-  return currentAnimationState.value === AnimationState.SLIDING_IN ||
-    currentAnimationState.value === AnimationState.SLIDING_OUT
-}
-
-// 创建滑入动画
-const createSlideInAnimation = () => {
-  return useAnimate(overlayContentRef, [
-    { transform: 'translateY(100%)' },
-    { transform: 'translateY(0%)' }
-  ], {
-    duration: ANIMATION_DURATION,
-    easing: SLIDE_IN_EASING,
-    fill: 'forwards'
-  })
-}
-
-// 创建滑出动画
-const createSlideOutAnimation = () => {
-  return useAnimate(overlayContentRef, [
-    { transform: 'translateY(0%)' },
-    { transform: 'translateY(100%)' }
-  ], {
-    duration: ANIMATION_DURATION,
-    easing: SLIDE_OUT_EASING,
-    fill: 'forwards'
-  })
-}
-
-// 关闭窗口
-const closeWindow = async () => {
-  // 检查是否可以开始关闭
-  if (!canStartClosing()) {
-    console.log(`[前端] 当前状态为 ${currentAnimationState.value}，无法开始关闭`)
-    return
-  }
-
-  console.log('[前端] 开始关闭窗口流程')
-
-  // 设置状态为正在滑出
-  setAnimationState(AnimationState.SLIDING_OUT)
-
-  const { play: playSlideOut, playState } = createSlideOutAnimation()
-  playSlideOut()
-
-  // 等待动画完成后关闭窗口
-  watch(playState, (newState) => {
-    if (newState === 'finished') {
-      // console.log('[前端] 滑出动画完成，通知后端关闭窗口')
-      resetState()
-      send('close-overlay-window')
-    }
-  })
-}
-
-// 设置关闭事件监听器
-const setupCloseEventListeners = () => {
-  // 监听来自主进程的关闭窗口信号
-  removeCloseListener = onSimple('trigger-close-window', handleCloseWindow)
-}
-
-// 获取剪贴板历史记录
-const loadClipboardHistory = async (options?: ClipboardHistoryQueryOptions) => {
+// 获取剪贴板历史记录（带类型验证和错误处理）
+const loadClipboardHistory = async (options?: ClipboardHistoryQueryOptions): Promise<void> => {
   try {
     // 使用 searchHistory 替代 getHistory，支持更多筛选选项
     const defaultOptions: ClipboardHistoryQueryOptions = {
-      limit: 200, // 获取最近12条记录，适合网格布局
+      limit: 200, // 获取最近200条记录
       orderBy: 'last_used',
       orderDirection: 'DESC'
     }
@@ -132,975 +66,698 @@ const loadClipboardHistory = async (options?: ClipboardHistoryQueryOptions) => {
     const queryOptions = { ...defaultOptions, ...options }
     const history = await clipboard.searchHistory(queryOptions)
 
+    // 类型验证：确保返回的数据是有效的剪贴板项目数组
+    if (!Array.isArray(history)) {
+      throw new OverlayError(
+        '剪贴板历史数据格式无效：不是数组',
+        OverlayErrorCode.CLIPBOARD_LOAD_FAILED,
+        { receivedType: typeof history, queryOptions }
+      )
+    }
+
+    // 验证每个项目的类型
+    const validHistory = history.filter((item, index) => {
+      if (!isClipboardItem(item)) {
+        console.warn(`[前端] 跳过无效的剪贴板项目 (索引 ${index}):`, item)
+        return false
+      }
+      return true
+    })
+
     // 直接更新数据
-    clipboardHistory.value = history
+    clipboardHistory.value = validHistory
 
     // 重置选中索引，但保持在有效范围内
-    if (selectedIndex.value >= history.length) {
-      selectedIndex.value = Math.max(0, history.length - 1)
+    if (selectedIndex.value >= validHistory.length) {
+      selectedIndex.value = Math.max(0, validHistory.length - 1)
     }
 
     // 数据加载完成后，确保选中的项目可见
     nextTick(() => {
-      scrollToSelectedItem()
+      scrollManagement.scrollToSelectedItem()
     })
+
+    console.log(`[前端] 成功加载 ${validHistory.length} 条剪贴板历史记录`)
   } catch (error) {
     console.error('获取剪贴板历史失败:', error)
+
+    // 创建结构化错误
+    const overlayError = error instanceof OverlayError
+      ? error
+      : new OverlayError(
+          '加载剪贴板历史时发生未知错误',
+          OverlayErrorCode.CLIPBOARD_LOAD_FAILED,
+          { originalError: error, options }
+        )
+
+    // 重置为空数组，确保UI不会崩溃
     clipboardHistory.value = []
+    selectedIndex.value = 0
+
+    // 可以在这里添加用户通知逻辑
+    console.error('[前端] 剪贴板历史加载错误:', overlayError)
   }
 }
 
+const tagManagement = useTagManagement(loadClipboardHistory)
 
-
-// 还原剪贴板内容
-const restoreClipboardContent = async (itemId: string) => {
+/**
+ * 执行搜索的回调函数
+ * 根据搜索文本过滤剪贴板历史记录
+ *
+ * @param text - 搜索文本，为空时显示所有记录
+ */
+const performSearchCallback = async (text: string): Promise<void> => {
   try {
-    const success = await clipboard.restore(itemId)
-    if (success) {
-      console.log('剪贴板内容已还原')
-      // 还原成功后关闭窗口
-      closeWindow()
-    } else {
-      console.error('还原剪贴板失败')
-    }
-  } catch (error) {
-    console.error('还原剪贴板失败:', error)
-  }
-}
-
-// 处理键盘导航
-const handleKeyNavigation = (event: KeyboardEvent) => {
-  // 检查是否按住了 Ctrl (Windows/Linux) 或 Cmd (macOS)
-  const isCtrlOrCmd = event.ctrlKey || event.metaKey
-
-  // 如果搜索框已打开且获得焦点，只处理特定的导航键，其他键让搜索框处理
-  if (isSearchVisible.value) {
-    const searchInput = document.querySelector('.search-input') as HTMLInputElement
-    const isSearchInputFocused = searchInput && document.activeElement === searchInput
-
-    if (isSearchInputFocused) {
-      // 搜索框有焦点时，只处理特定的导航键
-      switch (event.key) {
-        case 'Escape':
-          event.preventDefault()
-          console.log('esc1')
-          toggleSearch()
-          break
-        case 'ArrowDown':
-          // 如果有剪贴板历史，从搜索框移动到第一个项目
-          if (clipboardHistory.value.length > 0) {
-            event.preventDefault()
-            searchInput.blur()
-            selectedIndex.value = 0
-            isKeyboardNavigation = true
-          }
-          break
-        default:
-          // 其他键让搜索框自然处理，不干预
-          return
-      }
-      return
-    }
-  }
-
-  // 如果没有剪贴板历史，只处理输入字符和ESC键
-  if (clipboardHistory.value.length === 0) {
-    switch (event.key) {
-      case 'Escape':
-        event.preventDefault()
-        if (isSearchVisible.value) {
-          toggleSearch()
-        } else {
-          closeWindow()
-        }
-        break
-      default:
-        // 检查是否为可输入字符
-        if (isInputCharacter(event)) {
-          handleInputCharacter(event)
-        }
-        break
-    }
-    return
-  }
-
-  // 有剪贴板历史时的完整键盘处理
-  switch (event.key) {
-    case 'ArrowLeft':
-      event.preventDefault()
-      isKeyboardNavigation = true
-      if (isCtrlOrCmd) {
-        // Ctrl/Cmd + ArrowLeft：大幅度滚动（跳转5个位置）
-        selectedIndex.value = Math.max(0, selectedIndex.value - 5)
-      } else {
-        // 普通方向键：单步移动
-        selectedIndex.value = Math.max(0, selectedIndex.value - 1)
-      }
-      break
-    case 'ArrowUp':
-      event.preventDefault()
-      isKeyboardNavigation = true
-      if (isCtrlOrCmd) {
-        // Ctrl/Cmd + ArrowUp：移动到第一个
-        selectedIndex.value = 0
-      } else {
-        // 普通方向键：单步移动
-        selectedIndex.value = Math.max(0, selectedIndex.value - 1)
-      }
-      break
-    case 'ArrowDown':
-      event.preventDefault()
-      isKeyboardNavigation = true
-      if (isCtrlOrCmd) {
-        // Ctrl/Cmd + ArrowDown：移动到最后一个
-        selectedIndex.value = clipboardHistory.value.length - 1
-      } else {
-        // 普通方向键：单步移动
-        selectedIndex.value = Math.min(clipboardHistory.value.length - 1, selectedIndex.value + 1)
-      }
-      break
-    case 'ArrowRight':
-      event.preventDefault()
-      isKeyboardNavigation = true
-      if (isCtrlOrCmd) {
-        // Ctrl/Cmd + ArrowRight：大幅度滚动（跳转5个位置）
-        selectedIndex.value = Math.min(clipboardHistory.value.length - 1, selectedIndex.value + 5)
-      } else {
-        // 普通方向键：单步移动
-        selectedIndex.value = Math.min(clipboardHistory.value.length - 1, selectedIndex.value + 1)
-      }
-      break
-    case 'Home':
-      // Home 键：跳转到第一个项目
-      if (isCtrlOrCmd) {
-        event.preventDefault()
-        isKeyboardNavigation = true
-        selectedIndex.value = 0
-      }
-      break
-    case 'End':
-      // End 键：跳转到最后一个项目
-      if (isCtrlOrCmd) {
-        event.preventDefault()
-        isKeyboardNavigation = true
-        selectedIndex.value = clipboardHistory.value.length - 1
-      }
-      break
-    case 'Enter':
-      event.preventDefault()
-      if (clipboardHistory.value[selectedIndex.value]) {
-        restoreClipboardContent(clipboardHistory.value[selectedIndex.value].id)
-      }
-      break
-    case 'Escape':
-      event.preventDefault()
-      if (isSearchVisible.value) {
-        toggleSearch()
-      } else {
-        closeWindow()
-      }
-      break
-    default:
-      // 检查是否为可输入字符
-      if (isInputCharacter(event)) {
-        handleInputCharacter(event)
-      }
-      break
-  }
-}
-
-// 处理输入字符
-const handleInputCharacter = (event: KeyboardEvent) => {
-  // 如果搜索框未完全打开（未打开或正在打开动画中），则缓存字符
-  if (!isSearchVisible.value || isOpeningSearch.value || isSearchAnimating.value) {
-    // 阻止默认行为，防止字符丢失
-    event.preventDefault()
-
-    // 将字符添加到缓冲区
-    inputBuffer.value += event.key
-    console.log('[前端] 字符已缓存到输入缓冲区:', inputBuffer.value)
-
-    // 如果搜索框完全未打开，则开始打开
-    if (!isSearchVisible.value && !isOpeningSearch.value) {
-      toggleSearch(true) // 传入 true 表示使用缓冲区
-    }
-  } else {
-    // 搜索框已完全打开且动画完成，确保焦点在搜索框上
-    const searchInput = document.querySelector('.search-input') as HTMLInputElement
-    if (searchInput && document.activeElement !== searchInput) {
-      // 如果搜索框没有焦点，给它焦点
-      searchInput.focus()
-      // 将当前字符添加到缓冲区，然后应用
-      inputBuffer.value += event.key
-      event.preventDefault()
-
-      // 立即应用缓冲区内容
-      if (inputBuffer.value) {
-        searchText.value += inputBuffer.value
-        inputBuffer.value = '' // 清空缓冲区
-
-        // 将光标移动到末尾
-        nextTick(() => {
-          if (searchInput) {
-            searchInput.setSelectionRange(searchText.value.length, searchText.value.length)
-          }
-        })
-      }
-    }
-    // 如果搜索框已有焦点，不做任何处理，让默认行为处理输入
-  }
-}
-
-// 检查是否为可输入字符
-const isInputCharacter = (event: KeyboardEvent): boolean => {
-  // 排除功能键和修饰键
-  if (event.ctrlKey || event.metaKey || event.altKey) {
-    return false
-  }
-
-  // 排除特殊键
-  const excludedKeys = [
-    'ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown',
-    'Home', 'End', 'PageUp', 'PageDown',
-    'Tab', 'Enter', 'Escape', 'Backspace', 'Delete',
-    'Insert', 'F1', 'F2', 'F3', 'F4', 'F5', 'F6',
-    'F7', 'F8', 'F9', 'F10', 'F11', 'F12',
-    'CapsLock', 'NumLock', 'ScrollLock',
-    'Shift', 'Control', 'Alt', 'Meta'
-  ]
-
-  if (excludedKeys.includes(event.key)) {
-    return false
-  }
-
-  // 检查是否为可打印字符（长度为1的字符通常是可打印的）
-  return event.key.length === 1
-}
-
-
-
-// 滚动节流控制
-let isScrolling = false
-// 标记是否由键盘导航触发的选择变化
-let isKeyboardNavigation = false
-
-
-
-// 将选中的元素滚动到可视区域
-const scrollToSelectedItem = () => {
-  if (!clipboardScrollRef.value || clipboardHistory.value.length === 0) return
-
-  const container = clipboardScrollRef.value
-  const cardWidth = 300 + 32 // 卡片宽度 + gap
-  const selectedCardLeft = selectedIndex.value * cardWidth
-  const selectedCardRight = selectedCardLeft + 300
-
-  const containerScrollLeft = container.scrollLeft
-  const containerWidth = container.clientWidth
-  const containerScrollRight = containerScrollLeft + containerWidth
-
-  // 检查选中的卡片是否在可视区域内
-  if (selectedCardLeft < containerScrollLeft) {
-    // 选中卡片在左侧外部，滚动到该卡片的左边缘
-    container.scrollTo({
-      left: Math.max(0, selectedCardLeft - 20), // 添加一些边距，确保不为负数
-      behavior: 'smooth'
-    })
-  } else if (selectedCardRight > containerScrollRight) {
-    // 选中卡片在右侧外部，滚动到该卡片的右边缘
-    const maxScrollLeft = container.scrollWidth - container.clientWidth
-    container.scrollTo({
-      left: Math.min(maxScrollLeft, selectedCardRight - containerWidth + 20), // 添加一些边距，确保不超出最大值
-      behavior: 'smooth'
-    })
-  }
-}
-
-// 处理鼠标滚轮和触摸板事件
-const handleWheel = (event: WheelEvent) => {
-  // 只有在活跃状态且有剪贴板历史时才响应滚轮事件
-  if (currentAnimationState.value !== AnimationState.ACTIVE ||
-    !clipboardScrollRef.value ||
-    clipboardHistory.value.length === 0) {
-    return
-  }
-
-  // 阻止默认的滚动行为
-  event.preventDefault()
-
-  // 节流控制，防止过度频繁的滚动
-  if (isScrolling) return
-
-  isScrolling = true
-
-  // 检查是否为水平滚动（触摸板左右滑动）
-  const isHorizontalScroll = Math.abs(event.deltaX) > Math.abs(event.deltaY)
-
-  // 确定滚动方向和滚动量
-  let scrollAmount = 0
-  // let scrollDirection = ''
-
-  if (isHorizontalScroll && Math.abs(event.deltaX) > 3) {
-    // 触摸板水平滑动 - 进行水平滚动
-    scrollAmount = event.deltaX * 6 // 水平滚动速度调节，稍微降低敏感度
-    // scrollDirection = event.deltaX > 0 ? '向右' : '向左'
-    // console.log('[前端] 触摸板水平滑动:', { deltaX: event.deltaX, deltaY: event.deltaY, scrollDirection })
-  } else {
-    // 垂直滚动 - 也进行水平滚动（保持原有行为）
-    scrollAmount = event.deltaY * 10
-    // scrollDirection = event.deltaY > 0 ? '向下转右' : '向上转左'
-  }
-
-  const currentScrollLeft = clipboardScrollRef.value.scrollLeft
-  const maxScrollLeft = clipboardScrollRef.value.scrollWidth - clipboardScrollRef.value.clientWidth
-
-  // 边界检查，确保不会超出滚动范围
-  const targetScrollLeft = Math.max(0, Math.min(maxScrollLeft, currentScrollLeft + scrollAmount))
-
-  // 如果已经到达边界，不执行滚动
-  if (targetScrollLeft === currentScrollLeft) {
-    isScrolling = false
-    return
-  }
-
-  // 使用平滑滚动
-  clipboardScrollRef.value.scrollTo({
-    left: targetScrollLeft,
-    behavior: 'smooth'
-  })
-
-  if (isHorizontalScroll) {
-    // console.log('[前端] 水平滚动执行:', {
-    //   scrollAmount,
-    //   currentScrollLeft,
-    //   targetScrollLeft,
-    //   scrollDirection
-    // })
-  }
-
-  // 重置节流标志，水平滚动使用更短的间隔以提高响应性
-  const throttleDelay = isHorizontalScroll ? 10 : 30
-  setTimeout(() => {
-    isScrolling = false
-  }, throttleDelay)
-}
-
-
-
-// 搜索状态
-const isSearchVisible = ref(false)
-const searchText = ref('')
-const searchTimeout = ref<NodeJS.Timeout | null>(null)
-const isSearching = ref(false) // 标记是否正在搜索中
-
-// 输入缓冲区，用于在搜索框打开过程中缓存输入的字符
-const inputBuffer = ref('')
-const isOpeningSearch = ref(false) // 标记是否正在打开搜索框
-
-// 搜索框和标签组动画状态控制
-const isSearchAnimating = ref(false)
-
-// 搜索框和标签组的DOM引用
-const searchContainerRef = ref<HTMLElement>()
-const tabsContainerRef = ref<HTMLElement>()
-
-// 计算属性：控制元素可见性，在动画期间两个元素都可见
-const showSearchContainer = computed(() => {
-  return isSearchVisible.value || isSearchAnimating.value
-})
-
-const showTabsContainer = computed(() => {
-  return !isSearchVisible.value || isSearchAnimating.value
-})
-
-// 搜索框展开动画
-const createSearchExpandAnimation = () => {
-  return useAnimate(searchContainerRef, [
-    {
-      width: '0px',
-      opacity: 0,
-      transform: 'scaleX(0)',
-      paddingLeft: '0px',
-      paddingRight: '0px'
-    },
-    {
-      width: '600px',
-      opacity: 1,
-      transform: 'scaleX(1)',
-      paddingLeft: '8px',
-      paddingRight: '8px'
-    }
-  ], {
-    duration: 300,
-    easing: 'cubic-bezier(0.4, 0, 0.2, 1)',
-    fill: 'forwards'
-  })
-}
-
-// 搜索框缩回动画
-const createSearchCollapseAnimation = () => {
-  return useAnimate(searchContainerRef, [
-    {
-      width: '400px',
-      opacity: 1,
-      transform: 'scaleX(1)',
-      paddingLeft: '8px',
-      paddingRight: '8px'
-    },
-    {
-      width: '0px',
-      opacity: 0,
-      transform: 'scaleX(0)',
-      paddingLeft: '0px',
-      paddingRight: '0px'
-    }
-  ], {
-    duration: 300,
-    easing: 'cubic-bezier(0.4, 0, 0.2, 1)',
-    fill: 'forwards'
-  })
-}
-
-// 标签组隐藏动画
-const createTabsHideAnimation = () => {
-  return useAnimate(tabsContainerRef, [
-    {
-      opacity: 1,
-      transform: 'scaleX(1)',
-      maxWidth: '100%'
-    },
-    {
-      opacity: 0,
-      transform: 'scaleX(0.8)',
-      maxWidth: '0px'
-    }
-  ], {
-    duration: 300,
-    easing: 'cubic-bezier(0.4, 0, 0.2, 1)',
-    fill: 'forwards'
-  })
-}
-
-// 标签组显示动画
-const createTabsShowAnimation = () => {
-  return useAnimate(tabsContainerRef, [
-    {
-      opacity: 0,
-      transform: 'scaleX(0.8)',
-      maxWidth: '0px'
-    },
-    {
-      opacity: 1,
-      transform: 'scaleX(1)',
-      maxWidth: '100%'
-    }
-  ], {
-    duration: 300,
-    easing: 'cubic-bezier(0.4, 0, 0.2, 1)',
-    fill: 'forwards'
-  })
-}
-
-// 切换搜索框显示状态
-const toggleSearch = async (withBuffer = false) => {
-  // 防止重复触发动画
-  if (isSearchAnimating.value) {
-    console.log('[前端] 动画进行中，忽略切换请求')
-    return
-  }
-
-  if (isSearchVisible.value) {
-    // 隐藏搜索框，显示标签组 - 同时进行动画
-    // console.log('[前端] 开始隐藏搜索框，显示标签组')
-
-    // 设置动画状态
-    isSearchAnimating.value = true
-
-    // 同时播放搜索框缩回动画和标签组显示动画
-    const { play: playSearchCollapse, playState: searchCollapseState } = createSearchCollapseAnimation()
-    const { play: playTabsShow, playState: tabsShowState } = createTabsShowAnimation()
-
-    playSearchCollapse()
-    playTabsShow()
-
-    // 等待两个动画都完成
-    await Promise.all([
-      new Promise<void>((resolve) => {
-        watch(searchCollapseState, (newState) => {
-          if (newState === 'finished') {
-            // console.log('[前端] 搜索框缩回动画完成')
-            resolve()
-          }
-        })
-      }),
-      new Promise<void>((resolve) => {
-        watch(tabsShowState, (newState) => {
-          if (newState === 'finished') {
-            // console.log('[前端] 标签组显示动画完成')
-            resolve()
-          }
-        })
-      })
-    ])
-
-    // 动画完成后设置状态
-    isSearchVisible.value = false
-    isSearchAnimating.value = false
-  } else {
-    // 显示搜索框，隐藏标签组 - 同时进行动画
-    // console.log('[前端] 开始显示搜索框，隐藏标签组')
-
-    // 标记正在打开搜索框
-    isOpeningSearch.value = true
-
-    // 设置动画状态
-    isSearchAnimating.value = true
-
-    // 先设置搜索框为显示状态，让DOM元素可见以便动画
-    isSearchVisible.value = true
-
-    // 等待DOM更新
-    await nextTick()
-
-    // 同时播放标签组隐藏动画和搜索框展开动画
-    const { play: playTabsHide, playState: tabsHideState } = createTabsHideAnimation()
-    const { play: playSearchExpand, playState: searchExpandState } = createSearchExpandAnimation()
-
-    playTabsHide()
-    playSearchExpand()
-
-    // 等待两个动画都完成
-    await Promise.all([
-      new Promise<void>((resolve) => {
-        watch(tabsHideState, (newState) => {
-          if (newState === 'finished') {
-            console.log('[前端] 标签组隐藏动画完成')
-            resolve()
-          }
-        })
-      }),
-      new Promise<void>((resolve) => {
-        watch(searchExpandState, (newState) => {
-          if (newState === 'finished') {
-            console.log('[前端] 搜索框展开动画完成')
-            resolve()
-          }
-        })
-      })
-    ])
-
-    // 动画完成后设置状态
-    isSearchAnimating.value = false
-    isOpeningSearch.value = false
-
-    // 如果有缓冲的输入，应用到搜索框
-    if (withBuffer && inputBuffer.value) {
-      // 追加缓冲区内容到现有搜索文本
-      searchText.value += inputBuffer.value
-      inputBuffer.value = '' // 清空缓冲区
-      // console.log('[前端] 缓冲区内容已应用到搜索框:', searchText.value)
-      // 触发搜索
-      debouncedSearch(searchText.value)
-    }
-
-    // 聚焦搜索框
-    await nextTick()
-    const searchInput = document.querySelector('.search-input') as HTMLInputElement
-    if (searchInput) {
-      searchInput.focus()
-      // 将光标移动到末尾
-      if (searchText.value) {
-        searchInput.setSelectionRange(searchText.value.length, searchText.value.length)
-      }
-    }
-  }
-}
-
-// 执行搜索
-const performSearch = async (text: string) => {
-  try {
-    isSearching.value = true
+    searchLogic._setSearching(true)
 
     if (text.trim()) {
       // 有搜索文本时进行搜索
+      console.log(`[前端] 执行搜索，关键词: "${text.trim()}"`)
       await loadClipboardHistory({
         searchText: text.trim(),
-        limit: 50, // 搜索时可以显示更多结果
+        limit: 50, // 搜索时显示更多结果以提高匹配度
         orderBy: 'last_used',
         orderDirection: 'DESC'
       })
     } else {
       // 搜索文本为空时显示默认历史记录
+      console.log('[前端] 搜索文本为空，显示默认历史记录')
       await loadClipboardHistory()
     }
   } catch (error) {
-    console.error('搜索失败:', error)
+    console.error('[前端] 搜索执行失败:', error)
+
+    // 搜索失败时确保UI状态正确
+    searchLogic._setSearching(false)
+    throw new OverlayError(
+      '搜索操作失败',
+      OverlayErrorCode.SEARCH_FAILED,
+      { searchText: text, originalError: error }
+    )
   } finally {
-    isSearching.value = false
+    searchLogic._setSearching(false)
   }
 }
 
-// 防抖搜索
-const debouncedSearch = (text: string) => {
-  // 清除之前的搜索定时器
-  if (searchTimeout.value) {
-    clearTimeout(searchTimeout.value)
-  }
+const searchLogic = useSearch(performSearchCallback)
+const scrollManagement = useScrollManagement(
+  clipboardScrollRef,
+  clipboardHistory,
+  selectedIndex,
+  overlayAnimation.currentAnimationState
+)
 
-  // 设置新的搜索定时器
-  searchTimeout.value = setTimeout(() => {
-    performSearch(text)
-  }, 300) // 300ms 防抖延迟
-}
-
-// 处理搜索输入
-const handleSearchInput = (event: Event) => {
-  const target = event.target as HTMLInputElement
-  // 由于使用了 v-model，searchText.value 会自动更新
-  // 这里只需要触发防抖搜索
-  debouncedSearch(target.value)
-}
-
-// 包装函数：处理搜索框切换（用于模板）
-const handleToggleSearch = () => {
-  toggleSearch(false)
-}
-
-// 包装函数：处理搜索框ESC键（用于模板）
-const handleSearchEscape = () => {
-  toggleSearch(false)
-}
-
-// 标签数据
-const allTags = ref<TagGroup[]>([])
-const activeTagId = ref<string>('all') // 默认选中'all'标签
-
-// 标签统计数据
-const tagStats = ref<Record<string, number>>({})
-
-// 计算属性：生成标签组件数据，包含'all'标签和实际标签
-const tabs = computed(() => {
-  const allTab = {
-    id: 'all',
-    label: 'All',
-    active: activeTagId.value === 'all',
-    color: '#10b981',
-    count: 0 // All标签不显示数量
-  }
-  const tagTabs = allTags.value.map(tag => ({
-    id: tag.id,
-    label: tag.name,
-    active: activeTagId.value === tag.id,
-    color: tag.color,
-    count: tagStats.value[tag.id] || 0
-  }))
-  return [allTab, ...tagTabs]
-})
-
-// 加载所有标签
-const loadAllTags = async () => {
-  try {
-    const tagList = await tags.getAllTags()
-    allTags.value = tagList
-    console.log('[前端] 标签数据加载完成:', tagList)
-
-    // 加载标签统计数据
-    await loadTagStats()
-  } catch (error) {
-    console.error('[前端] 加载标签数据失败:', error)
-    allTags.value = []
-  }
-}
-
-// 加载标签统计数据
-const loadTagStats = async () => {
-  try {
-    // 这里可以调用后端API获取每个标签的记录数量
-    // 暂时使用模拟数据，实际应该从后端获取
-    const stats: Record<string, number> = {}
-
-    for (const tag of allTags.value) {
-      // 模拟统计数据，实际应该调用后端API
-      stats[tag.id] = Math.floor(Math.random() * 20) + 1
-    }
-
-    tagStats.value = stats
-    // console.log('[前端] 标签统计数据加载完成:', stats)
-  } catch (error) {
-    console.error('[前端] 加载标签统计数据失败:', error)
-    tagStats.value = {}
-  }
-}
-
-// 标签切换加载状态
-const isTagSwitching = ref(false)
-
-// 切换标签
-const switchTag = async (tagId: string) => {
-  if (activeTagId.value === tagId || isTagSwitching.value) return
-
-  isTagSwitching.value = true
-  activeTagId.value = tagId
-  console.log('[前端] 切换到标签:', tagId)
-
-  try {
-    // 根据选中的标签重新加载剪贴板历史
-    if (tagId === 'all') {
-      // 显示所有记录
-      await loadClipboardHistory()
-    } else {
-      // 按标签筛选
-      await loadClipboardHistory({
-        tagIds: [tagId],
-        limit: 50,
-        orderBy: 'last_used',
-        orderDirection: 'DESC'
-      })
-    }
-  } catch (error) {
-    console.error('[前端] 切换标签失败:', error)
-  } finally {
-    isTagSwitching.value = false
-  }
-}
-
-// 触发滑入动画
-const triggerSlideInAnimation = async () => {
-  console.log('[前端] 收到触发滑入动画信号')
-
-  // 检查当前状态，防止重复触发
-  if (isAnimating()) {
-    console.log(`[前端] 正在进行动画，忽略滑入请求，当前状态: ${currentAnimationState.value}`)
+// 关闭窗口
+const closeWindow = async () => {
+  // 检查是否可以开始关闭
+  if (!overlayAnimation.canStartClosing()) {
+    console.log(`[前端] 当前状态为 ${overlayAnimation.currentAnimationState.value}，无法开始关闭`)
     return
   }
 
-  console.log('[前端] 开始滑入动画流程')
+  console.log('[前端] 开始关闭窗口流程')
 
-  // 重置搜索状态：如果搜索框无文字，默认关闭搜索框
-  if (!searchText.value.trim()) {
-    console.log('[前端] 搜索框无文字，重置为关闭状态')
-    isSearchVisible.value = false
-    isSearchAnimating.value = false
+  // 设置状态为正在滑出
+  overlayAnimation.setAnimationState(AnimationState.SLIDING_OUT)
 
-    // 重置搜索框样式到初始隐藏状态
-    nextTick(() => {
-      if (searchContainerRef.value) {
-        searchContainerRef.value.style.width = '0px'
-        searchContainerRef.value.style.opacity = '0'
-        searchContainerRef.value.style.transform = 'scaleX(0)'
-        searchContainerRef.value.style.paddingLeft = '0px'
-        searchContainerRef.value.style.paddingRight = '0px'
+  const { play: playSlideOut, playState } = overlayAnimation.createSlideOutAnimation()
+  playSlideOut()
+
+  // 等待动画完成后关闭窗口
+  watch(playState, (newState) => {
+    if (newState === 'finished') {
+      // 清理关闭事件监听器
+      if (removeCloseListener) {
+        removeCloseListener()
+        removeCloseListener = null
+        isCloseListenerSetup = false
+        console.log('[前端] 关闭窗口时清理关闭事件监听器')
       }
 
-      // 重置标签组样式到初始显示状态
-      if (tabsContainerRef.value) {
-        tabsContainerRef.value.style.opacity = '1'
-        tabsContainerRef.value.style.transform = 'scaleX(1)'
-        tabsContainerRef.value.style.maxWidth = '100%'
-      }
-    })
-  }
-
-  // 清空输入缓冲区和相关状态
-  inputBuffer.value = ''
-  isOpeningSearch.value = false
-
-  // 设置状态为正在滑入
-  setAnimationState(AnimationState.SLIDING_IN)
-
-  // 开始滑入动画
-  const { play: playSlideIn, playState } = createSlideInAnimation()
-  playSlideIn()
-
-  // 等待滑入动画完成
-  await new Promise<void>((resolve) => {
-    watch(playState, (newState) => {
-      if (newState === 'finished') {
-        console.log('[前端] 滑入动画完成')
-        resolve()
-      }
-    })
+      overlayAnimation.resetState()
+      send('close-overlay-window')
+    }
   })
-
-  console.log('[前端] 设置为活跃状态')
-  // 设置状态为活跃（可交互）
-  setAnimationState(AnimationState.ACTIVE)
-
-  // 载入动画完成后才设置关闭事件监听器
-  setupCloseEventListeners()
-
-  // 通知后端动画完成
-  send('open-overlay-finished')
 }
 
-const resetState = () => {
-  console.log('[前端] 重置overlay状态')
+/**
+ * 设置关闭事件监听器
+ * 防止重复设置监听器
+ */
+const setupCloseEventListeners = () => {
+  // 如果已经设置过监听器，跳过重复设置
+  if (isCloseListenerSetup) {
+    console.log('[前端] 关闭事件监听器已设置，跳过重复设置')
+    return
+  }
 
-  // 重置动画状态为空闲
-  setAnimationState(AnimationState.IDLE)
-
-  // 清理之前的关闭事件监听器
+  // 如果存在旧的监听器，先清理
   if (removeCloseListener) {
+    console.log('[前端] 清理已存在的关闭事件监听器')
     removeCloseListener()
     removeCloseListener = null
   }
 
-  // 重置元素位置到初始状态
-  if (overlayContentRef.value) {
-    overlayContentRef.value.style.transform = 'translateY(100%)'
+  // 监听来自主进程的关闭窗口信号
+  console.log('[前端] 设置关闭事件监听器')
+  removeCloseListener = onSimple('trigger-close-window', handleCloseWindow)
+  isCloseListenerSetup = true
+}
+
+
+
+// 还原剪贴板内容（带类型验证和错误处理）
+const restoreClipboardContent = async (itemId: string): Promise<void> => {
+  try {
+    // 参数验证
+    if (!itemId || typeof itemId !== 'string') {
+      throw new OverlayError(
+        '无效的剪贴板项目ID',
+        OverlayErrorCode.INVALID_STATE,
+        { itemId, type: typeof itemId }
+      )
+    }
+
+    console.log(`[前端] 开始还原剪贴板内容，ID: ${itemId}`)
+    const success = await clipboard.restore(itemId)
+
+    if (success) {
+      console.log('[前端] 剪贴板内容已成功还原')
+      // 还原成功后关闭窗口
+      closeWindow()
+    } else {
+      throw new OverlayError(
+        '剪贴板还原操作失败',
+        OverlayErrorCode.CLIPBOARD_LOAD_FAILED,
+        { itemId }
+      )
+    }
+  } catch (error) {
+    console.error('[前端] 还原剪贴板失败:', error)
+
+    // 创建结构化错误
+    const overlayError = error instanceof OverlayError
+      ? error
+      : new OverlayError(
+          '还原剪贴板时发生未知错误',
+          OverlayErrorCode.CLIPBOARD_LOAD_FAILED,
+          { originalError: error, itemId }
+        )
+
+    console.error('[前端] 剪贴板还原错误:', overlayError)
+    // 可以在这里添加用户通知逻辑，比如显示错误提示
   }
 }
 
-// 处理主进程发送的关闭窗口事件
-const handleCloseWindow = (force: boolean = false) => {
-  console.log(`[前端] 收到关闭窗口信号，当前状态: ${currentAnimationState.value}`)
+/**
+ * 切换搜索框显示状态
+ * 在搜索框和标签组之间进行平滑切换
+ *
+ * @param withBuffer - 是否应用输入缓冲区的内容到搜索框
+ */
+const toggleSearch = async (withBuffer = false): Promise<void> => {
+  try {
+    // 防止重复触发动画
+    if (searchAnimation.isSearchAnimating.value) {
+      console.log('[前端] 搜索动画进行中，忽略切换请求')
+      return
+    }
 
-  // 只有在活跃状态时才响应关闭事件
-  if (currentAnimationState.value === AnimationState.ACTIVE) {
+    const isCurrentlyVisible = searchAnimation.isSearchVisible.value
+    console.log(`[前端] 切换搜索框状态: ${isCurrentlyVisible ? '隐藏' : '显示'}`)
+
+    if (isCurrentlyVisible) {
+      // 隐藏搜索框，显示标签组
+      await hideSearchBox()
+    } else {
+      // 显示搜索框，隐藏标签组
+      await showSearchBox(withBuffer)
+    }
+  } catch (error) {
+    console.error('[前端] 搜索框切换失败:', error)
+
+    // 重置动画状态，防止UI卡住
+    searchAnimation._setSearchAnimating(false)
+    searchAnimation._setOpeningSearch(false)
+
+    throw new OverlayError(
+      '搜索框切换动画失败',
+      OverlayErrorCode.ANIMATION_FAILED,
+      { withBuffer, originalError: error }
+    )
+  }
+}
+
+/**
+ * 隐藏搜索框并显示标签组
+ */
+const hideSearchBox = async (): Promise<void> => {
+  searchAnimation._setSearchAnimating(true)
+
+  // 同时播放搜索框缩回动画和标签组显示动画
+  const { play: playSearchCollapse, playState: searchCollapseState } = searchAnimation.createSearchCollapseAnimation()
+  const { play: playTabsShow, playState: tabsShowState } = searchAnimation.createTabsShowAnimation()
+
+  playSearchCollapse()
+  playTabsShow()
+
+  // 等待两个动画都完成
+  await Promise.all([
+    new Promise<void>((resolve) => {
+      watch(searchCollapseState, (newState) => {
+        if (newState === 'finished') {
+          resolve()
+        }
+      })
+    }),
+    new Promise<void>((resolve) => {
+      watch(tabsShowState, (newState) => {
+        if (newState === 'finished') {
+          resolve()
+        }
+      })
+    })
+  ])
+
+  // 动画完成后设置状态
+  searchAnimation._setSearchVisible(false)
+  searchAnimation._setSearchAnimating(false)
+  console.log('[前端] 搜索框隐藏动画完成')
+}
+
+/**
+ * 显示搜索框并隐藏标签组
+ *
+ * @param withBuffer - 是否应用输入缓冲区的内容
+ */
+const showSearchBox = async (withBuffer: boolean): Promise<void> => {
+  searchAnimation._setOpeningSearch(true)
+  searchAnimation._setSearchAnimating(true)
+  searchAnimation._setSearchVisible(true)
+
+  // 等待DOM更新
+  await nextTick()
+
+  // 同时播放标签组隐藏动画和搜索框展开动画
+  const { play: playTabsHide, playState: tabsHideState } = searchAnimation.createTabsHideAnimation()
+  const { play: playSearchExpand, playState: searchExpandState } = searchAnimation.createSearchExpandAnimation()
+
+  playTabsHide()
+  playSearchExpand()
+
+  // 等待两个动画都完成
+  await Promise.all([
+    new Promise<void>((resolve) => {
+      watch(tabsHideState, (newState) => {
+        if (newState === 'finished') {
+          resolve()
+        }
+      })
+    }),
+    new Promise<void>((resolve) => {
+      watch(searchExpandState, (newState) => {
+        if (newState === 'finished') {
+          resolve()
+        }
+      })
+    })
+  ])
+
+  // 动画完成后设置状态
+  searchAnimation._setSearchAnimating(false)
+  searchAnimation._setOpeningSearch(false)
+
+  // 如果有缓冲的输入，应用到搜索框
+  if (withBuffer) {
+    searchLogic.applyInputBuffer()
+  }
+
+  // 聚焦搜索框
+  searchLogic.focusSearchInput()
+  console.log('[前端] 搜索框显示动画完成')
+}
+
+// 初始化键盘导航
+const keyboardNavigation = useKeyboardNavigation(
+  clipboardHistory,
+  selectedIndex,
+  restoreClipboardContent,
+  closeWindow,
+  () => toggleSearch(),
+  (event: KeyboardEvent) => {
+    if (searchLogic.isInputCharacter(event)) {
+      searchLogic.handleInputCharacter(
+        event,
+        searchAnimation.isSearchVisible.value,
+        searchAnimation.isOpeningSearch.value,
+        searchAnimation.isSearchAnimating.value,
+        toggleSearch
+      )
+    }
+  },
+  searchAnimation.isSearchVisible
+)
+
+
+/**
+ * 包装函数：处理搜索框切换（用于模板）
+ * 提供简化的接口给模板使用
+ */
+const handleToggleSearch = (): void => {
+  toggleSearch(false).catch(error => {
+    console.error('[前端] 搜索框切换失败:', error)
+  })
+}
+
+/**
+ * 包装函数：处理搜索框ESC键（用于模板）
+ * 当用户按下ESC键时关闭搜索框
+ */
+const handleSearchEscape = (): void => {
+  toggleSearch(false).catch(error => {
+    console.error('[前端] 搜索框ESC关闭失败:', error)
+  })
+}
+
+/**
+ * 包装函数：处理标签切换（用于模板）
+ * 提供错误处理的标签切换功能
+ */
+const handleTagSwitch = (tagId: string): void => {
+  tagManagement.switchTag(tagId).catch(error => {
+    console.error(`[前端] 切换到标签 ${tagId} 失败:`, error)
+  })
+}
+
+/**
+ * 包装函数：处理剪贴板项目点击（用于模板）
+ * 提供错误处理的剪贴板还原功能
+ */
+const handleClipboardItemClick = (itemId: string): void => {
+  restoreClipboardContent(itemId).catch(error => {
+    console.error(`[前端] 还原剪贴板项目 ${itemId} 失败:`, error)
+  })
+}
+
+/**
+ * 触发滑入动画
+ * 处理 overlay 窗口的滑入动画流程，包括状态重置和动画执行
+ */
+const triggerSlideInAnimation = async (): Promise<void> => {
+  try {
+    console.log('[前端] 收到触发滑入动画信号')
+
+    // 检查当前状态，防止重复触发
+    if (overlayAnimation.isAnimating()) {
+      console.log(`[前端] 正在进行动画，忽略滑入请求，当前状态: ${overlayAnimation.currentAnimationState.value}`)
+      return
+    }
+
+    console.log('[前端] 开始滑入动画流程')
+
+    // 重置搜索状态：如果搜索框无文字，默认关闭搜索框
+    if (!searchLogic.searchText.value.trim()) {
+      console.log('[前端] 搜索框无文字，重置为关闭状态')
+      searchAnimation.resetSearchStyles()
+    }
+
+    // 清空输入缓冲区和相关状态
+    searchLogic._clearInputBuffer()
+
+    // 设置状态为正在滑入
+    overlayAnimation.setAnimationState(AnimationState.SLIDING_IN)
+
+    // 开始滑入动画
+    const { play: playSlideIn, playState } = overlayAnimation.createSlideInAnimation()
+    playSlideIn()
+
+    // 等待滑入动画完成
+    await new Promise<void>((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        reject(new Error('滑入动画超时'))
+      }, 5000) // 5秒超时
+
+      watch(playState, (newState) => {
+        if (newState === 'finished') {
+          clearTimeout(timeout)
+          console.log('[前端] 滑入动画完成')
+          resolve()
+        } else if (newState === 'idle') {
+          clearTimeout(timeout)
+          reject(new Error('滑入动画意外停止'))
+        }
+      })
+    })
+
+    console.log('[前端] 设置为活跃状态')
+    // 设置状态为活跃（可交互）
+    overlayAnimation.setAnimationState(AnimationState.ACTIVE)
+
+    // 载入动画完成后才设置关闭事件监听器
+    setupCloseEventListeners()
+
+    // 通知后端动画完成
+    send('open-overlay-finished')
+    console.log('[前端] 滑入动画流程完成')
+  } catch (error) {
+    console.error('[前端] 滑入动画失败:', error)
+
+    // 重置状态，防止UI卡住
+    overlayAnimation.resetState()
+
+    throw new OverlayError(
+      '滑入动画执行失败',
+      OverlayErrorCode.ANIMATION_FAILED,
+      { originalError: error }
+    )
+  }
+}
+
+/**
+ * 处理主进程发送的关闭窗口事件
+ * 根据当前状态和搜索框状态决定关闭行为
+ *
+ * @param force - 是否强制关闭，忽略搜索框状态
+ */
+const handleCloseWindow = async (force: boolean = false): Promise<void> => {
+  try {
+    console.log(`[前端] 收到关闭窗口信号，当前状态: ${overlayAnimation.currentAnimationState.value}，强制关闭: ${force}`)
+
+    // 只有在活跃状态时才响应关闭事件
+    if (overlayAnimation.currentAnimationState.value !== AnimationState.ACTIVE) {
+      console.log(`[前端] 当前状态为 ${overlayAnimation.currentAnimationState.value}，忽略关闭请求`)
+      return
+    }
+
     if (!force) {
       // 检查搜索框状态
-      if (isSearchVisible.value && searchText.value.trim()) {
+      if (searchAnimation.isSearchVisible.value && searchLogic.searchText.value.trim()) {
         // 搜索框为展示状态且有值，清空搜索框的值并返回
         console.log('[前端] 搜索框有值，清空搜索框并返回')
-        searchText.value = ''
+        searchLogic.resetSearchState()
         // 触发搜索以重新加载默认数据
-        performSearch('')
+        await performSearchCallback('')
         return
       }
 
       // 如果搜索框没有值，需要切换搜索框状态为隐藏状态
-      if (isSearchVisible.value && !searchText.value.trim()) {
+      if (searchAnimation.isSearchVisible.value && !searchLogic.searchText.value.trim()) {
         console.log('[前端] 搜索框无值，切换为隐藏状态')
-        toggleSearch()
+        await toggleSearch()
+        return
       }
     }
 
+    // 执行关闭窗口
+    await closeWindow()
+  } catch (error) {
+    console.error('[前端] 处理关闭窗口事件失败:', error)
 
-    closeWindow()
-  } else {
-    console.log(`[前端] 当前状态为 ${currentAnimationState.value}，忽略关闭请求`)
+    // 即使出错也要尝试关闭窗口
+    try {
+      await closeWindow()
+    } catch (closeError) {
+      console.error('[前端] 强制关闭窗口也失败:', closeError)
+      // 最后的手段：直接通知后端关闭
+      send('close-overlay-window')
+    }
   }
 }
 
 // 监听 selectedIndex 变化，自动滚动到可视区域
 watch(selectedIndex, () => {
   // 只有在键盘导航时才自动滚动
-  if (isKeyboardNavigation) {
+  if (keyboardNavigation.isKeyboardNavigation.value) {
     // 延迟执行，确保 DOM 更新完成
     nextTick(() => {
-      scrollToSelectedItem()
+      scrollManagement.scrollToSelectedItem()
       // 重置标志
-      isKeyboardNavigation = false
+      keyboardNavigation._setKeyboardNavigation(false)
     })
   }
 })
 
 // 监听 searchText 变化，自动触发搜索（用于缓冲区应用时）
-watch(searchText, (newValue) => {
+watch(searchLogic.searchText, (newValue) => {
   // 只有当搜索框可见且不是正在打开时才触发搜索
-  if (isSearchVisible.value && !isOpeningSearch.value && newValue !== undefined) {
-    debouncedSearch(newValue)
+  if (searchAnimation.isSearchVisible.value && !searchAnimation.isOpeningSearch.value && newValue !== undefined) {
+    searchLogic.debouncedSearch(newValue)
   }
 })
 
-onMounted(() => {
-  // 监听来自主进程的动画触发信号
-  removeSlideInListener = onSimple('trigger-slide-in-animation', () => {
-    requestAnimationFrame(() => {
+/**
+ * 组件挂载时的初始化逻辑
+ * 设置事件监听器、预加载数据、初始化UI状态
+ */
+onMounted(async () => {
+  try {
+    console.log('[前端] 开始初始化 Overlay 组件')
+
+    // 监听来自主进程的动画触发信号
+    removeSlideInListener = onSimple('trigger-slide-in-animation', () => {
+      // 使用双重 RAF 确保动画在下一帧执行
       requestAnimationFrame(() => {
-        triggerSlideInAnimation()
+        requestAnimationFrame(() => {
+          triggerSlideInAnimation().catch(error => {
+            console.error('[前端] 滑入动画触发失败:', error)
+          })
+        })
       })
     })
-  })
 
-  // 在组件挂载时就绑定键盘事件监听器
-  document.addEventListener('keydown', handleKeyNavigation)
+    // 在组件挂载时就绑定键盘事件监听器
+    document.addEventListener('keydown', keyboardNavigation.handleKeyNavigation)
+    console.log('[前端] 键盘事件监听器已绑定')
 
-  // 添加滚轮事件监听器（支持触摸板手势）
-  document.addEventListener('wheel', handleWheel, { passive: false })
+    // 添加滚轮事件监听器（支持触摸板手势）
+    document.addEventListener('wheel', scrollManagement.handleWheel, { passive: false })
+    console.log('[前端] 滚轮事件监听器已绑定')
 
-  // 预加载剪贴板历史以提高首次显示速度
-  loadClipboardHistory().catch(error => {
-    console.warn('[前端] 预加载剪贴板历史失败:', error)
-  })
+    // 初始化搜索框和标签组的状态
+    searchAnimation.initializeStyles()
+    console.log('[前端] 搜索动画样式已初始化')
 
-  // 预加载标签数据
-  loadAllTags().catch(error => {
-    console.warn('[前端] 预加载标签数据失败:', error)
-  })
+    // 并行预加载数据以提高性能
+    const preloadPromises = [
+      loadClipboardHistory().catch(error => {
+        console.warn('[前端] 预加载剪贴板历史失败:', error)
+        return [] // 返回空数组作为默认值
+      }),
+      tagManagement.loadAllTags().catch(error => {
+        console.warn('[前端] 预加载标签数据失败:', error)
+        return [] // 返回空数组作为默认值
+      })
+    ]
 
-  // 初始化搜索框和标签组的状态
-  nextTick(() => {
-    // 确保搜索框初始为隐藏状态
-    if (searchContainerRef.value) {
-      searchContainerRef.value.style.width = '0px'
-      searchContainerRef.value.style.opacity = '0'
-      searchContainerRef.value.style.transform = 'scaleX(0)'
-      searchContainerRef.value.style.paddingLeft = '0px'
-      searchContainerRef.value.style.paddingRight = '0px'
-    }
+    await Promise.allSettled(preloadPromises)
+    console.log('[前端] 数据预加载完成')
 
-    // 确保标签组初始为显示状态
-    if (tabsContainerRef.value) {
-      tabsContainerRef.value.style.opacity = '1'
-      tabsContainerRef.value.style.transform = 'scaleX(1)'
-      tabsContainerRef.value.style.maxWidth = '100%'
-    }
-  })
+    // 监听剪贴板历史更新通知（使用节流避免频繁更新）
+    removeClipboardUpdateListener = onSimple('clipboard-history-updated', (data) => {
+      console.log('[前端] 收到剪贴板历史更新通知:', data)
 
-  // 监听剪贴板历史更新通知
-  removeClipboardUpdateListener = onSimple('clipboard-history-updated', (data) => {
-    console.log('[前端] 收到剪贴板历史更新通知:', data)
-
-    // 重新加载剪贴板历史
-    loadClipboardHistory().catch(error => {
-      console.warn('[前端] 重新加载剪贴板历史失败:', error)
+      // 使用节流函数重新加载剪贴板历史，避免频繁更新导致的性能问题
+      throttledLoadClipboardHistory()
     })
-  })
 
-  // 监听标签数据更新通知
-  removeTagsUpdateListener = onSimple('tags-updated', (data) => {
-    console.log('[前端] 收到标签数据更新通知:', data)
+    // 监听标签数据更新通知
+    removeTagsUpdateListener = onSimple('tags-updated', (data) => {
+      console.log('[前端] 收到标签数据更新通知:', data)
 
-    // 重新加载标签数据
-    loadAllTags().catch(error => {
-      console.warn('[前端] 重新加载标签数据失败:', error)
+      // 重新加载标签数据
+      tagManagement.reloadTags().catch(error => {
+        console.warn('[前端] 重新加载标签数据失败:', error)
+      })
     })
-  })
 
-  // 注意：关闭事件监听器将在载入动画完成后通过 setupCloseEventListeners() 设置
+    console.log('[前端] Overlay 组件初始化完成')
+    // 注意：关闭事件监听器将在载入动画完成后通过 setupCloseEventListeners() 设置
+  } catch (error) {
+    console.error('[前端] Overlay 组件初始化失败:', error)
+
+    // 初始化失败时的错误处理
+    throw new OverlayError(
+      'Overlay 组件初始化失败',
+      OverlayErrorCode.INVALID_STATE,
+      { originalError: error }
+    )
+  }
 })
 
+/**
+ * 组件卸载时的清理逻辑
+ * 清理所有事件监听器、定时器和资源，防止内存泄漏
+ */
 onUnmounted(() => {
-  // 清理 IPC 监听器
-  if (removeSlideInListener) {
-    removeSlideInListener()
-  }
+  try {
+    console.log('[前端] 开始清理 Overlay 组件资源')
 
-  // 清理关闭事件监听器（如果已设置）
-  if (isSlideInComplete.value && removeCloseListener) {
-    removeCloseListener()
-  }
+    // 清理 IPC 监听器
+    if (removeSlideInListener) {
+      removeSlideInListener()
+      removeSlideInListener = null
+      console.log('[前端] 滑入动画监听器已清理')
+    }
 
-  // 清理剪贴板更新监听器
-  if (removeClipboardUpdateListener) {
-    removeClipboardUpdateListener()
-  }
+    // 清理关闭事件监听器（如果已设置）
+    if (removeCloseListener) {
+      removeCloseListener()
+      removeCloseListener = null
+      isCloseListenerSetup = false
+      console.log('[前端] 关闭事件监听器已清理')
+    }
 
-  // 清理标签更新监听器
-  if (removeTagsUpdateListener) {
-    removeTagsUpdateListener()
-  }
+    // 清理剪贴板更新监听器
+    if (removeClipboardUpdateListener) {
+      removeClipboardUpdateListener()
+      removeClipboardUpdateListener = null
+      console.log('[前端] 剪贴板更新监听器已清理')
+    }
 
-  // 清理键盘事件监听器
-  document.removeEventListener('keydown', handleKeyNavigation)
+    // 清理节流函数
+    try {
+      cancelThrottledLoad()
+      console.log('[前端] 节流函数已清理')
+    } catch (error) {
+      console.warn('[前端] 清理节流函数失败:', error)
+    }
 
-  // 清理滚轮事件监听器
-  document.removeEventListener('wheel', handleWheel)
+    // 清理标签更新监听器
+    if (removeTagsUpdateListener) {
+      removeTagsUpdateListener()
+      removeTagsUpdateListener = null
+      console.log('[前端] 标签更新监听器已清理')
+    }
 
-  // 清理搜索定时器
-  if (searchTimeout.value) {
-    clearTimeout(searchTimeout.value)
+    // 清理键盘事件监听器
+    try {
+      document.removeEventListener('keydown', keyboardNavigation.handleKeyNavigation)
+      console.log('[前端] 键盘事件监听器已清理')
+    } catch (error) {
+      console.warn('[前端] 清理键盘事件监听器失败:', error)
+    }
+
+    // 清理滚轮事件监听器
+    try {
+      document.removeEventListener('wheel', scrollManagement.handleWheel)
+      console.log('[前端] 滚轮事件监听器已清理')
+    } catch (error) {
+      console.warn('[前端] 清理滚轮事件监听器失败:', error)
+    }
+
+    // 清理搜索相关资源
+    try {
+      searchLogic.cleanup()
+      console.log('[前端] 搜索逻辑资源已清理')
+    } catch (error) {
+      console.warn('[前端] 清理搜索逻辑资源失败:', error)
+    }
+
+    console.log('[前端] Overlay 组件资源清理完成')
+  } catch (error) {
+    console.error('[前端] Overlay 组件资源清理失败:', error)
+    // 清理失败不应该阻止组件卸载，只记录错误
   }
 })
 </script>
@@ -1119,25 +776,25 @@ onUnmounted(() => {
         </button>
 
         <!-- 搜索输入框 -->
-        <div ref="searchContainerRef" v-show="showSearchContainer" class="search-container">
-          <input type="text" class="search-input" placeholder="Search clipboard history..." v-model="searchText"
-            @input="handleSearchInput" @keydown.escape="handleSearchEscape" />
+        <div ref="searchContainerRef" v-show="searchAnimation.showSearchContainer" class="search-container">
+          <input type="text" class="search-input" placeholder="Search clipboard history..." :value="searchLogic.searchText.value"
+            @input="searchLogic.handleSearchInput" @keydown.escape="handleSearchEscape" />
         </div>
 
         <!-- 标签组 -->
-        <div ref="tabsContainerRef" v-show="showTabsContainer" class="tabs-container">
-          <div v-for="tab in tabs" :key="tab.id" class="tab" :class="{
+        <div ref="tabsContainerRef" v-show="searchAnimation.showTabsContainer" class="tabs-container">
+          <div v-for="tab in tagManagement.tabs.value" :key="tab.id" class="tab" :class="{
             active: tab.active,
             'has-count': tab.count > 0,
-            'switching': isTagSwitching && tab.active
+            'switching': tagManagement.isTagSwitching.value && tab.active
           }" tabindex="0" role="button"
             :aria-label="`Switch to ${tab.label} tag${tab.count > 0 ? ` (${tab.count} items)` : ''}`"
-            @click="switchTag(tab.id)" @keydown.enter="switchTag(tab.id)" @keydown.space.prevent="switchTag(tab.id)">
+            @click="handleTagSwitch(tab.id)" @keydown.enter="handleTagSwitch(tab.id)" @keydown.space.prevent="handleTagSwitch(tab.id)">
             <span class="tab-dot" :style="{ backgroundColor: tab.color }"></span>
             <span class="tab-label">{{ tab.label }}</span>
             <span v-if="tab.count > 0" class="tab-count">{{ tab.count }}</span>
             <!-- 加载指示器 -->
-            <div v-if="isTagSwitching && tab.active" class="tab-loading">
+            <div v-if="tagManagement.isTagSwitching.value && tab.active" class="tab-loading">
               <div class="loading-spinner"></div>
             </div>
           </div>
@@ -1176,7 +833,7 @@ onUnmounted(() => {
         <div v-else ref="clipboardScrollRef" class="clipboard-scroll-container">
           <transition-group name="clipboard-list" tag="div" class="clipboard-list-wrapper">
             <ClipboardCard v-for="(item, index) in clipboardHistory" :key="item.id" :item="item" :index="index"
-              :is-selected="index === selectedIndex" @click="restoreClipboardContent" />
+              :is-selected="index === selectedIndex" @click="handleClipboardItemClick" />
           </transition-group>
         </div>
       </div>
@@ -1281,10 +938,10 @@ onUnmounted(() => {
 
 .search-input {
   width: 100%;
-  padding: 8px 12px;
+  padding: 6px 6px;
   border: 1px solid #e5e7eb;
   border-radius: 8px;
-  font-size: 14px;
+  font-size: 17px;
   background: white;
   color: #1f2937;
   outline: none;

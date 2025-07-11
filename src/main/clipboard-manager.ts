@@ -1,5 +1,5 @@
-import { BrowserWindow } from 'electron'
 import { ClipboardManagerManager } from './workers/clipboard-manager-manager'
+import { NotificationService } from './services/notification-service'
 import store from './store'
 import { STORE_KEY } from './common'
 import type {
@@ -111,17 +111,9 @@ class ClipboardManager {
    */
   private notifyFrontendUpdate(): void {
     try {
-      const allWindows = BrowserWindow.getAllWindows()
-
-      allWindows.forEach((window) => {
-        if (window && !window.isDestroyed()) {
-          window.webContents.send('clipboard-history-updated', {
-            timestamp: Date.now()
-          })
-        }
+      NotificationService.notifyClipboardHistoryUpdate({
+        timestamp: Date.now()
       })
-
-      console.log('[剪贴板管理器] 已通知前端剪贴板历史更新')
     } catch (error) {
       console.error('[剪贴板管理器] 通知前端更新失败:', error)
     }
@@ -161,13 +153,15 @@ class ClipboardManager {
       }
 
       const success = await this.workerManager.restoreClipboardItem(itemId)
-      
+
       if (success) {
         console.log('[剪贴板管理器] 已还原剪贴板内容:', itemId)
+        // 通知前端更新（因为 last_used 时间已更新）
+        this.notifyFrontendUpdate()
       } else {
         console.error('[剪贴板管理器] 还原失败:', itemId)
       }
-      
+
       return success
     } catch (error) {
       console.error('[剪贴板管理器] 还原剪贴板失败:', error)

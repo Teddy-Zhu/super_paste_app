@@ -1,5 +1,5 @@
-import { BrowserWindow } from 'electron'
 import { ClipboardHistoryCleanerManager } from './workers/clipboard-history-cleaner-manager'
+import { NotificationService } from './services/notification-service'
 import store from './store'
 import { STORE_KEY } from './common'
 import type { CleanupConfig, CleanupStats } from './types/clipboard-types'
@@ -88,18 +88,10 @@ class ClipboardHistoryCleaner {
    */
   private notifyFrontendHistoryUpdated(): void {
     try {
-      const allWindows = BrowserWindow.getAllWindows()
-
-      allWindows.forEach((window) => {
-        if (window && !window.isDestroyed()) {
-          window.webContents.send('clipboard-history-updated', {
-            timestamp: Date.now(),
-            source: 'cleanup'
-          })
-        }
+      NotificationService.notifyClipboardHistoryUpdate({
+        timestamp: Date.now(),
+        source: 'cleanup'
       })
-
-      console.log('[历史记录清理器] 已通知前端剪贴板历史更新')
     } catch (error) {
       console.error('[历史记录清理器] 通知前端失败:', error)
     }

@@ -1,5 +1,5 @@
 import { BaseWorkerManager } from './base-worker-manager'
-import clipboardDatabase from '../clipboard-database'
+import databaseService from '../services/database-service'
 import type { WorkerConfig, WorkerRequest } from '../types/worker-types'
 import type { CleanupConfig, CleanupStats } from '../types/clipboard-types'
 
@@ -75,18 +75,12 @@ export class ClipboardHistoryCleanerManager extends BaseWorkerManager {
     try {
       let result: any
 
-      switch (request.method) {
-        case 'database-getRecordCount':
-          result = this.getDatabaseRecordCount()
-          break
-        case 'database-getExpiredRecordIds':
-          result = this.getExpiredRecordIds(request.params.expireTimestamp)
-          break
-        case 'database-deleteExpiredRecords':
-          result = this.deleteExpiredRecords(request.params.expireTimestamp)
-          break
-        default:
-          throw new Error(`未知的数据库调用方法: ${request.method}`)
+      // 检查是否是数据库操作
+      if (request.method.startsWith('database-')) {
+        const operation = request.method.replace('database-', '')
+        result = await databaseService.executeOperation(operation, request.params)
+      } else {
+        throw new Error(`未知的调用方法: ${request.method}`)
       }
 
       // 发送成功响应
@@ -111,68 +105,7 @@ export class ClipboardHistoryCleanerManager extends BaseWorkerManager {
     }
   }
 
-  /**
-   * 获取数据库记录总数
-   */
-  private getDatabaseRecordCount(): number {
-    try {
-      if (!clipboardDatabase.isConnected()) {
-        return 0
-      }
-      return clipboardDatabase.getRecordCount()
-    } catch (error) {
-      console.error('[清理器管理器] 获取记录总数失败:', error)
-      return 0
-    }
-  }
-
-  /**
-   * 获取过期记录ID列表
-   */
-  private getExpiredRecordIds(expireTimestamp: number): string[] {
-    try {
-      if (!clipboardDatabase.isConnected()) {
-        return []
-      }
-
-      const records = clipboardDatabase.queryRecords({
-        orderBy: 'timestamp',
-        orderDirection: 'ASC'
-      })
-
-      // 获取有标签的记录ID列表
-      const taggedRecordIds = new Set(clipboardDatabase.getTaggedRecordIds())
-
-      return records
-        .filter(record => {
-          // 过期且没有标签的记录才能被清理
-          return record.timestamp < expireTimestamp && !taggedRecordIds.has(record.content_id)
-        })
-        .map(record => record.content_id)
-    } catch (error) {
-      console.error('[清理器管理器] 获取过期记录ID失败:', error)
-      return []
-    }
-  }
-
-  /**
-   * 删除过期记录
-   */
-  private deleteExpiredRecords(expireTimestamp: number): number {
-    try {
-      if (!clipboardDatabase.isConnected()) {
-        return 0
-      }
-
-      // 使用数据库事务确保操作的原子性
-      return clipboardDatabase.transaction(() => {
-        return clipboardDatabase.deleteRecordsByTimestamp(expireTimestamp)
-      })
-    } catch (error) {
-      console.error('[清理器管理器] 删除过期记录失败:', error)
-      return 0
-    }
-  }
+  // ==================== 数据库操作方法已移至 DatabaseService ====================
 
   // ==================== 公共 API 方法 ====================
 

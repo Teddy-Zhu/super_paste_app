@@ -1,3 +1,5 @@
+import { HashUtils } from '../utils/common'
+
 /**
  * 剪贴板内容数据
  */
@@ -279,14 +281,7 @@ export class ClipboardDataConverter {
       optimizedContent.image = ClipboardDataConverter.generateImageHash(content.image)
     }
 
-    const contentStr = JSON.stringify(optimizedContent)
-    let hash = 0
-    for (let i = 0; i < contentStr.length; i++) {
-      const char = contentStr.charCodeAt(i)
-      hash = ((hash << 5) - hash) + char
-      hash = hash & hash
-    }
-    return hash.toString()
+    return HashUtils.generateContentHash(optimizedContent)
   }
 
   /**
@@ -476,5 +471,37 @@ export class ClipboardDataConverter {
    */
   static generateAppId(): string {
     return `app_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`
+  }
+
+  /**
+   * 批量转换数据库记录到剪贴板项
+   * 统一处理标签和应用信息的转换逻辑
+   */
+  static batchRecordsToItems(records: Array<ClipboardHistoryRecord & { tags?: TagGroupRecord[], appInfo?: AppInfoRecord }>): ClipboardItem[] {
+    return records.map(record => {
+      const tags = record.tags?.map(tag => this.tagRecordToTag(tag)) || []
+      const appInfo = record.appInfo ? this.appRecordToAppInfo(record.appInfo) : undefined
+      return this.recordToItem(record, tags, appInfo)
+    })
+  }
+
+  /**
+   * 批量转换剪贴板项到数据库记录格式
+   */
+  static batchItemsToRecordData(items: ClipboardItem[]): Array<{
+    content_id: string
+    content_text?: string
+    content_html?: string
+    content_image?: string
+    content_rtf?: string
+    content_bookmark?: string
+    primary_type: string
+    available_formats: string
+    timestamp: number
+    last_used: number
+    parse_type: string
+    source_app?: string
+  }> {
+    return items.map(item => this.itemToRecordData(item))
   }
 }

@@ -304,7 +304,7 @@ function initializeGlobalShortcut(): void {
     if (shortcutKey && shortcutKey.trim() !== '') {
       // 注册全局快捷键监听 - 改为切换窗口显示状态
       const success = globalShortcut.register(shortcutKey, () => {
-        toggleOverlayWindow()
+        toggleOverlayWindow(true)
       })
 
       if (!success) {
