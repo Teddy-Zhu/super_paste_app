@@ -142,7 +142,7 @@ export function useAnimation(
   }
   
   const resetOverlayState = () => {
-    console.log('[动画管理] 重置overlay状态')
+    // console.log('[动画管理] 重置overlay状态')
     overlayStateManager.resetState()
     
     // 重置元素位置到初始状态

@@ -56,8 +56,10 @@ export interface ScrollAndTagsManager {
 // ==================== 常量定义 ====================
 
 const CARD_WIDTH = 300
-const CARD_GAP = 32
+const CARD_GAP = 16  // 修正为实际的 CSS gap 值
+const CONTAINER_PADDING_LEFT = 20  // 容器左侧 padding
 const TOTAL_CARD_WIDTH = CARD_WIDTH + CARD_GAP
+const SCROLL_MARGIN = 40  // 滚动时的边距，确保选中项不会紧贴边缘
 
 const SCROLLBAR_OPTIONS: Partial<ScrollbarOptions> = {
   damping: 0.1,
@@ -162,19 +164,85 @@ export function useScrollAndTags(
   }
   
   const scrollToSelectedItem = useRafThrottle(() => {
-    if (!clipboardScrollRef.value || clipboardHistory.value.length === 0) return
-    
+    if (!clipboardScrollRef.value || clipboardHistory.value.length === 0 || selectedIndex.value < 0) return
+
     // 如果 smooth-scrollbar 未初始化，先初始化
     if (!scrollbarInstance) {
       initializeScrollbar()
     }
-    
-    const selectedCardLeft = selectedIndex.value * TOTAL_CARD_WIDTH
+
+    // 计算选中卡片的实际位置（考虑容器的 padding-left）
+    const selectedCardLeft = CONTAINER_PADDING_LEFT + selectedIndex.value * TOTAL_CARD_WIDTH
     const selectedCardRight = selectedCardLeft + CARD_WIDTH
-    
+
     let containerScrollLeft: number
     let containerWidth: number
-    
+    let maxScrollLeft: number
+
+    if (scrollbarInstance) {
+      containerScrollLeft = scrollbarInstance.scrollLeft
+      containerWidth = scrollbarInstance.size.container.width
+      maxScrollLeft = Math.max(0, scrollbarInstance.size.content.width - scrollbarInstance.size.container.width)
+    } else {
+      const container = clipboardScrollRef.value
+      containerScrollLeft = container.scrollLeft
+      containerWidth = container.clientWidth
+      maxScrollLeft = Math.max(0, container.scrollWidth - container.clientWidth)
+    }
+
+    const containerScrollRight = containerScrollLeft + containerWidth
+
+    // 检查选中的卡片是否在可视区域内，并添加适当的边距
+    let targetScrollLeft: number | null = null
+
+    if (selectedCardLeft < containerScrollLeft + SCROLL_MARGIN) {
+      // 选中卡片在左侧外部或太靠近左边缘
+      targetScrollLeft = Math.max(0, selectedCardLeft - SCROLL_MARGIN)
+    } else if (selectedCardRight > containerScrollRight - SCROLL_MARGIN) {
+      // 选中卡片在右侧外部或太靠近右边缘
+      targetScrollLeft = Math.min(maxScrollLeft, selectedCardRight - containerWidth + SCROLL_MARGIN)
+    }
+
+    // 只有在需要滚动时才执行滚动
+    if (targetScrollLeft !== null && Math.abs(targetScrollLeft - containerScrollLeft) > 1) {
+      scrollToPosition(targetScrollLeft)
+      console.log('[滚动标签管理] 滚动到选中项:', {
+        selectedIndex: selectedIndex.value,
+        selectedCardLeft,
+        selectedCardRight,
+        containerScrollLeft,
+        containerScrollRight,
+        targetScrollLeft,
+        containerWidth
+      })
+    }
+  })
+  
+  const scrollToPosition = (targetLeft: number) => {
+    if (scrollbarInstance) {
+      // 使用 smooth-scrollbar 的平滑滚动，动画时间设为 300ms
+      scrollbarInstance.scrollTo(targetLeft, 0, 300)
+    } else if (clipboardScrollRef.value) {
+      // 回退到原生滚动
+      clipboardScrollRef.value.scrollTo({
+        left: targetLeft,
+        behavior: 'smooth'
+      })
+    }
+  }
+
+  // 辅助方法：检查选中项是否在可视区域内
+  const isSelectedItemVisible = (): boolean => {
+    if (!clipboardScrollRef.value || clipboardHistory.value.length === 0 || selectedIndex.value < 0) {
+      return false
+    }
+
+    const selectedCardLeft = CONTAINER_PADDING_LEFT + selectedIndex.value * TOTAL_CARD_WIDTH
+    const selectedCardRight = selectedCardLeft + CARD_WIDTH
+
+    let containerScrollLeft: number
+    let containerWidth: number
+
     if (scrollbarInstance) {
       containerScrollLeft = scrollbarInstance.scrollLeft
       containerWidth = scrollbarInstance.size.container.width
@@ -183,39 +251,12 @@ export function useScrollAndTags(
       containerScrollLeft = container.scrollLeft
       containerWidth = container.clientWidth
     }
-    
+
     const containerScrollRight = containerScrollLeft + containerWidth
-    
-    // 检查选中的卡片是否在可视区域内
-    if (selectedCardLeft < containerScrollLeft) {
-      // 选中卡片在左侧外部
-      const targetLeft = Math.max(0, selectedCardLeft - 20)
-      scrollToPosition(targetLeft)
-    } else if (selectedCardRight > containerScrollRight) {
-      // 选中卡片在右侧外部
-      let maxScrollLeft: number
-      
-      if (scrollbarInstance) {
-        maxScrollLeft = scrollbarInstance.size.content.width - scrollbarInstance.size.container.width
-      } else {
-        const container = clipboardScrollRef.value!
-        maxScrollLeft = container.scrollWidth - container.clientWidth
-      }
-      
-      const targetLeft = Math.min(maxScrollLeft, selectedCardRight - containerWidth + 20)
-      scrollToPosition(targetLeft)
-    }
-  })
-  
-  const scrollToPosition = (targetLeft: number) => {
-    if (scrollbarInstance) {
-      scrollbarInstance.scrollTo(targetLeft, 0, 300)
-    } else if (clipboardScrollRef.value) {
-      clipboardScrollRef.value.scrollTo({
-        left: targetLeft,
-        behavior: 'smooth'
-      })
-    }
+
+    // 检查是否完全在可视区域内（包含边距）
+    return selectedCardLeft >= containerScrollLeft + SCROLL_MARGIN &&
+           selectedCardRight <= containerScrollRight - SCROLL_MARGIN
   }
   
   const handleWheelThrottled = useThrottle((event: WheelEvent) => {
@@ -282,7 +323,10 @@ export function useScrollAndTags(
   
   const ensureSelectedItemVisible = () => {
     nextTick(() => {
-      scrollToSelectedItem()
+      // 只有在选中项不可见时才滚动
+      if (!isSelectedItemVisible()) {
+        scrollToSelectedItem()
+      }
     })
   }
   

@@ -86,6 +86,30 @@ function calculateWindowPosition(): { x: number, y: number, width: number, heigh
 }
 
 /**
+ * 根据屏幕大小计算最佳的主窗口尺寸
+ */
+function calculateMainWindowSize(): { width: number, height: number } {
+  const primaryDisplay = screen.getPrimaryDisplay()
+  const { width: screenWidth, height: screenHeight } = primaryDisplay.workArea
+
+  // 根据屏幕尺寸计算最佳窗口大小
+  // 宽度：屏幕宽度的 60-80%，最小 800px，最大 1200px
+  let windowWidth = Math.floor(screenWidth * 0.7)
+  windowWidth = Math.max(800, Math.min(1200, windowWidth))
+
+  // 高度：屏幕高度的 70-85%，最小 600px，最大 900px
+  let windowHeight = Math.floor(screenHeight * 0.75)
+  windowHeight = Math.max(600, Math.min(900, windowHeight))
+
+  logger.info(`[主进程] 屏幕尺寸: ${screenWidth}x${screenHeight}, 计算的窗口尺寸: ${windowWidth}x${windowHeight}`)
+
+  return {
+    width: windowWidth,
+    height: windowHeight
+  }
+}
+
+/**
  * 根据操作系统平台选择合适的托盘图标
  */
 function getTrayIcon(): string {
@@ -320,14 +344,22 @@ function initializeGlobalShortcut(): void {
 }
 
 function createWindow(): void {
-  
+  // 计算最佳窗口尺寸
+  const { width, height } = calculateMainWindowSize()
+
   // Create the browser window.
   mainWindow = new BrowserWindow({
-    width: 900,
-    height: 670,
+    width,
+    height,
+    minWidth: width,
+    minHeight: height,
+    maxWidth: width,
+    maxHeight: height,
     show: false,
+    center: true, // 窗口居中显示
     hasShadow: false,
     autoHideMenuBar: true,
+    resizable: false, // 禁止调整大小
     ...(process.platform === 'linux' ? { icon: getWindowIcon() } : {}),
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),

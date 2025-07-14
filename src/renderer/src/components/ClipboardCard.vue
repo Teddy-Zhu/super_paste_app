@@ -11,6 +11,7 @@ interface Props {
   item: ClipboardItem
   index: number
   isSelected: boolean
+  isQuickSelectMode: boolean
 }
 
 const props = defineProps<Props>()
@@ -329,6 +330,19 @@ const handleContextMenu = (event: MouseEvent) => {
 const handleRestoreAsText = () => {
   emit('restoreAsText', props.item.id)
 }
+
+// 计算快捷键标签
+const shortcutLabel = computed(() => {
+  // 只显示前9个项目的快捷键（1-9）
+  if (props.index < 9) {
+    const keyNumber = props.index + 1
+    // 检测操作系统来显示正确的修饰键
+    const isMac = navigator.userAgent.includes('Mac')
+    const modifierKey = isMac ? '⌘' : 'Ctrl'
+    return `${modifierKey} + ${keyNumber}`
+  }
+  return ''
+})
 </script>
 
 <template>
@@ -407,7 +421,18 @@ const handleRestoreAsText = () => {
 
     <!-- 卡片底部信息 -->
     <div class="card-footer">
+      <!-- 左侧占位 -->
+      <div class="footer-left"></div>
+
+      <!-- 字符数显示（居中显示） -->
       <span class="character-count">{{ getCharacterCount(item) }}</span>
+
+      <!-- 快捷选择模式下显示快捷键（右侧） -->
+      <div class="footer-right">
+        <div v-if="isQuickSelectMode && shortcutLabel" class="shortcut-label">
+          {{ shortcutLabel }}
+        </div>
+      </div>
     </div>
 
     <!-- 选中指示器 -->
@@ -797,12 +822,20 @@ const handleRestoreAsText = () => {
 
 .card-footer {
   display: flex;
-  justify-content: center;
+  justify-content: space-between;
   align-items: center;
   padding: 8px;
   border-top: 1px solid rgba(226, 232, 240, 0.8);
   flex-shrink: 0;
   background: linear-gradient(135deg, rgba(248, 250, 252, 0.9) 0%, rgba(241, 245, 249, 0.9) 100%);
+  position: relative;
+  height: 32px; /* 固定高度防止撑高 */
+  box-sizing: border-box;
+}
+
+.footer-left {
+  flex: 1;
+  min-width: 0;
 }
 
 .character-count {
@@ -812,10 +845,50 @@ const handleRestoreAsText = () => {
   letter-spacing: 0.025em;
   opacity: 0.8;
   transition: opacity 0.3s ease;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.footer-right {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
 }
 
 .clipboard-card:hover .character-count {
   opacity: 1;
+}
+
+.shortcut-label {
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  padding: 2px 4px;
+  border-radius: 3px;
+  background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%);
+  color: white;
+  box-shadow: 0 1px 2px rgba(59, 130, 246, 0.3);
+  transition: all 0.2s ease;
+  animation: shortcut-pulse 1.5s ease-in-out infinite;
+  white-space: nowrap;
+  flex-shrink: 0;
+  line-height: 1.2;
+  max-height: 16px;
+  display: flex;
+  align-items: center;
+}
+
+@keyframes shortcut-pulse {
+  0%, 100% {
+    transform: scale(1);
+    box-shadow: 0 1px 2px rgba(59, 130, 246, 0.3);
+  }
+  50% {
+    transform: scale(1.02);
+    box-shadow: 0 2px 4px rgba(59, 130, 246, 0.4);
+  }
 }
 
 .selection-indicator {
