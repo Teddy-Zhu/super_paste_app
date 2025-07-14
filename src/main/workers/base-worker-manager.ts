@@ -8,6 +8,7 @@ import type {
   WorkerManager,
   WorkerConfig
 } from '../types/worker-types'
+import logger from '../utils/logger'
 
 /**
  * Worker 管理器基类
@@ -36,31 +37,31 @@ export abstract class BaseWorkerManager extends EventEmitter implements WorkerMa
    */
   public async start(): Promise<void> {
     if (this.worker) {
-      console.warn(`[${this.config.name}] Worker 已经在运行中`)
+      logger.warn(`[${this.config.name}] Worker 已经在运行中`)
       return
     }
 
     try {
-      console.log(`[${this.config.name}] 启动 Worker:`, this.config.workerPath)
-      
+      logger.info(`[${this.config.name}] 启动 Worker:`, this.config.workerPath)
+
       this.worker = new Worker(this.config.workerPath, this.config.options)
-      
+
       // 设置消息监听
       this.worker.on('message', this.handleWorkerMessage.bind(this))
-      
+
       // 设置错误监听
       this.worker.on('error', this.handleWorkerError.bind(this))
-      
+
       // 设置退出监听
       this.worker.on('exit', this.handleWorkerExit.bind(this))
 
       // 等待 Worker 初始化完成
       await this.waitForWorkerReady()
-      
+
       this.isInitialized = true
-      console.log(`[${this.config.name}] Worker 启动成功`)
+      logger.info(`[${this.config.name}] Worker 启动成功`)
     } catch (error) {
-      console.error(`[${this.config.name}] Worker 启动失败:`, error)
+      logger.error(`[${this.config.name}] Worker 启动失败:`, error)
       throw error
     }
   }
@@ -74,19 +75,19 @@ export abstract class BaseWorkerManager extends EventEmitter implements WorkerMa
     }
 
     try {
-      console.log(`[${this.config.name}] 停止 Worker`)
-      
+      logger.info(`[${this.config.name}] 停止 Worker`)
+
       // 清理所有待处理的请求
       this.clearPendingRequests()
-      
+
       // 终止 Worker
       await this.worker.terminate()
       this.worker = null
       this.isInitialized = false
-      
-      console.log(`[${this.config.name}] Worker 已停止`)
+
+      logger.info(`[${this.config.name}] Worker 已停止`)
     } catch (error) {
-      console.error(`[${this.config.name}] 停止 Worker 失败:`, error)
+      logger.error(`[${this.config.name}] 停止 Worker 失败:`, error)
       throw error
     }
   }
@@ -148,10 +149,10 @@ export abstract class BaseWorkerManager extends EventEmitter implements WorkerMa
           this.handleWorkerRequest(message as WorkerRequest)
           break
         default:
-          console.warn(`[${this.config.name}] 未知消息类型:`, JSON.stringify(message))
+          logger.warn(`[${this.config.name}] 未知消息类型:`, JSON.stringify(message))
       }
     } catch (error) {
-      console.error(`[${this.config.name}] 处理 Worker 消息失败:`, error)
+      logger.error(`[${this.config.name}] 处理 Worker 消息失败:`, error)
     }
   }
 
@@ -159,7 +160,7 @@ export abstract class BaseWorkerManager extends EventEmitter implements WorkerMa
    * 处理来自 Worker 的请求（子类可以重写）
    */
   protected handleWorkerRequest(request: WorkerRequest): void {
-    console.warn(`[${this.config.name}] 未处理的 Worker 请求:`, request.method)
+    logger.warn(`[${this.config.name}] 未处理的 Worker 请求:`, request.method)
   }
 
   /**
@@ -168,7 +169,7 @@ export abstract class BaseWorkerManager extends EventEmitter implements WorkerMa
   private handleWorkerResponse(response: WorkerResponse): void {
     const pending = this.pendingRequests.get(response.requestId)
     if (!pending) {
-      console.warn(`[${this.config.name}] 未找到对应的请求:`, response.requestId)
+      logger.warn(`[${this.config.name}] 未找到对应的请求:`, response.requestId)
       return
     }
 
@@ -195,7 +196,7 @@ export abstract class BaseWorkerManager extends EventEmitter implements WorkerMa
    * 处理 Worker 错误
    */
   private handleWorkerError(error: Error): void {
-    console.error(`[${this.config.name}] Worker 错误:`, error)
+    logger.error(`[${this.config.name}] Worker 错误:`, error)
     this.emit('worker-error', { error: error.message })
   }
 
@@ -203,7 +204,7 @@ export abstract class BaseWorkerManager extends EventEmitter implements WorkerMa
    * 处理 Worker 退出
    */
   private handleWorkerExit(code: number): void {
-    console.log(`[${this.config.name}] Worker 退出，代码:`, code)
+    logger.info(`[${this.config.name}] Worker 退出，代码:`, code)
     this.isInitialized = false
     this.worker = null
     this.clearPendingRequests()

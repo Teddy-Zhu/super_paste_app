@@ -352,11 +352,9 @@ export class ClipboardDataConverter {
     // 高优先级文本类型检测（在 HTML 和 bookmark 之前）
     if (content.text) {
       const text = content.text.trim()
-      console.log('text:', text)
       // 检测颜色值 (#xxxxxx 或 #xxxxxxxx)
       const colorRegex = /^#[0-9a-fA-F]{6}$|^#[0-9a-fA-F]{8}$/
       if (colorRegex.test(text)) {
-        console.log('color:', text)
         return 'color'
       }
       // 检测URL

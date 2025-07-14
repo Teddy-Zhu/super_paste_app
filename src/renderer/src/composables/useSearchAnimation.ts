@@ -3,7 +3,8 @@
  * 管理搜索框的展开/收缩动画和状态
  */
 
-import { ref, computed, nextTick, type Ref } from 'vue'
+import { ref, computed, nextTick, readonly, type Ref } from 'vue'
+import { useAnimate } from '@vueuse/core'
 import type {
   SearchAnimationManager,
   SearchAnimationConfig,

@@ -11,6 +11,7 @@ import type {
   TagStats,
   AppInfoRecord
 } from './types/clipboard-types'
+import logger from './utils/logger'
 
 /**
  * 剪贴板数据库管理器
@@ -65,9 +66,9 @@ class ClipboardDatabase {
       // 预加载应用信息缓存
       this.preloadAppCache()
 
-      console.log('[剪贴板数据库] 数据库初始化成功:', this.dbPath)
+      logger.info('[剪贴板数据库] 数据库初始化成功:', this.dbPath)
     } catch (error) {
-      console.error('[剪贴板数据库] 数据库初始化失败:', error)
+      logger.error('[剪贴板数据库] 数据库初始化失败:', error)
       throw error
     }
   }
@@ -225,7 +226,7 @@ class ClipboardDatabase {
 
       return result.changes > 0
     } catch (error) {
-      console.error('[剪贴板数据库] 插入记录失败:', error)
+      logger.error('[剪贴板数据库] 插入记录失败:', error)
       return false
     }
   }
@@ -248,7 +249,7 @@ class ClipboardDatabase {
 
       return result.changes > 0
     } catch (error) {
-      console.error('[剪贴板数据库] 更新最后使用时间失败:', error)
+      logger.error('[剪贴板数据库] 更新最后使用时间失败:', error)
       return false
     }
   }
@@ -310,7 +311,7 @@ class ClipboardDatabase {
       const stmt = this.db.prepare(querySQL)
       return stmt.all(...params) as ClipboardHistoryRecord[]
     } catch (error) {
-      console.error('[剪贴板数据库] 查询记录失败:', error)
+      logger.error('[剪贴板数据库] 查询记录失败:', error)
       return []
     }
   }
@@ -326,7 +327,7 @@ class ClipboardDatabase {
       const stmt = this.db.prepare(querySQL)
       return stmt.get(contentId) as ClipboardHistoryRecord | null
     } catch (error) {
-      console.error('[剪贴板数据库] 根据内容ID查询记录失败:', error)
+      logger.error('[剪贴板数据库] 根据内容ID查询记录失败:', error)
       return null
     }
   }
@@ -344,7 +345,7 @@ class ClipboardDatabase {
 
       return result.changes > 0
     } catch (error) {
-      console.error('[剪贴板数据库] 删除记录失败:', error)
+      logger.error('[剪贴板数据库] 删除记录失败:', error)
       return false
     }
   }
@@ -363,10 +364,10 @@ class ClipboardDatabase {
       // 重置自增ID
       this.db.exec('DELETE FROM sqlite_sequence WHERE name = "clipboard_history"')
 
-      console.log(`[剪贴板数据库] 已清空所有历史记录，删除了 ${result.changes} 条记录`)
+      logger.info(`[剪贴板数据库] 已清空所有历史记录，删除了 ${result.changes} 条记录`)
       return true
     } catch (error) {
-      console.error('[剪贴板数据库] 清空历史记录失败:', error)
+      logger.error('[剪贴板数据库] 清空历史记录失败:', error)
       return false
     }
   }
@@ -391,12 +392,12 @@ class ClipboardDatabase {
       const result = stmt.run(keepCount)
 
       if (result.changes > 0) {
-        console.log(`[剪贴板数据库] 删除了 ${result.changes} 条旧记录，保留最新的 ${keepCount} 条`)
+        logger.info(`[剪贴板数据库] 删除了 ${result.changes} 条旧记录，保留最新的 ${keepCount} 条`)
       }
 
       return result.changes
     } catch (error) {
-      console.error('[剪贴板数据库] 删除旧记录失败:', error)
+      logger.error('[剪贴板数据库] 删除旧记录失败:', error)
       return 0
     }
   }
@@ -414,7 +415,7 @@ class ClipboardDatabase {
 
       return result.count
     } catch (error) {
-      console.error('[剪贴板数据库] 获取记录总数失败:', error)
+      logger.error('[剪贴板数据库] 获取记录总数失败:', error)
       return 0
     }
   }
@@ -439,9 +440,9 @@ class ClipboardDatabase {
         this.db = null
         // 清空应用信息缓存
         this.clearAppCache()
-        console.log('[剪贴板数据库] 数据库连接已关闭')
+        logger.info('[剪贴板数据库] 数据库连接已关闭')
       } catch (error) {
-        console.error('[剪贴板数据库] 关闭数据库连接失败:', error)
+        logger.error('[剪贴板数据库] 关闭数据库连接失败:', error)
       }
     }
   }
@@ -479,12 +480,12 @@ class ClipboardDatabase {
       const result = stmt.run(beforeTimestamp)
 
       if (result.changes > 0) {
-        console.log(`[剪贴板数据库] 删除了 ${result.changes} 条时间戳早于 ${beforeTimestamp} 的记录（已排除有标签的记录）`)
+        logger.info(`[剪贴板数据库] 删除了 ${result.changes} 条时间戳早于 ${beforeTimestamp} 的记录（已排除有标签的记录）`)
       }
 
       return result.changes
     } catch (error) {
-      console.error('[剪贴板数据库] 按时间戳删除记录失败:', error)
+      logger.error('[剪贴板数据库] 按时间戳删除记录失败:', error)
       return 0
     }
   }
@@ -509,7 +510,7 @@ class ClipboardDatabase {
 
       return result.count
     } catch (error) {
-      console.error('[剪贴板数据库] 按时间戳统计记录失败:', error)
+      logger.error('[剪贴板数据库] 按时间戳统计记录失败:', error)
       return 0
     }
   }
@@ -534,7 +535,7 @@ class ClipboardDatabase {
 
       return results.map(result => result.content_id)
     } catch (error) {
-      console.error('[剪贴板数据库] 获取过期记录ID失败:', error)
+      logger.error('[剪贴板数据库] 获取过期记录ID失败:', error)
       return []
     }
   }
@@ -573,7 +574,7 @@ class ClipboardDatabase {
 
       return result.changes > 0
     } catch (error) {
-      console.error('[剪贴板数据库] 创建标签组失败:', error)
+      logger.error('[剪贴板数据库] 创建标签组失败:', error)
       return false
     }
   }
@@ -611,7 +612,7 @@ class ClipboardDatabase {
 
       return records
     } catch (error) {
-      console.error('[剪贴板数据库] 获取标签组列表失败:', error)
+      logger.error('[剪贴板数据库] 获取标签组列表失败:', error)
       return []
     }
   }
@@ -629,7 +630,7 @@ class ClipboardDatabase {
 
       return record || null
     } catch (error) {
-      console.error('[剪贴板数据库] 获取标签组失败:', error)
+      logger.error('[剪贴板数据库] 获取标签组失败:', error)
       return null
     }
   }
@@ -647,7 +648,7 @@ class ClipboardDatabase {
 
       return record || null
     } catch (error) {
-      console.error('[剪贴板数据库] 根据名称获取标签组失败:', error)
+      logger.error('[剪贴板数据库] 根据名称获取标签组失败:', error)
       return null
     }
   }
@@ -691,7 +692,7 @@ class ClipboardDatabase {
 
       return result.changes > 0
     } catch (error) {
-      console.error('[剪贴板数据库] 更新标签组失败:', error)
+      logger.error('[剪贴板数据库] 更新标签组失败:', error)
       return false
     }
   }
@@ -717,7 +718,7 @@ class ClipboardDatabase {
         return result.changes > 0
       })
     } catch (error) {
-      console.error('[剪贴板数据库] 删除标签组失败:', error)
+      logger.error('[剪贴板数据库] 删除标签组失败:', error)
       return false
     }
   }
@@ -745,7 +746,7 @@ class ClipboardDatabase {
 
       return stats
     } catch (error) {
-      console.error('[剪贴板数据库] 获取标签组统计信息失败:', error)
+      logger.error('[剪贴板数据库] 获取标签组统计信息失败:', error)
       return []
     }
   }
@@ -770,7 +771,7 @@ class ClipboardDatabase {
 
       return result.changes > 0
     } catch (error) {
-      console.error('[剪贴板数据库] 绑定标签失败:', error)
+      logger.error('[剪贴板数据库] 绑定标签失败:', error)
       return false
     }
   }
@@ -802,7 +803,7 @@ class ClipboardDatabase {
         return successCount > 0
       })
     } catch (error) {
-      console.error('[剪贴板数据库] 批量绑定标签失败:', error)
+      logger.error('[剪贴板数据库] 批量绑定标签失败:', error)
       return false
     }
   }
@@ -825,7 +826,7 @@ class ClipboardDatabase {
 
       return result.changes > 0
     } catch (error) {
-      console.error('[剪贴板数据库] 解除标签绑定失败:', error)
+      logger.error('[剪贴板数据库] 解除标签绑定失败:', error)
       return false
     }
   }
@@ -848,7 +849,7 @@ class ClipboardDatabase {
 
       return result.changes > 0
     } catch (error) {
-      console.error('[剪贴板数据库] 解除所有标签绑定失败:', error)
+      logger.error('[剪贴板数据库] 解除所有标签绑定失败:', error)
       return false
     }
   }
@@ -873,7 +874,7 @@ class ClipboardDatabase {
 
       return tags
     } catch (error) {
-      console.error('[剪贴板数据库] 获取记录标签失败:', error)
+      logger.error('[剪贴板数据库] 获取记录标签失败:', error)
       return []
     }
   }
@@ -917,7 +918,7 @@ class ClipboardDatabase {
 
       return tagsMap
     } catch (error) {
-      console.error('[剪贴板数据库] 批量获取记录标签失败:', error)
+      logger.error('[剪贴板数据库] 批量获取记录标签失败:', error)
       return tagsMap
     }
   }
@@ -935,7 +936,7 @@ class ClipboardDatabase {
 
       return result.count > 0
     } catch (error) {
-      console.error('[剪贴板数据库] 检查记录标签失败:', error)
+      logger.error('[剪贴板数据库] 检查记录标签失败:', error)
       return false
     }
   }
@@ -959,7 +960,7 @@ class ClipboardDatabase {
         updateStmt.run(now, now, contentId)
       }
     } catch (error) {
-      console.error('[剪贴板数据库] 更新记录时间戳失败:', error)
+      logger.error('[剪贴板数据库] 更新记录时间戳失败:', error)
     }
   }
 
@@ -996,7 +997,7 @@ class ClipboardDatabase {
 
       return recordsWithTags
     } catch (error) {
-      console.error('[剪贴板数据库] 查询带标签的记录失败:', error)
+      logger.error('[剪贴板数据库] 查询带标签的记录失败:', error)
       return []
     }
   }
@@ -1014,7 +1015,7 @@ class ClipboardDatabase {
 
       return results.map(result => result.content_id)
     } catch (error) {
-      console.error('[剪贴板数据库] 获取有标签的记录ID失败:', error)
+      logger.error('[剪贴板数据库] 获取有标签的记录ID失败:', error)
       return []
     }
   }
@@ -1044,7 +1045,7 @@ class ClipboardDatabase {
         this.appCacheByAppPath.delete(this.generateAppCacheKey(app.application, app.path))
       }
 
-      console.log(`[剪贴板数据库] 清理了 ${toDelete.length} 个应用缓存项`)
+      logger.info(`[剪贴板数据库] 清理了 ${toDelete.length} 个应用缓存项`)
     }
   }
 
@@ -1107,9 +1108,9 @@ class ClipboardDatabase {
         this.addToAppCache(app)
       }
 
-      console.log(`[剪贴板数据库] 预加载了 ${apps.length} 个应用信息到缓存`)
+      logger.debug(`[剪贴板数据库] 预加载了 ${apps.length} 个应用信息到缓存`)
     } catch (error) {
-      console.error('[剪贴板数据库] 预加载应用缓存失败:', error)
+      logger.error('[剪贴板数据库] 预加载应用缓存失败:', error)
     }
   }
 
@@ -1196,7 +1197,7 @@ class ClipboardDatabase {
         return null
       }
     } catch (error) {
-      console.error('[剪贴板数据库] 插入或更新应用信息失败:', error)
+      logger.error('[剪贴板数据库] 插入或更新应用信息失败:', error)
       return null
     }
   }
@@ -1212,7 +1213,7 @@ class ClipboardDatabase {
       const stmt = this.db.prepare(selectSQL)
       return stmt.get(application, path) as AppInfoRecord | null
     } catch (error) {
-      console.error('[剪贴板数据库] 根据应用名称和路径获取应用信息失败:', error)
+      logger.error('[剪贴板数据库] 根据应用名称和路径获取应用信息失败:', error)
       return null
     }
   }
@@ -1236,7 +1237,7 @@ class ClipboardDatabase {
 
       return app || null
     } catch (error) {
-      console.error('[剪贴板数据库] 根据应用名称和路径获取应用信息失败:', error)
+      logger.error('[剪贴板数据库] 根据应用名称和路径获取应用信息失败:', error)
       return null
     }
   }
@@ -1252,7 +1253,7 @@ class ClipboardDatabase {
       const stmt = this.db.prepare(selectSQL)
       return stmt.get(appId) as AppInfoRecord | null
     } catch (error) {
-      console.error('[剪贴板数据库] 根据ID获取应用信息失败:', error)
+      logger.error('[剪贴板数据库] 根据ID获取应用信息失败:', error)
       return null
     }
   }
@@ -1276,7 +1277,7 @@ class ClipboardDatabase {
 
       return app || null
     } catch (error) {
-      console.error('[剪贴板数据库] 根据ID获取应用信息失败:', error)
+      logger.error('[剪贴板数据库] 根据ID获取应用信息失败:', error)
       return null
     }
   }
@@ -1292,7 +1293,7 @@ class ClipboardDatabase {
       const stmt = this.db.prepare(selectSQL)
       return stmt.all() as AppInfoRecord[]
     } catch (error) {
-      console.error('[剪贴板数据库] 获取所有应用信息失败:', error)
+      logger.error('[剪贴板数据库] 获取所有应用信息失败:', error)
       return []
     }
   }
@@ -1339,7 +1340,7 @@ class ClipboardDatabase {
 
       return appsMap
     } catch (error) {
-      console.error('[剪贴板数据库] 批量获取应用信息失败:', error)
+      logger.error('[剪贴板数据库] 批量获取应用信息失败:', error)
       return appsMap
     }
   }

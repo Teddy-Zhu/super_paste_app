@@ -1,296 +1,191 @@
 /**
  * 性能优化 Composable
- * 提供防抖、节流、内存管理等性能优化功能
+ * 提供批量更新、虚拟滚动等高级性能优化功能
+ * 基础的防抖、节流功能已移至 useUtils.ts
  */
 
-import { ref, onUnmounted } from 'vue'
-import type {
-  DebouncedFunction,
-  ThrottledFunction,
-  CancelFunction,
-  EventListenerManager,
-  MemoryLeakGuard,
-  BatchUpdateManager
-} from '@renderer/types/overlay'
+import { ref, readonly, type Ref } from 'vue'
+import { useTimerManager } from './useUtils'
 
-/**
- * 创建防抖函数
- */
-export function useDebounce<T extends (...args: any[]) => any>(
-  fn: T,
-  delay: number = 300
-): [DebouncedFunction<T>, CancelFunction] {
-  const timeoutRef = ref<NodeJS.Timeout | null>(null)
+// ==================== 类型定义 ====================
 
-  const debouncedFn = ((...args: Parameters<T>) => {
-    if (timeoutRef.value) {
-      clearTimeout(timeoutRef.value)
-    }
-    
-    timeoutRef.value = setTimeout(() => {
-      fn(...args)
-    }, delay)
-  }) as T
-
-  const cancel = () => {
-    if (timeoutRef.value) {
-      clearTimeout(timeoutRef.value)
-      timeoutRef.value = null
-    }
-  }
-
-  // 组件卸载时自动清理
-  onUnmounted(() => {
-    cancel()
-  })
-
-  return [debouncedFn, cancel]
+export interface BatchUpdateManager<T> {
+  addUpdate: (item: T) => void
+  flush: () => void
+  clear: () => void
 }
 
-/**
- * 创建节流函数
- */
-export function useThrottle<T extends (...args: any[]) => any>(
-  fn: T,
-  delay: number = 100
-): [ThrottledFunction<T>, CancelFunction] {
-  const isThrottled = ref(false)
-  const timeoutRef = ref<NodeJS.Timeout | null>(null)
-
-  const throttledFn = ((...args: Parameters<T>) => {
-    if (isThrottled.value) return
-
-    fn(...args)
-    isThrottled.value = true
-
-    timeoutRef.value = setTimeout(() => {
-      isThrottled.value = false
-    }, delay)
-  }) as T
-
-  const cancel = () => {
-    if (timeoutRef.value) {
-      clearTimeout(timeoutRef.value)
-      timeoutRef.value = null
-    }
-    isThrottled.value = false
-  }
-
-  // 组件卸载时自动清理
-  onUnmounted(() => {
-    cancel()
-  })
-
-  return [throttledFn, cancel]
+export interface VirtualScrollManager<T> {
+  visibleItems: Ref<T[]>
+  startIndex: Ref<number>
+  endIndex: Ref<number>
+  totalHeight: Ref<number>
+  updateVisibleRange: (scrollTop: number, containerHeight: number) => void
+  getItemHeight: (index: number) => number
+  setItems: (items: T[]) => void
 }
 
-/**
- * 创建 RAF 节流函数（用于动画和滚动）
- */
-export function useRafThrottle<T extends (...args: any[]) => any>(
-  fn: T
-): [ThrottledFunction<T>, CancelFunction] {
-  const rafId = ref<number | null>(null)
-  const isScheduled = ref(false)
-
-  const rafThrottledFn = ((...args: Parameters<T>) => {
-    if (isScheduled.value) return
-
-    isScheduled.value = true
-    rafId.value = requestAnimationFrame(() => {
-      fn(...args)
-      isScheduled.value = false
-    })
-  }) as T
-
-  const cancel = () => {
-    if (rafId.value) {
-      cancelAnimationFrame(rafId.value)
-      rafId.value = null
-    }
-    isScheduled.value = false
-  }
-
-  // 组件卸载时自动清理
-  onUnmounted(() => {
-    cancel()
-  })
-
-  return [rafThrottledFn, cancel]
+export interface PerformanceMonitor {
+  startTiming: (label: string) => void
+  endTiming: (label: string) => void
+  getTimings: () => Record<string, number>
+  clearTimings: () => void
 }
 
-/**
- * 事件监听器管理器
- */
-export function useEventListenerManager(): EventListenerManager {
-  const listeners = ref<Array<{
-    element: EventTarget
-    event: string
-    handler: EventListener
-    options?: AddEventListenerOptions
-  }>>([])
-
-  const addEventListener = (
-    element: EventTarget,
-    event: string,
-    handler: EventListener,
-    options?: AddEventListenerOptions
-  ) => {
-    element.addEventListener(event, handler, options)
-    listeners.value.push({ element, event, handler, options })
-  }
-
-  const removeEventListener = (
-    element: EventTarget,
-    event: string,
-    handler: EventListener
-  ) => {
-    element.removeEventListener(event, handler)
-    const index = listeners.value.findIndex(
-      l => l.element === element && l.event === event && l.handler === handler
-    )
-    if (index > -1) {
-      listeners.value.splice(index, 1)
-    }
-  }
-
-  const removeAllListeners = () => {
-    listeners.value.forEach(({ element, event, handler }) => {
-      element.removeEventListener(event, handler)
-    })
-    listeners.value = []
-  }
-
-  // 组件卸载时自动清理所有监听器
-  onUnmounted(() => {
-    removeAllListeners()
-  })
-
-  return {
-    addEventListener,
-    removeEventListener,
-    removeAllListeners
-  }
-}
+// ==================== 批量更新管理器 ====================
 
 /**
- * 内存泄漏防护
- */
-export function useMemoryLeakGuard(): MemoryLeakGuard {
-  const timers = ref<Set<NodeJS.Timeout>>(new Set())
-  const intervals = ref<Set<NodeJS.Timeout>>(new Set())
-  const rafs = ref<Set<number>>(new Set())
-
-  const setTimeout = (callback: () => void, delay: number) => {
-    const timer = globalThis.setTimeout(() => {
-      timers.value.delete(timer)
-      callback()
-    }, delay)
-    timers.value.add(timer)
-    return timer
-  }
-
-  const setInterval = (callback: () => void, delay: number) => {
-    const interval = globalThis.setInterval(callback, delay)
-    intervals.value.add(interval)
-    return interval
-  }
-
-  const requestAnimationFrame = (callback: FrameRequestCallback) => {
-    const raf = globalThis.requestAnimationFrame((time) => {
-      rafs.value.delete(raf)
-      callback(time)
-    })
-    rafs.value.add(raf)
-    return raf
-  }
-
-  const clearTimeout = (timer: NodeJS.Timeout) => {
-    globalThis.clearTimeout(timer)
-    timers.value.delete(timer)
-  }
-
-  const clearInterval = (interval: NodeJS.Timeout) => {
-    globalThis.clearInterval(interval)
-    intervals.value.delete(interval)
-  }
-
-  const cancelAnimationFrame = (raf: number) => {
-    globalThis.cancelAnimationFrame(raf)
-    rafs.value.delete(raf)
-  }
-
-  const cleanup = () => {
-    timers.value.forEach(timer => globalThis.clearTimeout(timer))
-    intervals.value.forEach(interval => globalThis.clearInterval(interval))
-    rafs.value.forEach(raf => globalThis.cancelAnimationFrame(raf))
-    
-    timers.value.clear()
-    intervals.value.clear()
-    rafs.value.clear()
-  }
-
-  // 组件卸载时自动清理
-  onUnmounted(() => {
-    cleanup()
-  })
-
-  return {
-    setTimeout,
-    setInterval,
-    requestAnimationFrame,
-    clearTimeout,
-    clearInterval,
-    cancelAnimationFrame,
-    cleanup
-  }
-}
-
-/**
- * 批量更新优化
+ * 创建批量更新管理器
+ * 将多个更新操作合并为一次执行，减少重绘
  */
 export function useBatchUpdate<T>(
   updateFn: (items: T[]) => void,
   delay: number = 16 // 一帧的时间
 ): BatchUpdateManager<T> {
+  const timerManager = useTimerManager()
   const pendingUpdates = ref<T[]>([])
-  const timeoutRef = ref<NodeJS.Timeout | null>(null)
+  let timeoutId: number | null = null
 
   const addUpdate = (item: T) => {
-    (pendingUpdates.value as T[]).push(item)
+    pendingUpdates.value.push(item as any)
 
-    if (!timeoutRef.value) {
-      timeoutRef.value = setTimeout(() => {
+    if (timeoutId === null) {
+      timeoutId = timerManager.setTimeout(() => {
         if (pendingUpdates.value.length > 0) {
-          updateFn([...(pendingUpdates.value as T[])])
+          updateFn([...pendingUpdates.value] as T[])
           pendingUpdates.value = []
         }
-        timeoutRef.value = null
+        timeoutId = null
       }, delay)
     }
   }
 
   const flush = () => {
-    if (timeoutRef.value) {
-      clearTimeout(timeoutRef.value)
-      timeoutRef.value = null
+    if (timeoutId !== null) {
+      timerManager.clearTimeout(timeoutId)
+      timeoutId = null
     }
 
     if (pendingUpdates.value.length > 0) {
-      updateFn([...(pendingUpdates.value as T[])])
+      updateFn([...pendingUpdates.value] as T[])
       pendingUpdates.value = []
     }
   }
 
-  // 组件卸载时自动清理
-  onUnmounted(() => {
-    if (timeoutRef.value) {
-      clearTimeout(timeoutRef.value)
+  const clear = () => {
+    if (timeoutId !== null) {
+      timerManager.clearTimeout(timeoutId)
+      timeoutId = null
     }
-  })
+    pendingUpdates.value = []
+  }
 
   return {
     addUpdate,
-    flush
+    flush,
+    clear
   }
 }
+
+// ==================== 虚拟滚动管理器 ====================
+
+/**
+ * 创建虚拟滚动管理器
+ * 用于大量数据的高性能渲染
+ */
+export function useVirtualScroll<T>(
+  itemHeight: number = 50,
+  overscan: number = 5
+): VirtualScrollManager<T> {
+  const items = ref<T[]>([])
+  const visibleItems = ref<T[]>([])
+  const startIndex = ref(0)
+  const endIndex = ref(0)
+  const totalHeight = ref(0)
+
+  const updateVisibleRange = (scrollTop: number, containerHeight: number) => {
+    const start = Math.floor(scrollTop / itemHeight)
+    const visibleCount = Math.ceil(containerHeight / itemHeight)
+    const end = start + visibleCount
+
+    // 添加 overscan 以提供更好的滚动体验
+    const newStartIndex = Math.max(0, start - overscan)
+    const newEndIndex = Math.min(items.value.length - 1, end + overscan)
+
+    startIndex.value = newStartIndex
+    endIndex.value = newEndIndex
+
+    // 更新可见项目
+    visibleItems.value = items.value.slice(newStartIndex, newEndIndex + 1)
+  }
+
+  const getItemHeight = (_index: number): number => {
+    return itemHeight
+  }
+
+  const setItems = (newItems: T[]) => {
+    items.value = newItems as any
+    totalHeight.value = newItems.length * itemHeight
+
+    // 重新计算可见范围
+    if (newItems.length > 0) {
+      updateVisibleRange(0, 0) // 重置到顶部
+    }
+  }
+
+  return {
+    visibleItems: visibleItems as Ref<T[]>,
+    startIndex: readonly(startIndex),
+    endIndex: readonly(endIndex),
+    totalHeight: readonly(totalHeight),
+    updateVisibleRange,
+    getItemHeight,
+    setItems
+  }
+}
+
+// ==================== 性能监控器 ====================
+
+/**
+ * 创建性能监控器
+ * 用于监控关键操作的执行时间
+ */
+export function usePerformanceMonitor(): PerformanceMonitor {
+  const timings = ref<Record<string, number>>({})
+  const startTimes = ref<Record<string, number>>({})
+
+  const startTiming = (label: string) => {
+    startTimes.value[label] = performance.now()
+  }
+
+  const endTiming = (label: string) => {
+    const startTime = startTimes.value[label]
+    if (startTime !== undefined) {
+      const duration = performance.now() - startTime
+      timings.value[label] = duration
+      delete startTimes.value[label]
+      console.log(`[性能监控] ${label}: ${duration.toFixed(2)}ms`)
+    }
+  }
+
+  const getTimings = (): Record<string, number> => {
+    return { ...timings.value }
+  }
+
+  const clearTimings = () => {
+    timings.value = {}
+    startTimes.value = {}
+  }
+
+  return {
+    startTiming,
+    endTiming,
+    getTimings,
+    clearTimings
+  }
+}
+
+// ==================== 导出兼容性函数 ====================
+
+// 为了保持向后兼容，重新导出 useUtils 中的函数
+export { useDebounce, useThrottle, useRafThrottle } from './useUtils'

@@ -4,7 +4,7 @@
  * 使用 smooth-scrollbar 库提供流畅的横向滚动体验
  */
 
-import { ref, nextTick, onUnmounted, type Ref } from 'vue'
+import { ref, nextTick, onUnmounted, readonly, type Ref } from 'vue'
 import type { ClipboardItem } from '@renderer/api/types'
 import type { ScrollManager } from '@renderer/types/overlay'
 import { AnimationState } from './useOverlayAnimation'
@@ -86,7 +86,7 @@ export function useScrollManagement(
   /**
    * 将选中的元素滚动到可视区域（使用 smooth-scrollbar）
    */
-  const [scrollToSelectedItem] = useRafThrottle(() => {
+  const scrollToSelectedItem = useRafThrottle(() => {
     if (!clipboardScrollRef.value || clipboardHistory.value.length === 0) return
 
     // 如果 smooth-scrollbar 未初始化，先初始化
@@ -154,7 +154,7 @@ export function useScrollManagement(
   /**
    * 处理鼠标滚轮和触摸板事件（使用 smooth-scrollbar）
    */
-  const [handleWheel] = useThrottle((event: WheelEvent) => {
+  const handleWheel = useThrottle((event: WheelEvent) => {
     // 只有在活跃状态且有剪贴板历史时才响应滚轮事件
     if (currentAnimationState.value !== AnimationState.ACTIVE ||
       !clipboardScrollRef.value ||

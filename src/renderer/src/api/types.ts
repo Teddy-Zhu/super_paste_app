@@ -30,6 +30,7 @@ export interface IpcChannels {
   // 剪贴板相关
   'clipboard-get-history': ClipboardHistoryQueryOptions | { limit?: number } | void
   'clipboard-restore': { itemId: string }
+  'clipboard-restore-as-text': { itemId: string }
   'clipboard-delete-item': { itemId: string }
   'clipboard-clear-history': void
   'clipboard-get-status': void
@@ -213,6 +214,7 @@ export interface ClipboardOperations {
   getHistory(options?: ClipboardHistoryQueryOptions | number): Promise<ClipboardItem[]>
   searchHistory(options: ClipboardHistoryQueryOptions): Promise<ClipboardItem[]>
   restore(itemId: string): Promise<boolean>
+  restoreAsText(itemId: string): Promise<boolean>
   deleteItem(itemId: string): Promise<boolean>
   clearHistory(): Promise<boolean>
   getStatus(): Promise<ClipboardStatus>

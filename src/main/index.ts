@@ -1,3 +1,6 @@
+// 首先初始化日志系统
+import logger from './utils/logger'
+
 import { app, shell, BrowserWindow, ipcMain, screen, globalShortcut, Tray, Menu } from 'electron'
 import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
@@ -211,7 +214,7 @@ function toggleOverlayWindow(force = false): void {
       break
 
     default:
-      console.warn(`[主进程] 未知的overlay状态: ${currentState}`)
+      logger.warn(`[主进程] 未知的overlay状态: ${currentState}`)
       break
   }
 }
@@ -308,11 +311,11 @@ function initializeGlobalShortcut(): void {
       })
 
       if (!success) {
-        console.error('[主进程] 全局快捷键注册失败:', shortcutKey)
+        logger.error('[主进程] 全局快捷键注册失败:', shortcutKey)
       }
     }
   } catch (error) {
-    console.error('[主进程] 初始化全局快捷键时发生错误:', error)
+    logger.error('[主进程] 初始化全局快捷键时发生错误:', error)
   }
 }
 
@@ -420,14 +423,14 @@ function createOverlayWindow(): void {
 
     // 在窗口准备就绪后初始化全局快捷键
     initializeGlobalShortcut()
-    console.log('[主进程] 全局快捷键已初始化')
+    logger.debug('[主进程] 全局快捷键已初始化')
   })
   overlayWindow.on('show', () => {
-    console.log('[主进程] 发送滑入动画触发信号')
+    logger.debug('[主进程] 发送滑入动画触发信号')
     overlayWindow?.webContents.send('trigger-slide-in-animation')
   })
   overlayWindow.on('focus', () => {
-    console.log('[✓] 窗口已在前台显示并获得焦点');
+    logger.debug('[✓] 窗口已在前台显示并获得焦点');
   });
   // 阻止窗口关闭，改为隐藏
   overlayWindow.on('close', (event) => {
@@ -477,7 +480,7 @@ async function createSampleTagsIfNeeded(): Promise<void> {
     const existingTags = await clipboardManager.getAllTagGroups()
 
     if (existingTags.length === 0) {
-      console.log('[主进程] 创建示例标签数据')
+      logger.info('[主进程] 创建示例标签数据')
 
       // 创建一些示例标签
       const sampleTags = [
@@ -491,16 +494,16 @@ async function createSampleTagsIfNeeded(): Promise<void> {
       sampleTags.forEach(tag => {
         const tagId = clipboardManager.createTagGroup(tag.name, tag.color, tag.description)
         if (tagId) {
-          console.log(`[主进程] 创建标签成功: ${tag.name} (${tagId})`)
+          logger.info(`[主进程] 创建标签成功: ${tag.name} (${tagId})`)
         } else {
-          console.error(`[主进程] 创建标签失败: ${tag.name}`)
+          logger.error(`[主进程] 创建标签失败: ${tag.name}`)
         }
       })
     } else {
-      console.log(`[主进程] 已存在 ${existingTags.length} 个标签，跳过示例数据创建`)
+      logger.info(`[主进程] 已存在 ${existingTags.length} 个标签，跳过示例数据创建`)
     }
   } catch (error) {
-    console.error('[主进程] 创建示例标签数据失败:', error)
+    logger.error('[主进程] 创建示例标签数据失败:', error)
   }
 }
 
@@ -509,12 +512,12 @@ const gotTheLock = app.requestSingleInstanceLock()
 
 if (!gotTheLock) {
   // 如果获取锁失败，说明已有实例在运行，退出当前实例
-  console.log('[主进程] 应用已在运行，退出当前实例')
+  logger.info('[主进程] 应用已在运行，退出当前实例')
   app.quit()
 } else {
   // 当第二个实例尝试启动时，聚焦到第一个实例
   app.on('second-instance', () => {
-    console.log('[主进程] 检测到第二个实例启动，聚焦到当前实例')
+    logger.info('[主进程] 检测到第二个实例启动，聚焦到当前实例')
 
     // 如果有主窗口，显示并聚焦主窗口
     if (mainWindow) {
@@ -538,6 +541,9 @@ if (!gotTheLock) {
   // initialization and is ready to create browser windows.
   // Some APIs can only be used after this event occurs.
   app.whenReady().then(async () => {
+    // 记录应用启动日志
+    logger.info('[主进程] 应用启动，开始初始化')
+
     // Set app user model id for windows
     electronApp.setAppUserModelId('com.electron')
 
@@ -623,7 +629,7 @@ if (!gotTheLock) {
           debounceExecution(
             'update-max-history-size',
             () => {
-              console.log('[防抖] 执行最大历史记录数量配置更新')
+              logger.debug('[防抖] 执行最大历史记录数量配置更新')
               clipboardManager.updateMaxHistorySizeFromStore()
             },
             800 // 800ms 防抖延迟
@@ -635,7 +641,7 @@ if (!gotTheLock) {
           debounceExecution(
             'update-max-keep-time',
             () => {
-              console.log('[防抖] 执行最大保存时间配置更新')
+              logger.debug('[防抖] 执行最大保存时间配置更新')
               clipboardManager.updateMaxKeepTimeFromStore()
             },
             2000 // 2000ms 防抖延迟
@@ -687,7 +693,7 @@ if (!gotTheLock) {
 
     // 清理所有防抖定时器
     clearAllDebounceTimers()
-    console.log('[应用退出] 已清理所有防抖定时器')
+    logger.info('[应用退出] 已清理所有防抖定时器')
 
     // 关闭数据库连接
     clipboardDatabase.close()

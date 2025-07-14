@@ -71,6 +71,7 @@ export interface ClipboardManagerWorkerMethods {
   'getCurrentClipboard': () => any
   'setClipboardContent': (content: any, updateHash?: boolean) => boolean
   'restoreClipboard': (itemId: string) => boolean
+  'restoreClipboardAsText': (itemId: string) => boolean
   'syncClipboardHash': () => void
   
   // 历史记录管理

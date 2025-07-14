@@ -1,6 +1,7 @@
 import { ipcMain, BrowserWindow } from 'electron'
 import clipboardManager from './clipboard-manager'
 import type { ClipboardItem, ClipboardManagerConfig } from './types/clipboard-types'
+import logger from './utils/logger'
 
 /**
  * IPC 管理器
@@ -37,9 +38,9 @@ class IpcManager {
         }
       })
 
-      console.log('[IPC管理器] 已通知前端标签数据更新')
+      logger.debug('[IPC管理器] 已通知前端标签数据更新')
     } catch (error) {
-      console.error('[IPC管理器] 通知前端标签更新失败:', error)
+      logger.error('[IPC管理器] 通知前端标签更新失败:', error)
     }
   }
 
@@ -48,14 +49,14 @@ class IpcManager {
    */
   public initialize(): void {
     if (this.isInitialized) {
-      console.log('[IPC管理器] 已经初始化过了')
+      logger.debug('[IPC管理器] 已经初始化过了')
       return
     }
 
     this.registerClipboardHandlers()
     this.isInitialized = true
-    
-    console.log('[IPC管理器] 已初始化所有 IPC 事件处理器')
+
+    logger.info('[IPC管理器] 已初始化所有 IPC 事件处理器')
   }
 
   /**
@@ -89,7 +90,7 @@ class IpcManager {
           data: history
         }
       } catch (error) {
-        console.error('[IPC管理器] 获取剪贴板历史失败:', error)
+        logger.error('[IPC管理器] 获取剪贴板历史失败:', error)
         return {
           success: false,
           error: (error as Error).message || '获取剪贴板历史失败'
@@ -106,10 +107,27 @@ class IpcManager {
           message: success ? '剪贴板内容已还原' : '还原失败，未找到指定项目'
         }
       } catch (error) {
-        console.error('[IPC管理器] 还原剪贴板失败:', error)
+        logger.error('[IPC管理器] 还原剪贴板失败:', error)
         return {
           success: false,
           error: (error as Error).message || '还原剪贴板失败'
+        }
+      }
+    })
+
+    // 还原剪贴板内容为纯文本
+    ipcMain.handle('clipboard-restore-as-text', async (_, itemId: string) => {
+      try {
+        const success = await clipboardManager.restoreClipboardAsText(itemId)
+        return {
+          success,
+          message: success ? '剪贴板内容已还原为纯文本' : '还原失败，未找到指定项目或无文本内容'
+        }
+      } catch (error) {
+        logger.error('[IPC管理器] 还原剪贴板为纯文本失败:', error)
+        return {
+          success: false,
+          error: (error as Error).message || '还原剪贴板为纯文本失败'
         }
       }
     })
@@ -123,7 +141,7 @@ class IpcManager {
           message: success ? '剪贴板项已删除' : '删除失败，未找到指定项目'
         }
       } catch (error) {
-        console.error('[IPC管理器] 删除剪贴板项失败:', error)
+        logger.error('[IPC管理器] 删除剪贴板项失败:', error)
         return {
           success: false,
           error: (error as Error).message || '删除剪贴板项失败'
@@ -140,7 +158,7 @@ class IpcManager {
           message: '剪贴板历史已清空'
         }
       } catch (error) {
-        console.error('[IPC管理器] 清空剪贴板历史失败:', error)
+        logger.error('[IPC管理器] 清空剪贴板历史失败:', error)
         return {
           success: false,
           error: (error as Error).message || '清空剪贴板历史失败'
@@ -165,7 +183,7 @@ class IpcManager {
           }
         }
       } catch (error) {
-        console.error('[IPC管理器] 获取剪贴板状态失败:', error)
+        logger.error('[IPC管理器] 获取剪贴板状态失败:', error)
         return {
           success: false,
           error: (error as Error).message || '获取剪贴板状态失败'
@@ -182,7 +200,7 @@ class IpcManager {
           message: '剪贴板监听已启动'
         }
       } catch (error) {
-        console.error('[IPC管理器] 启动剪贴板监听失败:', error)
+        logger.error('[IPC管理器] 启动剪贴板监听失败:', error)
         return {
           success: false,
           error: (error as Error).message || '启动剪贴板监听失败'
@@ -199,7 +217,7 @@ class IpcManager {
           message: '剪贴板监听已停止'
         }
       } catch (error) {
-        console.error('[IPC管理器] 停止剪贴板监听失败:', error)
+        logger.error('[IPC管理器] 停止剪贴板监听失败:', error)
         return {
           success: false,
           error: (error as Error).message || '停止剪贴板监听失败'
@@ -216,7 +234,7 @@ class IpcManager {
           message: '剪贴板配置已更新'
         }
       } catch (error) {
-        console.error('[IPC管理器] 更新剪贴板配置失败:', error)
+        logger.error('[IPC管理器] 更新剪贴板配置失败:', error)
         return {
           success: false,
           error: (error as Error).message || '更新剪贴板配置失败'
@@ -233,7 +251,7 @@ class IpcManager {
           data: tags
         }
       } catch (error) {
-        console.error('[IPC管理器] 获取所有标签失败:', error)
+        logger.error('[IPC管理器] 获取所有标签失败:', error)
         return {
           success: false,
           error: (error as Error).message || '获取所有标签失败'
@@ -260,7 +278,7 @@ class IpcManager {
           }
         }
       } catch (error) {
-        console.error('[IPC管理器] 创建标签失败:', error)
+        logger.error('[IPC管理器] 创建标签失败:', error)
         return {
           success: false,
           error: (error as Error).message || '创建标签失败'
@@ -281,7 +299,7 @@ class IpcManager {
           message: success ? '标签更新成功' : '更新标签失败'
         }
       } catch (error) {
-        console.error('[IPC管理器] 更新标签失败:', error)
+        logger.error('[IPC管理器] 更新标签失败:', error)
         return {
           success: false,
           error: (error as Error).message || '更新标签失败'
@@ -302,7 +320,7 @@ class IpcManager {
           message: success ? '标签删除成功' : '删除标签失败'
         }
       } catch (error) {
-        console.error('[IPC管理器] 删除标签失败:', error)
+        logger.error('[IPC管理器] 删除标签失败:', error)
         return {
           success: false,
           error: (error as Error).message || '删除标签失败'
@@ -310,7 +328,7 @@ class IpcManager {
       }
     })
 
-    console.log('[IPC管理器] 剪贴板相关 IPC 事件处理器已注册')
+    logger.info('[IPC管理器] 剪贴板相关 IPC 事件处理器已注册')
   }
 
   /**
@@ -325,6 +343,7 @@ class IpcManager {
     const clipboardChannels = [
       'clipboard-get-history',
       'clipboard-restore',
+      'clipboard-restore-as-text',
       'clipboard-delete-item',
       'clipboard-clear-history',
       'clipboard-get-status',
@@ -342,7 +361,7 @@ class IpcManager {
     })
 
     this.isInitialized = false
-    console.log('[IPC管理器] 已清理所有 IPC 事件处理器')
+    logger.info('[IPC管理器] 已清理所有 IPC 事件处理器')
   }
 
   /**

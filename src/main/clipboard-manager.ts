@@ -1,5 +1,6 @@
-import { ClipboardManagerManager } from './workers/clipboard-manager-manager'
+import { BaseWorkerManager } from './workers/base-worker-manager'
 import { NotificationService } from './services/notification-service'
+import databaseService from './services/database-service'
 import store from './store'
 import { STORE_KEY } from './common'
 import type {
@@ -9,21 +10,28 @@ import type {
   TagGroup,
   TagStats
 } from './types/clipboard-types'
+import type { WorkerConfig, WorkerRequest } from './types/worker-types'
 import ActiveWindow from '@paymoapp/active-window'
+import { clipboard, nativeImage } from 'electron'
+import logger from './utils/logger'
 import clipboardManagerWorkerPath from './workers/clipboard-manager.worker?modulePath'
 
 /**
  * 剪贴板管理器（主线程接口）
  * 通过 Worker Thread 执行剪贴板管理操作以提升性能
  */
-class ClipboardManager {
+class ClipboardManager extends BaseWorkerManager {
   private static instance: ClipboardManager
-  private workerManager: ClipboardManagerManager | null = null
-  private isInitialized: boolean = false
 
   private constructor() {
-    console.log('[剪贴板管理器] 初始化主线程接口')
-    
+    const config: WorkerConfig = {
+      name: 'ClipboardManager',
+      workerPath: clipboardManagerWorkerPath
+    }
+    super(config)
+
+    logger.info('[剪贴板管理器] 初始化主线程接口')
+
     // 初始化 ActiveWindow
     try {
       ActiveWindow.initialize()
@@ -31,12 +39,115 @@ class ClipboardManager {
       if (process.platform === 'darwin') {
         const hasPermission = ActiveWindow.requestPermissions()
         if (!hasPermission) {
-          console.warn('[剪贴板管理器] macOS 需要屏幕录制权限才能获取窗口标题')
+          logger.warn('[剪贴板管理器] macOS 需要屏幕录制权限才能获取窗口标题')
         }
       }
-      console.log('[剪贴板管理器] ActiveWindow 已初始化')
+      logger.info('[剪贴板管理器] ActiveWindow 已初始化')
     } catch (error) {
-      console.error('[剪贴板管理器] ActiveWindow 初始化失败:', error)
+      logger.error('[剪贴板管理器] ActiveWindow 初始化失败:', error)
+    }
+
+    // 设置事件监听器
+    this.setupEventListeners()
+  }
+
+  /**
+   * 设置事件监听器
+   */
+  private setupEventListeners(): void {
+    // 监听剪贴板变化事件
+    this.on('clipboard-changed', (data: { timestamp: number }) => {
+      logger.debug('[剪贴板管理器] 剪贴板已变化:', data.timestamp)
+      // 通知前端剪贴板历史更新
+      this.notifyFrontendUpdate('clipboard-changed', data)
+    })
+
+    // 监听历史记录更新事件
+    this.on('history-updated', (data: { timestamp: number, source?: string }) => {
+      logger.debug('[剪贴板管理器] 历史记录已更新:', data)
+      // 通知前端剪贴板历史更新
+      // this.notifyFrontendUpdate('history-updated', data)
+    })
+  }
+
+  /**
+   * 通知前端剪贴板历史更新
+   */
+  private notifyFrontendUpdate(eventType: string, data: any): void {
+    try {
+      NotificationService.notifyClipboardHistoryUpdate({
+        eventType,
+        timestamp: Date.now(),
+        ...data
+      })
+    } catch (error) {
+      logger.error('[剪贴板管理器] 通知前端更新失败:', error)
+    }
+  }
+
+  /**
+   * 重写基类方法来处理来自 Worker 的请求
+   */
+  protected handleWorkerRequest(request: WorkerRequest): void {
+    this.handleWorkerCall(request)
+  }
+
+  /**
+   * 处理 Worker 调用
+   */
+  private async handleWorkerCall(request: WorkerRequest): Promise<void> {
+    try {
+      let result: any
+
+      // 检查是否是数据库操作
+      if (request.method.startsWith('database-')) {
+        const operation = request.method.replace('database-', '')
+        result = await databaseService.executeOperation(operation, request.params)
+      } else {
+        switch (request.method) {
+          // 剪贴板操作
+          case 'clipboard-readAll':
+            result = this.readAllClipboard()
+            break
+          case 'clipboard-readContent':
+            result = this.readClipboardContent()
+            break
+          case 'clipboard-restore':
+            result = this.restoreClipboardContent(request.params)
+            break
+          case 'clipboard-restore-as-text':
+            result = this.restoreClipboardContentAsText(request.params)
+            break
+
+          // 活动窗口操作
+          case 'activeWindow-getActiveWindow':
+            result = this.getActiveWindow()
+            break
+
+          default:
+            throw new Error(`未知的调用方法: ${request.method}`)
+        }
+      }
+
+      // 发送成功响应
+      this.worker?.postMessage({
+        id: `response-${Date.now()}`,
+        type: 'response',
+        requestId: request.id,
+        success: true,
+        data: result,
+        timestamp: Date.now()
+      })
+    } catch (error) {
+      // 发送错误响应
+      this.worker?.postMessage({
+        id: `response-${Date.now()}`,
+        type: 'response',
+        requestId: request.id,
+        success: false,
+        error: error instanceof Error ? error.message : String(error),
+        timestamp: Date.now()
+      })
     }
   }
 
@@ -50,26 +161,166 @@ class ClipboardManager {
     return ClipboardManager.instance
   }
 
-  /**
-   * 初始化 Worker
-   */
-  private async initializeWorker(): Promise<void> {
-    if (this.workerManager) {
-      return
+  // ==================== 剪贴板操作方法 ====================
+
+  private readAllClipboard(): any {
+    try {
+      // 检查文本内容
+      const text = clipboard.readText()
+      const html = clipboard.readHTML()
+      const rtf = clipboard.readRTF()
+      const bookmark = clipboard.readBookmark()
+
+      // 检查图片是否存在（不读取具体内容）
+      const image = clipboard.readImage()
+      const hasImage = !image.isEmpty()
+
+      return {
+        text: text || undefined,
+        html: html || undefined,
+        rtf: rtf || undefined,
+        bookmark: bookmark?.title ? bookmark : undefined,
+        hasImage: hasImage
+      }
+    } catch (error) {
+      logger.error('[剪贴板管理器] 读取剪贴板失败:', error)
+      return {}
     }
+  }
+
+  private readClipboardContent(): ClipboardContent {
+    const content: ClipboardContent = {}
 
     try {
-      // 创建 Worker 管理器
-      this.workerManager = new ClipboardManagerManager(clipboardManagerWorkerPath)
-      
-      // 启动 Worker
-      await this.workerManager.start()
-      
-      this.isInitialized = true
-      console.log('[剪贴板管理器] Worker 初始化完成')
+      // 获取文本内容
+      const text = clipboard.readText()
+      if (text) content.text = text
+
+      // 获取HTML内容
+      const html = clipboard.readHTML()
+      if (html) content.html = html
+
+      // 获取RTF内容
+      const rtf = clipboard.readRTF()
+      if (rtf) content.rtf = rtf
+
+      // 获取书签内容
+      const bookmark = clipboard.readBookmark()
+      if (bookmark && bookmark.title) {
+        content.bookmark = JSON.stringify(bookmark)
+      }
+
+      // 获取图片内容（转为base64）
+      const image = clipboard.readImage()
+      if (!image.isEmpty()) {
+        content.image = image.toDataURL()
+      }
     } catch (error) {
-      console.error('[剪贴板管理器] Worker 初始化失败:', error)
-      throw error
+      logger.error('[剪贴板管理器] 读取剪贴板内容失败:', error)
+    }
+
+    return content
+  }
+
+  private restoreClipboardContent(params: { content: ClipboardContent }): boolean {
+    try {
+      // 参数验证
+      if (!params || !params.content) {
+        logger.error('[剪贴板管理器] 还原失败: 无效的参数')
+        return false
+      }
+
+      const content = params.content
+
+      // 使用 Electron 的 clipboard.write 方法一次性设置所有格式
+      const clipboardData: any = {}
+
+      if (content.text) {
+        clipboardData.text = content.text
+      }
+
+      if (content.html) {
+        clipboardData.html = content.html
+      }
+
+      if (content.rtf) {
+        clipboardData.rtf = content.rtf
+      }
+
+      if (content.image) {
+        try {
+          const image = nativeImage.createFromDataURL(content.image)
+          if (!image.isEmpty()) {
+            clipboardData.image = image
+          }
+        } catch (e) {
+          logger.warn('[剪贴板管理器] 处理图片数据失败: %s', e)
+        }
+      }
+
+      // 一次性写入所有格式
+      if (Object.keys(clipboardData).length > 0) {
+        clipboard.write(clipboardData)
+        logger.debug('[剪贴板管理器] 已使用 write 方法设置剪贴板，格式:', Object.keys(clipboardData))
+      }
+
+      // 单独处理书签（因为 write 方法不支持书签）
+      if (content.bookmark) {
+        try {
+          const bookmark = JSON.parse(content.bookmark)
+          clipboard.writeBookmark(bookmark.title, bookmark.url)
+          logger.debug('[剪贴板管理器] 已设置书签:', bookmark.title)
+        } catch (e) {
+          logger.warn('[剪贴板管理器] 设置书签失败:', e)
+        }
+      }
+
+      // 检查是否有任何内容被设置
+      const hasContent = Object.keys(clipboardData).length > 0 || content.bookmark
+      if (!hasContent) {
+        logger.warn('[剪贴板管理器] 警告: 没有有效的剪贴板内容可以还原')
+      }
+
+      return true
+    } catch (error) {
+      logger.error('[剪贴板管理器] 还原剪贴板时发生异常:', error)
+      return false
+    }
+  }
+
+  private restoreClipboardContentAsText(params: { content: ClipboardContent }): boolean {
+    try {
+      // 参数验证
+      if (!params || !params.content) {
+        logger.error('[剪贴板管理器] 还原为纯文本失败: 无效的参数')
+        return false
+      }
+
+      const content = params.content
+
+      // 只设置纯文本格式，去除所有其他格式
+      if (content.text && content.text.trim()) {
+        clipboard.writeText(content.text)
+        logger.info('[剪贴板管理器] 已设置剪贴板为纯文本格式，长度: %d', content.text.length)
+        return true
+      } else {
+        logger.warn('[剪贴板管理器] 内容中没有有效的文本数据，无法设置为纯文本')
+        return false
+      }
+    } catch (error) {
+      logger.error('[剪贴板管理器] 还原剪贴板为纯文本失败:', error)
+      return false
+    }
+  }
+
+  // ==================== 活动窗口操作方法 ====================
+
+  private getActiveWindow(): any {
+    try {
+      return ActiveWindow.getActiveWindow()
+    } catch (error) {
+      logger.error('[剪贴板管理器] 获取活动窗口失败:', error)
+      return {}
     }
   }
 
@@ -78,7 +329,8 @@ class ClipboardManager {
    */
   private async ensureWorkerInitialized(): Promise<void> {
     if (!this.isInitialized) {
-      await this.initializeWorker()
+      await this.start()
+      this.isInitialized = true
     }
   }
 
@@ -87,14 +339,10 @@ class ClipboardManager {
    */
   public async initialize(config?: Partial<ClipboardManagerConfig>): Promise<void> {
     await this.ensureWorkerInitialized()
-    
-    if (!this.workerManager) {
-      throw new Error('Worker 未初始化')
-    }
 
     // 从store中获取配置
     const maxHistorySize = store.get(STORE_KEY.SETTINGS_MAX_HISTORY_SIZE, 100)
-    
+
     const finalConfig: Partial<ClipboardManagerConfig> = {
       maxHistorySize,
       checkInterval: 200,
@@ -102,21 +350,8 @@ class ClipboardManager {
       ...config
     }
 
-    await this.workerManager.initialize(finalConfig)
-    console.log('[剪贴板管理器] 已初始化，配置:', finalConfig)
-  }
-
-  /**
-   * 通知前端剪贴板历史更新
-   */
-  private notifyFrontendUpdate(): void {
-    try {
-      NotificationService.notifyClipboardHistoryUpdate({
-        timestamp: Date.now()
-      })
-    } catch (error) {
-      console.error('[剪贴板管理器] 通知前端更新失败:', error)
-    }
+    await this.call('initialize', finalConfig)
+    logger.info('[剪贴板管理器] 已初始化，配置:', finalConfig)
   }
 
   /**
@@ -124,20 +359,18 @@ class ClipboardManager {
    */
   public async startListening(): Promise<void> {
     await this.ensureWorkerInitialized()
-    
-    if (this.workerManager) {
-      await this.workerManager.startListening()
-      console.log('[剪贴板管理器] 开始监听剪贴板变化')
-    }
+
+    await this.call('startListening')
+    logger.info('[剪贴板管理器] 开始监听剪贴板变化')
   }
 
   /**
    * 停止监听剪贴板变化
    */
   public async stopListening(): Promise<void> {
-    if (this.workerManager) {
-      await this.workerManager.stopListening()
-      console.log('[剪贴板管理器] 停止监听剪贴板变化')
+    if (this.isRunning()) {
+      await this.call('stopListening')
+      logger.info('[剪贴板管理器] 停止监听剪贴板变化')
     }
   }
 
@@ -147,24 +380,52 @@ class ClipboardManager {
   public async restoreClipboard(itemId: string): Promise<boolean> {
     try {
       await this.ensureWorkerInitialized()
-      
-      if (!this.workerManager) {
-        throw new Error('Worker 未初始化')
-      }
 
-      const success = await this.workerManager.restoreClipboardItem(itemId)
+      const success = await this.call('restoreClipboard', itemId)
 
       if (success) {
-        console.log('[剪贴板管理器] 已还原剪贴板内容:', itemId)
+        logger.info('[剪贴板管理器] 已还原剪贴板内容:', itemId)
         // 通知前端更新（因为 last_used 时间已更新）
-        this.notifyFrontendUpdate()
+        this.notifyFrontendUpdate('clipboard-restored', { itemId })
       } else {
-        console.error('[剪贴板管理器] 还原失败:', itemId)
+        logger.error('[剪贴板管理器] 还原失败:', itemId)
       }
 
       return success
     } catch (error) {
-      console.error('[剪贴板管理器] 还原剪贴板失败:', error)
+      logger.error('[剪贴板管理器] 还原剪贴板失败:', error)
+      return false
+    }
+  }
+
+  /**
+   * 还原指定的剪贴板内容为纯文本到当前剪贴板
+   * @param itemId 剪贴板项目ID
+   * @returns Promise<boolean> 是否成功还原
+   */
+  public async restoreClipboardAsText(itemId: string): Promise<boolean> {
+    try {
+      // 参数验证
+      if (!itemId || typeof itemId !== 'string') {
+        logger.error('[剪贴板管理器] 还原为纯文本失败: 无效的项目ID:', itemId)
+        return false
+      }
+
+      await this.ensureWorkerInitialized()
+
+      const success = await this.call('restoreClipboardAsText', itemId)
+
+      if (success) {
+        logger.info('[剪贴板管理器] 已还原剪贴板内容为纯文本:', itemId)
+        // 通知前端更新（因为 last_used 时间已更新）
+        this.notifyFrontendUpdate('clipboard-restored', { itemId, type: 'text-only' })
+      } else {
+        logger.error('[剪贴板管理器] 还原为纯文本失败，项目可能不存在或无文本内容:', itemId)
+      }
+
+      return success
+    } catch (error) {
+      logger.error('[剪贴板管理器] 还原剪贴板为纯文本时发生异常:', error, '项目ID:', itemId)
       return false
     }
   }
@@ -192,11 +453,11 @@ class ClipboardManager {
       try {
         // 实现剪贴板设置逻辑（从原文件复制）
         // 这里需要实现具体的剪贴板设置逻辑
-        console.log('[剪贴板管理器] 设置剪贴板内容:', Object.keys(content))
+        logger.debug('[剪贴板管理器] 设置剪贴板内容:', Object.keys(content))
 
         // 更新内部哈希值以保持同步
-        if (updateHash && this.workerManager) {
-          await this.workerManager.syncClipboardHash()
+        if (updateHash) {
+          await this.call('syncClipboardHash')
         }
 
         return true
@@ -209,7 +470,7 @@ class ClipboardManager {
         }
       }
     } catch (error) {
-      console.error('[剪贴板管理器] 设置剪贴板内容失败:', error)
+      logger.error('[剪贴板管理器] 设置剪贴板内容失败:', error)
       return false
     }
   }
@@ -220,21 +481,17 @@ class ClipboardManager {
   public async deleteHistoryItem(itemId: string): Promise<boolean> {
     try {
       await this.ensureWorkerInitialized()
-      
-      if (!this.workerManager) {
-        throw new Error('Worker 未初始化')
+
+      const success = await this.call('deleteHistoryItem', itemId)
+
+      if (success) {
+        logger.info('[剪贴板管理器] 已删除剪贴板项:', itemId)
+        this.notifyFrontendUpdate('item-deleted', { itemId })
       }
 
-      const success = await this.workerManager.deleteHistoryItem(itemId)
-      
-      if (success) {
-        console.log('[剪贴板管理器] 已删除剪贴板项:', itemId)
-        this.notifyFrontendUpdate()
-      }
-      
       return success
     } catch (error) {
-      console.error('[剪贴板管理器] 删除剪贴板项失败:', error)
+      logger.error('[剪贴板管理器] 删除剪贴板项失败:', error)
       return false
     }
   }
@@ -245,16 +502,12 @@ class ClipboardManager {
   public async clearHistory(): Promise<void> {
     try {
       await this.ensureWorkerInitialized()
-      
-      if (!this.workerManager) {
-        throw new Error('Worker 未初始化')
-      }
 
-      await this.workerManager.clearHistory()
-      console.log('[剪贴板管理器] 已清空所有历史记录')
-      this.notifyFrontendUpdate()
+      await this.call('clearHistory')
+      logger.info('[剪贴板管理器] 已清空所有历史记录')
+      this.notifyFrontendUpdate('history-cleared', {})
     } catch (error) {
-      console.error('[剪贴板管理器] 清空历史记录失败:', error)
+      logger.error('[剪贴板管理器] 清空历史记录失败:', error)
     }
   }
 
@@ -264,14 +517,10 @@ class ClipboardManager {
   public async getHistory(limit?: number): Promise<ClipboardItem[]> {
     try {
       await this.ensureWorkerInitialized()
-      
-      if (!this.workerManager) {
-        return []
-      }
 
-      return await this.workerManager.getHistory(limit)
+      return await this.call('getHistory', limit)
     } catch (error) {
-      console.error('[剪贴板管理器] 获取历史记录失败:', error)
+      logger.error('[剪贴板管理器] 获取历史记录失败:', error)
       return []
     }
   }
@@ -282,20 +531,10 @@ class ClipboardManager {
   public async getConfig(): Promise<ClipboardManagerConfig> {
     try {
       await this.ensureWorkerInitialized()
-      
-      if (!this.workerManager) {
-        // 返回默认配置
-        const maxHistorySize = store.get(STORE_KEY.SETTINGS_MAX_HISTORY_SIZE, 100)
-        return {
-          maxHistorySize,
-          checkInterval: 200,
-          enableAutoSave: false
-        }
-      }
 
-      return await this.workerManager.getConfig()
+      return await this.call('getConfig')
     } catch (error) {
-      console.error('[剪贴板管理器] 获取配置失败:', error)
+      logger.error('[剪贴板管理器] 获取配置失败:', error)
       // 返回默认配置
       const maxHistorySize = store.get(STORE_KEY.SETTINGS_MAX_HISTORY_SIZE, 100)
       return {
@@ -312,13 +551,11 @@ class ClipboardManager {
   public async updateConfig(newConfig: Partial<ClipboardManagerConfig>): Promise<void> {
     try {
       await this.ensureWorkerInitialized()
-      
-      if (this.workerManager) {
-        await this.workerManager.updateConfig(newConfig)
-        console.log('[剪贴板管理器] 配置已更新:', newConfig)
-      }
+
+      await this.call('updateConfig', newConfig)
+      logger.info('[剪贴板管理器] 配置已更新:', newConfig)
     } catch (error) {
-      console.error('[剪贴板管理器] 更新配置失败:', error)
+      logger.error('[剪贴板管理器] 更新配置失败:', error)
     }
   }
 
@@ -329,9 +566,9 @@ class ClipboardManager {
     try {
       const maxHistorySize = store.get(STORE_KEY.SETTINGS_MAX_HISTORY_SIZE, 100)
       await this.updateConfig({ maxHistorySize })
-      console.log('[剪贴板管理器] 从store更新maxHistorySize:', maxHistorySize)
+      logger.info('[剪贴板管理器] 从store更新maxHistorySize:', maxHistorySize)
     } catch (error) {
-      console.error('[剪贴板管理器] 从store更新maxHistorySize失败:', error)
+      logger.error('[剪贴板管理器] 从store更新maxHistorySize失败:', error)
     }
   }
 
@@ -345,10 +582,10 @@ class ClipboardManager {
       import('./clipboard-history-cleaner').then(module => {
         const clipboardHistoryCleaner = module.default
         clipboardHistoryCleaner.updateConfigFromStore()
-        console.log('[剪贴板管理器] 已更新历史记录清理器配置')
+        logger.info('[剪贴板管理器] 已更新历史记录清理器配置')
       })
     } catch (error) {
-      console.error('[剪贴板管理器] 更新清理器配置失败:', error)
+      logger.error('[剪贴板管理器] 更新清理器配置失败:', error)
     }
   }
 
@@ -359,13 +596,9 @@ class ClipboardManager {
     try {
       await this.ensureWorkerInitialized()
 
-      if (!this.workerManager) {
-        return false
-      }
-
-      return await this.workerManager.isListeningActive()
+      return await this.call('isListeningActive')
     } catch (error) {
-      console.error('[剪贴板管理器] 获取监听状态失败:', error)
+      logger.error('[剪贴板管理器] 获取监听状态失败:', error)
       return false
     }
   }
@@ -377,12 +610,10 @@ class ClipboardManager {
     try {
       await this.ensureWorkerInitialized()
 
-      if (this.workerManager) {
-        await this.workerManager.syncClipboardHash()
-        console.log('[剪贴板管理器] 已同步剪贴板哈希值')
-      }
+      await this.call('syncClipboardHash')
+      logger.info('[剪贴板管理器] 已同步剪贴板哈希值')
     } catch (error) {
-      console.error('[剪贴板管理器] 同步剪贴板哈希值失败:', error)
+      logger.error('[剪贴板管理器] 同步剪贴板哈希值失败:', error)
     }
   }
 
@@ -393,13 +624,9 @@ class ClipboardManager {
     try {
       await this.ensureWorkerInitialized()
 
-      if (!this.workerManager) {
-        return {}
-      }
-
-      return await this.workerManager.getCurrentClipboard()
+      return await this.call('getCurrentClipboard')
     } catch (error) {
-      console.error('[剪贴板管理器] 获取当前剪贴板内容失败:', error)
+      logger.error('[剪贴板管理器] 获取当前剪贴板内容失败:', error)
       return {}
     }
   }
@@ -410,10 +637,10 @@ class ClipboardManager {
   public testClipboard(): void {
     // 这个方法需要在主线程中实现，因为涉及到剪贴板 API
     try {
-      console.log('[剪贴板管理器] 测试剪贴板功能（主线程实现）')
+      logger.info('[剪贴板管理器] 测试剪贴板功能（主线程实现）')
       // 实现测试逻辑
     } catch (error) {
-      console.error('[剪贴板管理器] 测试剪贴板功能失败:', error)
+      logger.error('[剪贴板管理器] 测试剪贴板功能失败:', error)
     }
   }
 
@@ -423,10 +650,10 @@ class ClipboardManager {
   public verifyClipboardContent(): { isValid: boolean; details: any } {
     // 这个方法需要在主线程中实现，因为涉及到剪贴板 API
     try {
-      console.log('[剪贴板管理器] 验证剪贴板内容（主线程实现）')
+      logger.debug('[剪贴板管理器] 验证剪贴板内容（主线程实现）')
       return { isValid: true, details: {} }
     } catch (error) {
-      console.error('[剪贴板管理器] 验证剪贴板内容失败:', error)
+      logger.error('[剪贴板管理器] 验证剪贴板内容失败:', error)
       return { isValid: false, details: { error: error instanceof Error ? error.message : String(error) } }
     }
   }
@@ -440,13 +667,9 @@ class ClipboardManager {
     try {
       await this.ensureWorkerInitialized()
 
-      if (!this.workerManager) {
-        return null
-      }
-
-      return await this.workerManager.createTagGroup(name, color, description)
+      return await this.call('createTagGroup', { name, color, description })
     } catch (error) {
-      console.error('[剪贴板管理器] 创建标签组失败:', error)
+      logger.error('[剪贴板管理器] 创建标签组失败:', error)
       return null
     }
   }
@@ -458,13 +681,9 @@ class ClipboardManager {
     try {
       await this.ensureWorkerInitialized()
 
-      if (!this.workerManager) {
-        return []
-      }
-
-      return await this.workerManager.getAllTagGroups()
+      return await this.call('getAllTagGroups')
     } catch (error) {
-      console.error('[剪贴板管理器] 获取标签组列表失败:', error)
+      logger.error('[剪贴板管理器] 获取标签组列表失败:', error)
       return []
     }
   }
@@ -476,13 +695,9 @@ class ClipboardManager {
     try {
       await this.ensureWorkerInitialized()
 
-      if (!this.workerManager) {
-        return false
-      }
-
-      return await this.workerManager.updateTagGroup(tagId, updates)
+      return await this.call('updateTagGroup', { tagId, updates })
     } catch (error) {
-      console.error('[剪贴板管理器] 更新标签组失败:', error)
+      logger.error('[剪贴板管理器] 更新标签组失败:', error)
       return false
     }
   }
@@ -494,13 +709,9 @@ class ClipboardManager {
     try {
       await this.ensureWorkerInitialized()
 
-      if (!this.workerManager) {
-        return false
-      }
-
-      return await this.workerManager.deleteTagGroup(tagId)
+      return await this.call('deleteTagGroup', tagId)
     } catch (error) {
-      console.error('[剪贴板管理器] 删除标签组失败:', error)
+      logger.error('[剪贴板管理器] 删除标签组失败:', error)
       return false
     }
   }
@@ -512,13 +723,9 @@ class ClipboardManager {
     try {
       await this.ensureWorkerInitialized()
 
-      if (!this.workerManager) {
-        return false
-      }
-
-      return await this.workerManager.bindTagToRecord(contentId, tagId)
+      return await this.call('bindTagToRecord', { contentId, tagId })
     } catch (error) {
-      console.error('[剪贴板管理器] 绑定标签失败:', error)
+      logger.error('[剪贴板管理器] 绑定标签失败:', error)
       return false
     }
   }
@@ -530,13 +737,9 @@ class ClipboardManager {
     try {
       await this.ensureWorkerInitialized()
 
-      if (!this.workerManager) {
-        return false
-      }
-
-      return await this.workerManager.unbindTagFromRecord(contentId, tagId)
+      return await this.call('unbindTagFromRecord', { contentId, tagId })
     } catch (error) {
-      console.error('[剪贴板管理器] 解除标签绑定失败:', error)
+      logger.error('[剪贴板管理器] 解除标签绑定失败:', error)
       return false
     }
   }
@@ -548,13 +751,9 @@ class ClipboardManager {
     try {
       await this.ensureWorkerInitialized()
 
-      if (!this.workerManager) {
-        return []
-      }
-
-      return await this.workerManager.getRecordsByTags(tagIds)
+      return await this.call('getRecordsByTags', tagIds)
     } catch (error) {
-      console.error('[剪贴板管理器] 按标签筛选记录失败:', error)
+      logger.error('[剪贴板管理器] 按标签筛选记录失败:', error)
       return []
     }
   }
@@ -566,13 +765,9 @@ class ClipboardManager {
     try {
       await this.ensureWorkerInitialized()
 
-      if (!this.workerManager) {
-        return []
-      }
-
-      return await this.workerManager.getRecordsByParseType(parseType)
+      return await this.call('getRecordsByParseType', parseType)
     } catch (error) {
-      console.error('[剪贴板管理器] 按解析类型筛选记录失败:', error)
+      logger.error('[剪贴板管理器] 按解析类型筛选记录失败:', error)
       return []
     }
   }
@@ -584,13 +779,9 @@ class ClipboardManager {
     try {
       await this.ensureWorkerInitialized()
 
-      if (!this.workerManager) {
-        return []
-      }
-
-      return await this.workerManager.getTagStats()
+      return await this.call('getTagStats')
     } catch (error) {
-      console.error('[剪贴板管理器] 获取标签统计信息失败:', error)
+      logger.error('[剪贴板管理器] 获取标签统计信息失败:', error)
       return []
     }
   }
@@ -610,13 +801,9 @@ class ClipboardManager {
     try {
       await this.ensureWorkerInitialized()
 
-      if (!this.workerManager) {
-        return []
-      }
-
-      return await this.workerManager.searchHistory(options)
+      return await this.call('searchHistory', options)
     } catch (error) {
-      console.error('[剪贴板管理器] 搜索历史记录失败:', error)
+      logger.error('[剪贴板管理器] 搜索历史记录失败:', error)
       return []
     }
   }

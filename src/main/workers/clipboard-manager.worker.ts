@@ -15,6 +15,7 @@ import type {
   AppInfo
 } from '../types/clipboard-types'
 import { ClipboardDataConverter } from '../types/clipboard-types'
+import log from 'electron-log'
 
 /**
  * 剪贴板管理器 Worker
@@ -36,14 +37,14 @@ class ClipboardManagerWorker {
       enableAutoSave: false
     }
 
-    console.log('[剪贴板管理器 Worker] 初始化完成')
+    log.info('[剪贴板管理器 Worker] 初始化完成')
   }
 
   /**
    * 初始化剪贴板管理器
    */
   public async initialize(config?: Partial<ClipboardManagerConfig>): Promise<void> {
-    console.log('[剪贴板管理器 Worker] 开始初始化')
+    log.info('[剪贴板管理器 Worker] 开始初始化')
     
     if (config) {
       this.config = { ...this.config, ...config }
@@ -62,10 +63,10 @@ class ClipboardManagerWorker {
       // 初始化快速哈希
       await this.hasQuickClipboardChange()
 
-      console.log('[剪贴板管理器 Worker] 已初始化，配置:', this.config)
-      console.log('[剪贴板管理器 Worker] 从数据库加载了', this.historyItems.length, '条历史记录')
+      log.info('[剪贴板管理器 Worker] 已初始化，配置:', this.config)
+      log.info('[剪贴板管理器 Worker] 从数据库加载了', this.historyItems.length, '条历史记录')
     } catch (error) {
-      console.error('[剪贴板管理器 Worker] 初始化失败:', error)
+      log.error('[剪贴板管理器 Worker] 初始化失败:', error)
       // 即使数据库初始化失败，也要继续初始化剪贴板管理器
       this.lastClipboardHash = await this.generateClipboardHash()
       await this.hasQuickClipboardChange()
@@ -77,7 +78,7 @@ class ClipboardManagerWorker {
    */
   public startListening(): void {
     if (this.isListening) {
-      console.log('[剪贴板管理器 Worker] 已在监听中')
+      log.info('[剪贴板管理器 Worker] 已在监听中')
       return
     }
 
@@ -86,7 +87,7 @@ class ClipboardManagerWorker {
       this.checkClipboardChange()
     }, this.config.checkInterval)
 
-    console.log('[剪贴板管理器 Worker] 开始监听剪贴板变化')
+    log.info('[剪贴板管理器 Worker] 开始监听剪贴板变化')
   }
 
   /**
@@ -94,7 +95,7 @@ class ClipboardManagerWorker {
    */
   public stopListening(): void {
     if (!this.isListening) {
-      console.log('[剪贴板管理器 Worker] 未在监听中')
+      log.info('[剪贴板管理器 Worker] 未在监听中')
       return
     }
 
@@ -104,7 +105,7 @@ class ClipboardManagerWorker {
       this.checkTimer = null
     }
 
-    console.log('[剪贴板管理器 Worker] 停止监听剪贴板变化')
+    log.info('[剪贴板管理器 Worker] 停止监听剪贴板变化')
   }
 
   /**
@@ -121,7 +122,6 @@ class ClipboardManagerWorker {
 
       // 如果快速检查发现变化，再进行完整的哈希计算
       const currentHash = await this.generateClipboardHash()
-
       if (currentHash && currentHash !== this.lastClipboardHash) {
         this.lastClipboardHash = currentHash
 
@@ -130,11 +130,11 @@ class ClipboardManagerWorker {
           await this.saveClipboardItem(clipboardContent)
         }
 
-        console.log('[剪贴板管理器 Worker] 检测到剪贴板变化')
+        log.info('[剪贴板管理器 Worker] 检测到剪贴板变化')
         this.sendEvent('clipboard-changed', { timestamp: Date.now() })
       }
     } catch (error) {
-      console.error('[剪贴板管理器 Worker] 检查剪贴板变化失败:', error)
+      log.error('[剪贴板管理器 Worker] 检查剪贴板变化失败:', error)
     }
   }
 
@@ -171,7 +171,7 @@ class ClipboardManagerWorker {
 
       return hasChange
     } catch (error) {
-      console.error('[剪贴板管理器 Worker] 快速检查失败:', error)
+      log.error('[剪贴板管理器 Worker] 快速检查失败:', error)
       return true // 出错时假设有变化，进行完整检查
     }
   }
@@ -191,7 +191,7 @@ class ClipboardManagerWorker {
       // 通过主线程获取剪贴板内容
       return await this.callMainThread('clipboard-readContent')
     } catch (error) {
-      console.error('[剪贴板管理器 Worker] 读取剪贴板内容失败:', error)
+      log.error('[剪贴板管理器 Worker] 读取剪贴板内容失败:', error)
       return {}
     }
   }
@@ -204,7 +204,7 @@ class ClipboardManagerWorker {
       const content = await this.getCurrentClipboardContent()
       return ClipboardDataConverter.generateContentHash(content)
     } catch (error) {
-      console.error('[剪贴板管理器 Worker] 生成剪贴板哈希失败:', error)
+      log.error('[剪贴板管理器 Worker] 生成剪贴板哈希失败:', error)
       return ''
     }
   }
@@ -269,12 +269,12 @@ class ClipboardManagerWorker {
         }
       }
 
-      console.log('[剪贴板管理器 Worker] 已保存剪贴板项，当前历史记录数量:', this.historyItems.length)
+      log.debug('[剪贴板管理器 Worker] 已保存剪贴板项，当前历史记录数量:', this.historyItems.length)
 
       // 通知前端剪贴板历史已更新
       this.sendEvent('history-updated', { timestamp: Date.now() })
     } catch (error) {
-      console.error('[剪贴板管理器 Worker] 保存剪贴板项失败:', error)
+      log.error('[剪贴板管理器 Worker] 保存剪贴板项失败:', error)
     }
   }
 
@@ -291,9 +291,9 @@ class ClipboardManagerWorker {
 
       this.historyItems = ClipboardDataConverter.batchRecordsToItems(recordsWithTags)
 
-      console.log('[剪贴板管理器 Worker] 从数据库加载了', this.historyItems.length, '条历史记录')
+      log.info('[剪贴板管理器 Worker] 从数据库加载了', this.historyItems.length, '条历史记录')
     } catch (error) {
-      console.error('[剪贴板管理器 Worker] 从数据库加载历史记录失败:', error)
+      log.error('[剪贴板管理器 Worker] 从数据库加载历史记录失败:', error)
       this.historyItems = []
     }
   }
@@ -333,7 +333,7 @@ class ClipboardManagerWorker {
         })
       }
     } catch (error) {
-      console.error('[剪贴板管理器 Worker] 同步到数据库失败:', error)
+      log.error('[剪贴板管理器 Worker] 同步到数据库失败:', error)
     }
   }
 
@@ -344,7 +344,7 @@ class ClipboardManagerWorker {
     try {
       await this.callMainThread('database-deleteRecord', { contentId })
     } catch (error) {
-      console.error('[剪贴板管理器 Worker] 从数据库删除记录失败:', error)
+      log.error('[剪贴板管理器 Worker] 从数据库删除记录失败:', error)
     }
   }
 
@@ -361,11 +361,11 @@ class ClipboardManagerWorker {
       const deletedCount = originalLength - this.historyItems.length
 
       if (deletedCount > 0) {
-        console.log(`[剪贴板管理器 Worker] 已从内存中同步删除 ${deletedCount} 条过期记录`)
+        log.info(`[剪贴板管理器 Worker] 已从内存中同步删除 ${deletedCount} 条过期记录`)
         this.sendEvent('history-updated', { timestamp: Date.now(), source: 'cleanup' })
       }
     } catch (error) {
-      console.error('[剪贴板管理器 Worker] 同步删除内存记录失败:', error)
+      log.error('[剪贴板管理器 Worker] 同步删除内存记录失败:', error)
     }
   }
 
@@ -383,13 +383,13 @@ class ClipboardManagerWorker {
    * 还原指定的剪贴板内容到当前剪贴板
    */
   public async restoreClipboard(itemId: string): Promise<boolean> {
-    console.log('[剪贴板管理器 Worker] 开始还原剪贴板内容:', itemId)
+    log.info('[剪贴板管理器 Worker] 开始还原剪贴板内容:', itemId)
 
     try {
       const item = this.historyItems.find(h => h.id === itemId)
 
       if (!item) {
-        console.error('[剪贴板管理器 Worker] 未找到指定的剪贴板项:', itemId)
+        log.error('[剪贴板管理器 Worker] 未找到指定的剪贴板项:', itemId)
         return false
       }
 
@@ -410,14 +410,71 @@ class ClipboardManagerWorker {
         // 同步更新数据库中的最后使用时间
         await this.syncToDatabase(item, true)
 
-        console.log('[剪贴板管理器 Worker] 已还原剪贴板内容:', itemId)
+        log.info('[剪贴板管理器 Worker] 已还原剪贴板内容:', itemId)
         return true
       } else {
-        console.error('[剪贴板管理器 Worker] 还原失败:', itemId)
+        log.error('[剪贴板管理器 Worker] 还原失败:', itemId)
         return false
       }
     } catch (error) {
-      console.error('[剪贴板管理器 Worker] 还原剪贴板失败:', error)
+      log.error('[剪贴板管理器 Worker] 还原剪贴板失败:', error)
+      return false
+    }
+  }
+
+  /**
+   * 还原剪贴板内容为纯文本
+   * @param itemId 剪贴板项目ID
+   * @returns Promise<boolean> 是否成功还原
+   */
+  private async restoreClipboardAsText(itemId: string): Promise<boolean> {
+    log.info('[剪贴板管理器 Worker] 开始还原剪贴板内容为纯文本:', itemId)
+
+    try {
+      // 参数验证
+      if (!itemId || typeof itemId !== 'string') {
+        log.error('[剪贴板管理器 Worker] 还原为纯文本失败: 无效的项目ID:', itemId)
+        return false
+      }
+
+      const item = this.historyItems.find(h => h.id === itemId)
+
+      if (!item) {
+        log.error('[剪贴板管理器 Worker] 未找到指定的剪贴板项:', itemId)
+        return false
+      }
+
+      // 检查是否有文本内容
+      if (!item.content.text || !item.content.text.trim()) {
+        console.warn('[剪贴板管理器 Worker] 剪贴板项目没有有效的文本内容:', itemId)
+        return false
+      }
+
+      // 通过主线程还原剪贴板内容为纯文本
+      const success = await this.callMainThread('clipboard-restore-as-text', {
+        content: item.content
+      })
+
+      if (success) {
+        // 更新最后使用时间并重新排序
+        item.lastUsed = Date.now()
+        const itemIndex = this.historyItems.findIndex(h => h.id === itemId)
+        if (itemIndex > 0) {
+          this.historyItems.splice(itemIndex, 1)
+          this.historyItems.unshift(item)
+        }
+
+        // 同步更新数据库中的最后使用时间
+        await this.syncToDatabase(item, true)
+
+        log.info('[剪贴板管理器 Worker] 已还原剪贴板内容为纯文本:', itemId, '文本长度:', item.content.text.length)
+        return true
+      } else {
+        log.error('[剪贴板管理器 Worker] 主线程还原为纯文本失败:', itemId)
+        return false
+      }
+    } catch (error) {
+      log.error('[剪贴板管理器 Worker] 还原剪贴板为纯文本时发生异常:', error, '项目ID:', itemId)
       return false
     }
   }
@@ -430,7 +487,7 @@ class ClipboardManagerWorker {
       const itemIndex = this.historyItems.findIndex(h => h.id === itemId)
 
       if (itemIndex === -1) {
-        console.error('[剪贴板管理器 Worker] 未找到指定的剪贴板项:', itemId)
+        log.error('[剪贴板管理器 Worker] 未找到指定的剪贴板项:', itemId)
         return false
       }
 
@@ -440,11 +497,11 @@ class ClipboardManagerWorker {
       // 从数据库中删除
       await this.removeFromDatabase(itemId)
 
-      console.log('[剪贴板管理器 Worker] 已删除剪贴板项:', itemId)
+      log.info('[剪贴板管理器 Worker] 已删除剪贴板项:', itemId)
       this.sendEvent('history-updated', { timestamp: Date.now() })
       return true
     } catch (error) {
-      console.error('[剪贴板管理器 Worker] 删除剪贴板项失败:', error)
+      log.error('[剪贴板管理器 Worker] 删除剪贴板项失败:', error)
       return false
     }
   }
@@ -460,10 +517,10 @@ class ClipboardManagerWorker {
       // 清空数据库中的历史记录
       await this.callMainThread('database-clearAllRecords')
 
-      console.log('[剪贴板管理器 Worker] 已清空所有历史记录')
+      log.info('[剪贴板管理器 Worker] 已清空所有历史记录')
       this.sendEvent('history-updated', { timestamp: Date.now() })
     } catch (error) {
-      console.error('[剪贴板管理器 Worker] 清空历史记录失败:', error)
+      log.error('[剪贴板管理器 Worker] 清空历史记录失败:', error)
     }
   }
 
@@ -479,7 +536,7 @@ class ClipboardManagerWorker {
    */
   public updateConfig(newConfig: Partial<ClipboardManagerConfig>): void {
     this.config = { ...this.config, ...newConfig }
-    console.log('[剪贴板管理器 Worker] 配置已更新:', this.config)
+    log.info('[剪贴板管理器 Worker] 配置已更新:', this.config)
   }
 
   /**
@@ -495,9 +552,9 @@ class ClipboardManagerWorker {
   public async syncClipboardHash(): Promise<void> {
     try {
       this.lastClipboardHash = await this.generateClipboardHash()
-      console.log('[剪贴板管理器 Worker] 已同步剪贴板哈希值')
+      log.info('[剪贴板管理器 Worker] 已同步剪贴板哈希值')
     } catch (error) {
-      console.error('[剪贴板管理器 Worker] 同步剪贴板哈希值失败:', error)
+      log.error('[剪贴板管理器 Worker] 同步剪贴板哈希值失败:', error)
     }
   }
 
@@ -528,7 +585,7 @@ class ClipboardManagerWorker {
         updatedAt: Date.now()
       }
     } catch (error) {
-      console.error('[剪贴板管理器 Worker] 获取当前应用信息失败:', error)
+      log.error('[剪贴板管理器 Worker] 获取当前应用信息失败:', error)
       return undefined
     }
   }
@@ -554,14 +611,14 @@ class ClipboardManagerWorker {
 
       const success = await this.callMainThread('database-createTagGroup', { tag })
       if (success) {
-        console.log('[剪贴板管理器 Worker] 创建标签组成功:', tag)
+        log.info('[剪贴板管理器 Worker] 创建标签组成功:', tag)
         return tagId
       } else {
-        console.error('[剪贴板管理器 Worker] 创建标签组失败')
+        log.error('[剪贴板管理器 Worker] 创建标签组失败')
         return null
       }
     } catch (error) {
-      console.error('[剪贴板管理器 Worker] 创建标签组失败:', error)
+      log.error('[剪贴板管理器 Worker] 创建标签组失败:', error)
       return null
     }
   }
@@ -574,7 +631,7 @@ class ClipboardManagerWorker {
       const records = await this.callMainThread('database-getAllTagGroups')
       return records.map((record: any) => ClipboardDataConverter.tagRecordToTag(record))
     } catch (error) {
-      console.error('[剪贴板管理器 Worker] 获取标签组列表失败:', error)
+      log.error('[剪贴板管理器 Worker] 获取标签组列表失败:', error)
       return []
     }
   }
@@ -591,11 +648,11 @@ class ClipboardManagerWorker {
 
       const success = await this.callMainThread('database-updateTagGroup', { tagId, updateData })
       if (success) {
-        console.log('[剪贴板管理器 Worker] 更新标签组成功:', tagId, updateData)
+        log.info('[剪贴板管理器 Worker] 更新标签组成功:', tagId, updateData)
       }
       return success
     } catch (error) {
-      console.error('[剪贴板管理器 Worker] 更新标签组失败:', error)
+      log.error('[剪贴板管理器 Worker] 更新标签组失败:', error)
       return false
     }
   }
@@ -607,13 +664,13 @@ class ClipboardManagerWorker {
     try {
       const success = await this.callMainThread('database-deleteTagGroup', { tagId })
       if (success) {
-        console.log('[剪贴板管理器 Worker] 删除标签组成功:', tagId)
+        log.info('[剪贴板管理器 Worker] 删除标签组成功:', tagId)
         // 重新加载历史记录以更新标签信息
         await this.loadHistoryFromDatabase()
       }
       return success
     } catch (error) {
-      console.error('[剪贴板管理器 Worker] 删除标签组失败:', error)
+      log.error('[剪贴板管理器 Worker] 删除标签组失败:', error)
       return false
     }
   }
@@ -637,11 +694,11 @@ class ClipboardManagerWorker {
             }
           }
         }
-        console.log('[剪贴板管理器 Worker] 绑定标签成功:', contentId, tagId)
+        log.info('[剪贴板管理器 Worker] 绑定标签成功:', contentId, tagId)
       }
       return success
     } catch (error) {
-      console.error('[剪贴板管理器 Worker] 绑定标签失败:', error)
+      log.error('[剪贴板管理器 Worker] 绑定标签失败:', error)
       return false
     }
   }
@@ -658,11 +715,11 @@ class ClipboardManagerWorker {
         if (item && item.tags) {
           item.tags = item.tags.filter(tag => tag.id !== tagId)
         }
-        console.log('[剪贴板管理器 Worker] 解除标签绑定成功:', contentId, tagId)
+        log.info('[剪贴板管理器 Worker] 解除标签绑定成功:', contentId, tagId)
       }
       return success
     } catch (error) {
-      console.error('[剪贴板管理器 Worker] 解除标签绑定失败:', error)
+      log.error('[剪贴板管理器 Worker] 解除标签绑定失败:', error)
       return false
     }
   }
@@ -680,7 +737,7 @@ class ClipboardManagerWorker {
 
       return ClipboardDataConverter.batchRecordsToItems(recordsWithTags)
     } catch (error) {
-      console.error('[剪贴板管理器 Worker] 按标签筛选记录失败:', error)
+      log.error('[剪贴板管理器 Worker] 按标签筛选记录失败:', error)
       return []
     }
   }
@@ -698,7 +755,7 @@ class ClipboardManagerWorker {
 
       return ClipboardDataConverter.batchRecordsToItems(recordsWithTags)
     } catch (error) {
-      console.error('[剪贴板管理器 Worker] 按解析类型筛选记录失败:', error)
+      log.error('[剪贴板管理器 Worker] 按解析类型筛选记录失败:', error)
       return []
     }
   }
@@ -710,7 +767,7 @@ class ClipboardManagerWorker {
     try {
       return await this.callMainThread('database-getTagGroupStats')
     } catch (error) {
-      console.error('[剪贴板管理器 Worker] 获取标签统计信息失败:', error)
+      log.error('[剪贴板管理器 Worker] 获取标签统计信息失败:', error)
       return []
     }
   }
@@ -740,7 +797,7 @@ class ClipboardManagerWorker {
 
       return ClipboardDataConverter.batchRecordsToItems(recordsWithTags)
     } catch (error) {
-      console.error('[剪贴板管理器 Worker] 搜索历史记录失败:', error)
+      log.error('[剪贴板管理器 Worker] 搜索历史记录失败:', error)
       return []
     }
   }
@@ -840,6 +897,9 @@ class ClipboardManagerWorker {
         case 'restoreClipboard':
           result = await this.restoreClipboard(request.params)
           break
+        case 'restoreClipboardAsText':
+          result = await this.restoreClipboardAsText(request.params)
+          break
         case 'syncClipboardHash':
           result = await this.syncClipboardHash()
           break
@@ -923,7 +983,7 @@ parentPort?.on('message', (message: WorkerMessage) => {
 })
 
 // Worker 准备就绪，发送 ready 事件
-console.log('[剪贴板管理器 Worker] Worker 已准备就绪，等待初始化请求')
+log.info('[剪贴板管理器 Worker] Worker 已准备就绪，等待初始化请求')
 
 // 发送 worker-ready 事件，告知主线程 Worker 已启动
 const readyEvent: WorkerEvent = {

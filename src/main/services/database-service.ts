@@ -1,12 +1,13 @@
 import clipboardDatabase from '../clipboard-database'
-import type { 
-  ClipboardContent, 
-  TagGroup, 
+import type {
+  ClipboardContent,
+  TagGroup,
   ClipboardHistoryRecord,
   TagGroupRecord,
   AppInfoRecord,
   QueryOptions
 } from '../types/clipboard-types'
+import logger from '../utils/logger'
 
 /**
  * 数据库服务
@@ -33,7 +34,7 @@ export class DatabaseService {
       clipboardDatabase.initialize()
       return true
     } catch (error) {
-      console.error('[数据库服务] 初始化失败:', error)
+      logger.error('[数据库服务] 初始化失败:', error)
       return false
     }
   }
@@ -147,7 +148,7 @@ export class DatabaseService {
       const success = clipboardDatabase.createTagGroup(tag)
       return success ? tagId : null
     } catch (error) {
-      console.error('[数据库服务] 创建标签组失败:', error)
+      logger.error('[数据库服务] 创建标签组失败:', error)
       return null
     }
   }
@@ -268,7 +269,7 @@ export class DatabaseService {
           throw new Error(`未知的数据库操作: ${operation}`)
       }
     } catch (error) {
-      console.error(`[数据库服务] 执行操作 ${operation} 失败:`, error)
+      logger.error(`[数据库服务] 执行操作 ${operation} 失败:`, error)
       throw error
     }
   }

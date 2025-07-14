@@ -1,78 +1,65 @@
 /**
  * Overlay 组件相关的类型定义
  * 提供更严格的类型安全性
+ *
+ * 注意：部分类型已迁移到各自的 composable 文件中
+ * 这里保留公共类型和向后兼容的类型定义
  */
 
-import type { Ref, ComputedRef } from 'vue'
 import type { ClipboardItem, TagGroup } from '@renderer/api/types'
+import { AnimationState } from '@renderer/composables/useAnimation'
+import type { TabData } from '@renderer/composables/useScrollAndTags'
+import type { Ref, ComputedRef } from 'vue'
 
-// 动画状态枚举
-export enum AnimationState {
-  IDLE = 'IDLE',
-  SLIDING_IN = 'SLIDING_IN',
-  ACTIVE = 'ACTIVE',
-  SLIDING_OUT = 'SLIDING_OUT'
-}
+// 重新导出动画相关类型
+export { AnimationState, type AnimationConfig, type AnimationControls } from '@renderer/composables/useAnimation'
 
-// 动画配置类型
-export interface AnimationConfig {
-  readonly DURATION: number
-  readonly SLIDE_IN_EASING: string
-  readonly SLIDE_OUT_EASING: string
-}
+// 导入 AnimationControls 类型用于接口定义
+import type { AnimationControls } from '@renderer/composables/useAnimation'
 
 // 搜索动画配置类型
 export interface SearchAnimationConfig {
-  readonly DURATION: number
-  readonly EASING: string
-  readonly SEARCH_WIDTH: string
-  readonly COLLAPSE_WIDTH: string
+  DURATION: number
+  EASING: string
+  SEARCH_WIDTH: string
+  COLLAPSE_WIDTH: string
 }
 
-// 动画函数返回类型
-export interface AnimationControls {
-  play: () => void
-  playState: Ref<'idle' | 'running' | 'paused' | 'finished'>
-}
+// 重新导出工具类型
+export type {
+  EventListenerCleanup,
+  EventManager,
+  TimerManager,
+  DebounceFunction,
+  ThrottleFunction
+} from '@renderer/composables/useUtils'
 
-// Overlay 动画管理器类型
-export interface OverlayAnimationManager {
-  readonly currentAnimationState: Ref<AnimationState>
-  readonly isSlideInComplete: Ref<boolean>
-  setAnimationState: (newState: AnimationState) => void
-  canStartClosing: () => boolean
-  isAnimating: () => boolean
-  createSlideInAnimation: () => AnimationControls
-  createSlideOutAnimation: () => AnimationControls
-  resetState: () => void
-}
+// 重新导出性能优化类型
+export type {
+  BatchUpdateManager,
+  VirtualScrollManager,
+  PerformanceMonitor
+} from '@renderer/composables/usePerformanceOptimization'
 
-// 搜索动画管理器类型
-export interface SearchAnimationManager {
-  readonly isSearchVisible: Ref<boolean>
-  readonly isSearchAnimating: Ref<boolean>
-  readonly isOpeningSearch: Ref<boolean>
-  readonly showSearchContainer: ComputedRef<boolean>
-  readonly showTabsContainer: ComputedRef<boolean>
-  _setSearchVisible: (value: boolean) => void
-  _setSearchAnimating: (value: boolean) => void
-  _setOpeningSearch: (value: boolean) => void
-  createSearchExpandAnimation: () => AnimationControls
-  createSearchCollapseAnimation: () => AnimationControls
-  createTabsHideAnimation: () => AnimationControls
-  createTabsShowAnimation: () => AnimationControls
-  resetSearchStyles: () => void
-  initializeStyles: () => void
-}
+// 重新导出动画管理器类型
+export type { AnimationManager } from '@renderer/composables/useAnimation'
 
-// 搜索管理器类型
+// 重新导出搜索和导航管理器类型
+export type { SearchAndNavigationManager } from '@renderer/composables/useSearchAndNavigation'
+
+// 搜索管理器类型定义
 export interface SearchManager {
+  // 状态
   readonly searchText: Ref<string>
   readonly isSearching: Ref<boolean>
   readonly inputBuffer: Ref<string>
+
+  // 内部状态修改方法
   _setSearching: (value: boolean) => void
   _clearInputBuffer: () => void
   _setSearchText: (value: string) => void
+
+  // 方法
   debouncedSearch: (text: string) => void
   handleSearchInput: (event: Event) => void
   isInputCharacter: (event: KeyboardEvent) => boolean
@@ -89,14 +76,7 @@ export interface SearchManager {
   resetSearchState: () => void
 }
 
-// 键盘导航管理器类型
-export interface KeyboardNavigationManager {
-  readonly isKeyboardNavigation: Ref<boolean>
-  handleKeyNavigation: (event: KeyboardEvent) => void
-  _setKeyboardNavigation: (value: boolean) => void
-}
-
-// 滚动管理器类型
+// 滚动管理器类型定义
 export interface ScrollManager {
   readonly isScrolling: Ref<boolean>
   scrollToSelectedItem: () => void
@@ -106,88 +86,80 @@ export interface ScrollManager {
   destroyScrollbar: () => void
 }
 
-// 标签数据类型
-export interface TabData {
-  id: string
-  label: string
-  active: boolean
-  color: string
-  count: number
-}
-
-// 标签管理器类型
+// 标签管理器类型定义
 export interface TagManager {
-  readonly allTags: Ref<TagGroup[]>
-  readonly activeTagId: Ref<string>
-  readonly isTagSwitching: Ref<boolean>
-  readonly tagStats: Ref<Record<string, number>>
-  readonly tabs: ComputedRef<TabData[]>
+  // 状态
+  allTags: Ref<TagGroup[]>
+  activeTagId: Ref<string>
+  isTagSwitching: Ref<boolean>
+  tagStats: Ref<Record<string, number>>
+  tabs: ComputedRef<TabData[]>
+
+  // 方法
   loadAllTags: () => Promise<void>
   loadTagStats: () => Promise<void>
   switchTag: (tagId: string) => Promise<void>
   reloadTags: () => Promise<void>
 }
 
-// 性能优化相关类型
-export type DebouncedFunction<T extends (...args: any[]) => any> = T
-export type ThrottledFunction<T extends (...args: any[]) => any> = T
-export type CancelFunction = () => void
-
-export interface EventListenerManager {
-  addEventListener: (
-    element: EventTarget,
-    event: string,
-    handler: EventListener,
-    options?: AddEventListenerOptions
-  ) => void
-  removeEventListener: (
-    element: EventTarget,
-    event: string,
-    handler: EventListener
-  ) => void
-  removeAllListeners: () => void
+// 键盘导航管理器类型定义
+export interface KeyboardNavigationManager {
+  readonly isKeyboardNavigation: Ref<boolean>
+  handleKeyNavigation: (event: KeyboardEvent) => void
+  _setKeyboardNavigation: (value: boolean) => void
 }
 
-export interface MemoryLeakGuard {
-  setTimeout: (callback: () => void, delay: number) => NodeJS.Timeout
-  setInterval: (callback: () => void, delay: number) => NodeJS.Timeout
-  requestAnimationFrame: (callback: FrameRequestCallback) => number
-  clearTimeout: (timer: NodeJS.Timeout) => void
-  clearInterval: (interval: NodeJS.Timeout) => void
-  cancelAnimationFrame: (raf: number) => void
-  cleanup: () => void
+// 搜索动画管理器类型定义
+export interface SearchAnimationManager {
+  // 状态
+  readonly isSearchVisible: Ref<boolean>
+  readonly isSearchAnimating: Ref<boolean>
+  readonly isOpeningSearch: Ref<boolean>
+  showSearchContainer: ComputedRef<boolean>
+  showTabsContainer: ComputedRef<boolean>
+
+  // 内部状态修改方法
+  _setSearchVisible: (value: boolean) => void
+  _setSearchAnimating: (value: boolean) => void
+  _setOpeningSearch: (value: boolean) => void
+
+  // 动画方法
+  createSearchExpandAnimation: () => AnimationControls
+  createSearchCollapseAnimation: () => AnimationControls
+  createTabsHideAnimation: () => AnimationControls
+  createTabsShowAnimation: () => AnimationControls
+  resetSearchStyles: () => void
+  initializeStyles: () => void
 }
 
-// 批量更新类型
-export interface BatchUpdateManager<T> {
-  addUpdate: (item: T) => void
-  flush: () => void
+// Overlay动画管理器类型定义
+export interface OverlayAnimationManager {
+  // 状态
+  readonly currentAnimationState: Ref<AnimationState>
+  readonly isSlideInComplete: Ref<boolean>
+
+  // 方法
+  setAnimationState: (state: AnimationState) => void
+  canStartClosing: () => boolean
+  isAnimating: () => boolean
+  createSlideInAnimation: () => AnimationControls
+  createSlideOutAnimation: () => AnimationControls
+  resetState: () => void
 }
 
-// 组件 Props 类型
+// 重新导出滚动和标签管理器类型
+export type { ScrollAndTagsManager } from '@renderer/composables/useScrollAndTags'
+
+// 重新导出标签数据类型
+export type { TabData } from '@renderer/composables/useScrollAndTags'
+
+// 简化的组件类型定义
 export interface OverlayProps {
   // 如果有 props 的话在这里定义
 }
 
-// 组件 Emits 类型
 export interface OverlayEmits {
   // 如果有 emits 的话在这里定义
-}
-
-// 组件实例类型
-export interface OverlayInstance {
-  overlayContentRef: Ref<HTMLElement | undefined>
-  clipboardScrollRef: Ref<HTMLElement | undefined>
-  searchContainerRef: Ref<HTMLElement | undefined>
-  tabsContainerRef: Ref<HTMLElement | undefined>
-  clipboardHistory: Ref<ClipboardItem[]>
-  selectedIndex: Ref<number>
-  overlayAnimation: OverlayAnimationManager
-  searchAnimation: SearchAnimationManager
-  searchLogic: SearchManager
-  keyboardNavigation: KeyboardNavigationManager
-  scrollManagement: ScrollManager
-  tagManagement: TagManager
 }
 
 // 错误类型

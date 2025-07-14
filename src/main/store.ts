@@ -3,6 +3,7 @@ import __Store from 'electron-store'
 //@ts-ignore
 export const Store = __Store.default || __Store
 import { BrowserWindow } from 'electron'
+import logger from './utils/logger'
 
 /**
  * 加密的 Electron Store 单例类
@@ -48,7 +49,7 @@ class EncryptedStore {
     try {
       return this.store.get(key, defaultValue) as T
     } catch (error) {
-      console.error(`读取数据失败 [${key}]:`, error)
+      logger.error(`读取数据失败 [${key}]:`, error)
       return defaultValue as T
     }
   }
@@ -57,7 +58,7 @@ class EncryptedStore {
     try {
       this.store.set(key, value)
     } catch (error) {
-      console.error(`写入数据失败 [${key}]:`, error)
+      logger.error(`写入数据失败 [${key}]:`, error)
       throw error
     }
   }
@@ -74,7 +75,7 @@ class EncryptedStore {
       // 发送 store-value-changed 事件到所有渲染进程
       this.broadcastStoreChange(key, value)
     } catch (error) {
-      console.error(`写入数据失败 [${key}]:`, error)
+      logger.error(`写入数据失败 [${key}]:`, error)
       throw error
     }
   }
@@ -98,7 +99,7 @@ class EncryptedStore {
         }
       })
     } catch (error) {
-      console.error('广播存储变更事件失败:', error)
+      logger.error('广播存储变更事件失败:', error)
     }
   }
 
@@ -110,7 +111,7 @@ class EncryptedStore {
     try {
       this.store.delete(key)
     } catch (error) {
-      console.error(`删除数据失败 [${key}]:`, error)
+      logger.error(`删除数据失败 [${key}]:`, error)
       throw error
     }
   }
@@ -124,7 +125,7 @@ class EncryptedStore {
     try {
       return this.store.has(key)
     } catch (error) {
-      console.error(`检查键存在性失败 [${key}]:`, error)
+      logger.error(`检查键存在性失败 [${key}]:`, error)
       return false
     }
   }
@@ -136,7 +137,7 @@ class EncryptedStore {
     try {
       this.store.clear()
     } catch (error) {
-      console.error('清空数据失败:', error)
+      logger.error('清空数据失败:', error)
       throw error
     }
   }
@@ -149,7 +150,7 @@ class EncryptedStore {
     try {
       return Object.keys(this.store.store)
     } catch (error) {
-      console.error('获取所有键名失败:', error)
+      logger.error('获取所有键名失败:', error)
       return []
     }
   }
@@ -162,7 +163,7 @@ class EncryptedStore {
     try {
       return this.store.size
     } catch (error) {
-      console.error('获取存储大小失败:', error)
+      logger.error('获取存储大小失败:', error)
       return 0
     }
   }
@@ -175,7 +176,7 @@ class EncryptedStore {
     try {
       return this.store.path
     } catch (error) {
-      console.error('获取存储路径失败:', error)
+      logger.error('获取存储路径失败:', error)
       return ''
     }
   }
@@ -192,7 +193,7 @@ class EncryptedStore {
         this.broadcastStoreChange(key, value)
       }
     } catch (error) {
-      console.error('批量设置数据失败:', error)
+      logger.error('批量设置数据失败:', error)
       throw error
     }
   }
@@ -212,7 +213,7 @@ class EncryptedStore {
       }
       return result
     } catch (error) {
-      console.error('批量获取数据失败:', error)
+      logger.error('批量获取数据失败:', error)
       return {}
     }
   }
@@ -224,7 +225,7 @@ class EncryptedStore {
     try {
       this.store.clear()
     } catch (error) {
-      console.error('重置存储失败:', error)
+      logger.error('重置存储失败:', error)
       throw error
     }
   }

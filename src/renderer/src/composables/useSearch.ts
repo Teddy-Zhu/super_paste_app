@@ -20,10 +20,13 @@ export function useSearch(
   /**
    * 防抖搜索（使用性能优化的防抖函数）
    */
-  const [debouncedSearch, cancelSearch] = useDebounce(
+  const debouncedSearchFn = useDebounce(
     (text: string) => performSearchCallback(text),
     300
   )
+
+  const debouncedSearch = debouncedSearchFn
+  const cancelSearch = debouncedSearchFn.cancel
 
   /**
    * 处理搜索输入

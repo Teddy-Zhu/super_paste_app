@@ -5,6 +5,7 @@ import { convertRtfToHtml } from 'rtf-to-html-converter'
 import DOMPurify from 'dompurify'
 import IconFile from '~icons/mdi/file'
 import IconFileMultiple from '~icons/mdi/file-multiple'
+import { useContextMenu } from '@renderer/composables/useContextMenu'
 
 interface Props {
   item: ClipboardItem
@@ -16,6 +17,7 @@ const props = defineProps<Props>()
 
 const emit = defineEmits<{
   click: [itemId: string]
+  restoreAsText: [itemId: string]
 }>()
 
 // 计算 RTF 内容的 HTML 表示（使用 rtf-to-html-converter 和 DOMPurify）
@@ -299,9 +301,33 @@ const getCardTheme = (parseType: string): string => {
   return themeMap[parseType] || 'blue'
 }
 
+// 使用全局上下文菜单管理器
+const { showContextMenu } = useContextMenu()
+
 // 处理点击事件
 const handleClick = () => {
   emit('click', props.item.id)
+}
+
+// 处理右键菜单
+const handleContextMenu = (event: MouseEvent) => {
+  // 创建菜单项
+  const menuItems = [
+    {
+      label: '粘贴为纯文本',
+      icon: '📝',
+      action: () => handleRestoreAsText(),
+      disabled: !props.item.content.text || !props.item.content.text.trim() // 如果没有有效文本内容则禁用
+    }
+  ]
+
+  // 显示上下文菜单
+  showContextMenu(event, menuItems, `clipboard-card-${props.item.id}`)
+}
+
+// 处理粘贴为纯文本
+const handleRestoreAsText = () => {
+  emit('restoreAsText', props.item.id)
 }
 </script>
 
@@ -313,6 +339,7 @@ const handleClick = () => {
       { 'selected': isSelected }
     ]"
     @click="handleClick"
+    @contextmenu="handleContextMenu"
   >
     <!-- 卡片头部 -->
     <div class="card-header">

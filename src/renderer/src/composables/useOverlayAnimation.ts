@@ -20,9 +20,13 @@ export enum AnimationState {
 
 // 动画配置常量
 export const ANIMATION_CONFIG: AnimationConfig = {
-  DURATION: 200,
+  OVERLAY_DURATION: 200,
+  SEARCH_DURATION: 300,
   SLIDE_IN_EASING: 'cubic-bezier(0.25, 0.46, 0.45, 0.94)',
-  SLIDE_OUT_EASING: 'cubic-bezier(0.55, 0.06, 0.68, 0.19)'
+  SLIDE_OUT_EASING: 'cubic-bezier(0.55, 0.06, 0.68, 0.19)',
+  SEARCH_EASING: 'cubic-bezier(0.4, 0, 0.2, 1)',
+  SEARCH_WIDTH: '600px',
+  COLLAPSE_WIDTH: '400px'
 } as const
 
 export function useOverlayAnimation(
@@ -66,7 +70,7 @@ export function useOverlayAnimation(
       { transform: 'translateY(100%)' },
       { transform: 'translateY(0%)' }
     ], {
-      duration: ANIMATION_CONFIG.DURATION,
+      duration: ANIMATION_CONFIG.OVERLAY_DURATION,
       easing: ANIMATION_CONFIG.SLIDE_IN_EASING,
       fill: 'forwards'
     })
@@ -80,7 +84,7 @@ export function useOverlayAnimation(
       { transform: 'translateY(0%)' },
       { transform: 'translateY(100%)' }
     ], {
-      duration: ANIMATION_CONFIG.DURATION,
+      duration: ANIMATION_CONFIG.OVERLAY_DURATION,
       easing: ANIMATION_CONFIG.SLIDE_OUT_EASING,
       fill: 'forwards'
     })
