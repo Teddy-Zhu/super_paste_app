@@ -890,7 +890,7 @@ class ClipboardManagerWorker {
           result = await this.updateTagGroup(request.params.tagId, request.params.updates)
           break
         case 'deleteTagGroup':
-          result = await this.deleteTagGroup(request.params)
+          result = await this.deleteTagGroup(request.params.tagId)
           break
         case 'bindTagToRecord':
           result = await this.bindTagToRecord(request.params.contentId, request.params.tagId)
@@ -899,10 +899,10 @@ class ClipboardManagerWorker {
           result = await this.unbindTagFromRecord(request.params.contentId, request.params.tagId)
           break
         case 'getRecordsByTags':
-          result = await this.getRecordsByTags(request.params)
+          result = await this.getRecordsByTags(request.params.tagIds)
           break
         case 'getRecordsByParseType':
-          result = await this.getRecordsByParseType(request.params)
+          result = await this.getRecordsByParseType(request.params.parseType)
           break
         case 'getTagStats':
           result = await this.getTagStats()

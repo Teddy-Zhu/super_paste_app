@@ -519,12 +519,16 @@ async function createSampleTagsIfNeeded(): Promise<void> {
         { name: 'Ideas', color: '#ef4444', description: 'Creative ideas and inspiration' }
       ]
 
-      sampleTags.forEach(tag => {
-        const tagId = clipboardManager.createTagGroup(tag.name, tag.color, tag.description)
-        if (!tagId) {
-          logger.error(`[主进程] 创建标签失败: ${tag.name}`)
+      for (const tag of sampleTags) {
+        try {
+          const tagId = await clipboardManager.createTagGroup(tag.name, tag.color, tag.description)
+          if (!tagId) {
+            logger.error(`[主进程] 创建标签失败: ${tag.name}`)
+          }
+        } catch (error) {
+          logger.error(`[主进程] 创建标签失败: ${tag.name}`, error)
         }
-      })
+      }
     }
   } catch (error) {
     logger.error('[主进程] 创建示例标签数据失败:', error)

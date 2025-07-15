@@ -690,7 +690,7 @@ class ClipboardManager extends BaseWorkerManager {
     try {
       await this.ensureWorkerInitialized()
 
-      return await this.call('deleteTagGroup', tagId)
+      return await this.call('deleteTagGroup', { tagId })
     } catch (error) {
       logger.error('[剪贴板管理器] 删除标签组失败:', error)
       return false
@@ -732,7 +732,7 @@ class ClipboardManager extends BaseWorkerManager {
     try {
       await this.ensureWorkerInitialized()
 
-      return await this.call('getRecordsByTags', tagIds)
+      return await this.call('getRecordsByTags', { tagIds })
     } catch (error) {
       logger.error('[剪贴板管理器] 按标签筛选记录失败:', error)
       return []
@@ -746,7 +746,7 @@ class ClipboardManager extends BaseWorkerManager {
     try {
       await this.ensureWorkerInitialized()
 
-      return await this.call('getRecordsByParseType', parseType)
+      return await this.call('getRecordsByParseType', { parseType })
     } catch (error) {
       logger.error('[剪贴板管理器] 按解析类型筛选记录失败:', error)
       return []

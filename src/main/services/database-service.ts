@@ -128,25 +128,32 @@ export class DatabaseService {
   /**
    * 创建标签组
    */
-  public createTagGroup(params: { name: string, color: string, description?: string }): string | null {
+  public createTagGroup(params: { name: string, color: string, description?: string } | { tag: TagGroup }): string | null {
     try {
-      // 生成标签ID和时间戳
-      const tagId = `tag_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`
-      const now = Date.now()
+      let tag: TagGroup
 
-      // 构造TagGroup对象
-      const tag: TagGroup = {
-        id: tagId,
-        name: params.name,
-        color: params.color,
-        description: params.description,
-        createdAt: now,
-        updatedAt: now
+      // 检查参数格式，支持两种传参方式
+      if ('tag' in params) {
+        // Worker 传递的格式：{ tag: TagGroup }
+        tag = params.tag
+      } else {
+        // 直接传递的格式：{ name, color, description }
+        const tagId = `tag_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`
+        const now = Date.now()
+
+        tag = {
+          id: tagId,
+          name: params.name,
+          color: params.color,
+          description: params.description,
+          createdAt: now,
+          updatedAt: now
+        }
       }
 
       // 调用数据库方法创建标签组
       const success = clipboardDatabase.createTagGroup(tag)
-      return success ? tagId : null
+      return success ? tag.id : null
     } catch (error) {
       logger.error('[数据库服务] 创建标签组失败:', error)
       return null
@@ -170,8 +177,13 @@ export class DatabaseService {
   /**
    * 更新标签组
    */
-  public updateTagGroup(params: { tagId: string, updates: Partial<Omit<TagGroup, 'id' | 'createdAt'>> }): boolean {
-    return clipboardDatabase.updateTagGroup(params.tagId, params.updates)
+  public updateTagGroup(params: { tagId: string, updates?: Partial<Omit<TagGroup, 'id' | 'createdAt'>>, updateData?: Partial<Omit<TagGroup, 'id' | 'createdAt'>> }): boolean {
+    // 支持两种参数格式：updates 或 updateData
+    const updates = params.updates || params.updateData
+    if (!updates) {
+      throw new Error('缺少更新数据')
+    }
+    return clipboardDatabase.updateTagGroup(params.tagId, updates)
   }
 
   /**
