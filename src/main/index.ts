@@ -16,11 +16,16 @@ import clipboardDatabase from './clipboard-database'
 import { STORE_KEY } from './common'
 import clipboardHistoryCleaner from './clipboard-history-cleaner'
 import { debounceExecution, clearAllDebounceTimers } from './utils/common'
+import autoStartManager from './utils/auto-start-manager'
+import os from 'os'
 
 let overlayWindow: BrowserWindow | null = null
 let mainWindow: BrowserWindow | null = null
 let tray: Tray | null = null
-// app.disableHardwareAcceleration()
+
+if(os.platform() === 'darwin' && is.dev){
+  app.disableHardwareAcceleration()
+}
 // Overlay窗口状态枚举
 enum OverlayState {
   CLOSED = 'CLOSED',           // 窗口已关闭/隐藏
@@ -535,6 +540,39 @@ async function createSampleTagsIfNeeded(): Promise<void> {
   }
 }
 
+/**
+ * 同步自启状态
+ * 检查配置中的自启设置与系统实际状态是否一致，如果不一致则同步
+ */
+async function syncAutoStartStatus(): Promise<void> {
+  try {
+    // 获取配置中的自启状态
+    const configuredAutoStart = store.get(STORE_KEY.SETTINGS_AUTO_START, false) as boolean
+    
+    // 获取系统中的实际自启状态
+    const actualAutoStart = await autoStartManager.isEnabled()
+    
+    logger.info(`[主进程] 自启状态检查 - 配置: ${configuredAutoStart}, 实际: ${actualAutoStart}`)
+
+    // 如果状态不一致，则根据配置更新系统状态
+    if (configuredAutoStart !== actualAutoStart) {
+      logger.info(`[主进程] 自启状态不一致，正在同步到配置状态: ${configuredAutoStart}`)
+      
+      const success = await autoStartManager.setEnabled(configuredAutoStart)
+      
+      if (success) {
+        logger.info(`[主进程] 自启状态同步成功`)
+      } else {
+        logger.error(`[主进程] 自启状态同步失败`)
+      }
+    } else {
+      logger.info(`[主进程] 自启状态已同步`)
+    }
+  } catch (error) {
+    logger.error('[主进程] 同步自启状态失败:', error)
+  }
+}
+
 // 单实例锁定 - 确保只有一个应用实例运行
 const gotTheLock = app.requestSingleInstanceLock()
 
@@ -590,6 +628,9 @@ if (!gotTheLock) {
     // 创建示例标签数据（仅在开发环境或首次运行时）
     await createSampleTagsIfNeeded()
 
+    // 检查并同步自启状态
+    await syncAutoStartStatus()
+
     // 预先创建 overlay 窗口（初始化状态，保持隐藏）
     // 全局快捷键将在窗口的 ready-to-show 事件中初始化
     createOverlayWindow()
@@ -617,6 +658,42 @@ if (!gotTheLock) {
       closeOverlayWindow()
     })
 
+    // IPC handler for auto-start management
+    ipcMain.handle('auto-start-get-status', async () => {
+      try {
+        const isEnabled = await autoStartManager.isEnabled()
+        const platformInfo = autoStartManager.getPlatformInfo()
+        return { 
+          success: true, 
+          data: { 
+            enabled: isEnabled,
+            platform: platformInfo.platform,
+            method: platformInfo.method
+          }
+        }
+      } catch (error) {
+        return { success: false, error: (error as Error).message }
+      }
+    })
+
+    ipcMain.handle('auto-start-set-status', async (_, enabled: boolean) => {
+      try {
+        const success = await autoStartManager.setEnabled(enabled)
+        return { success, data: { enabled } }
+      } catch (error) {
+        return { success: false, error: (error as Error).message }
+      }
+    })
+
+    ipcMain.handle('auto-start-toggle', async () => {
+      try {
+        const newState = await autoStartManager.toggle()
+        return { success: true, data: { enabled: newState } }
+      } catch (error) {
+        return { success: false, error: (error as Error).message }
+      }
+    })
+
     // IPC handler for opening main window (settings)
     ipcMain.on('open-main-window', () => {
       showMainWindow()
@@ -630,7 +707,7 @@ if (!gotTheLock) {
     })
 
     // IPC handlers for store operations
-    ipcMain.handle('store-get', (_, key: string, defaultValue?: any) => {
+    ipcMain.handle('store-get', (_, key: string, defaultValue?: unknown) => {
       try {
         return { success: true, data: store.get(key, defaultValue) }
       } catch (error) {
@@ -642,7 +719,7 @@ if (!gotTheLock) {
       event.returnValue = val
     })
 
-    ipcMain.handle('store-set', (_, key: string, value: any) => {
+    ipcMain.handle('store-set', async (_, key: string, value: unknown) => {
       try {
         store.raw_set(key, value)
 
@@ -674,6 +751,15 @@ if (!gotTheLock) {
             },
             2000 // 2000ms 防抖延迟
           )
+        }
+
+        // 如果更新的是自动启动配置，设置应用的自动启动状态
+        if (key === STORE_KEY.SETTINGS_AUTO_START) {
+          const autoStart = value as boolean
+          const success = await autoStartManager.setEnabled(autoStart)
+          if (!success) {
+            logger.error('[主进程] 设置自动启动失败')
+          }
         }
 
         return { success: true }
