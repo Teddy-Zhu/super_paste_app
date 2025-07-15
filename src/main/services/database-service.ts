@@ -259,6 +259,8 @@ export class DatabaseService {
           return this.unbindTagFromRecord(params)
         case 'getTagStats':
           return this.getTagStats()
+        case 'getTagGroupStats':
+          return this.getTagStats()
         case 'insertOrUpdateApp':
           return this.insertOrUpdateApp(params)
         case 'getAppById':

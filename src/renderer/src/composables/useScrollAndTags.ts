@@ -119,32 +119,28 @@ export function useScrollAndTags(
   
   // ==================== 滚动管理 ====================
   
+  /**
+   * 初始化 smooth-scrollbar 实例
+   * 注意：滚动条隐藏样式已在 overlay.vue 的 CSS 中直接定义
+   */
   const initializeScrollbar = () => {
-    if (!clipboardScrollRef.value || scrollbarInstance) return
-    
-    try {
-      scrollbarInstance = Scrollbar.init(clipboardScrollRef.value, SCROLLBAR_OPTIONS)
-      
-      if (scrollbarInstance) {
-        // 隐藏滚动条
-        const scrollbarElement = scrollbarInstance.containerEl
-        const style = scrollbarElement.style
-        style.setProperty('--scrollbar-track-color', 'transparent')
-        style.setProperty('--scrollbar-thumb-color', 'transparent')
-        
-        // 添加自定义样式来完全隐藏滚动条
-        if (!document.getElementById('scrollbar-hide-style')) {
-          const styleSheet = document.createElement('style')
-          styleSheet.id = 'scrollbar-hide-style'
-          styleSheet.textContent = `
-            .scrollbar-track { display: none !important; }
-            .scrollbar-thumb { display: none !important; }
-          `
-          document.head.appendChild(styleSheet)
-        }
+    if (!clipboardScrollRef.value) return
+
+    // 如果已有实例，先销毁再重新创建
+    if (scrollbarInstance) {
+      try {
+        scrollbarInstance.destroy()
+        scrollbarInstance = null
+      } catch (error) {
+        console.warn('[滚动标签管理] 销毁旧的 scrollbar 实例时出错:', error)
+        scrollbarInstance = null
       }
-      
-      console.log('[滚动标签管理] smooth-scrollbar 初始化成功')
+    }
+
+    try {
+      // 仅初始化 scrollbar 实例，样式在 overlay.vue 的 CSS 中定义
+      scrollbarInstance = Scrollbar.init(clipboardScrollRef.value, SCROLLBAR_OPTIONS)
+      // console.log('[滚动标签管理] smooth-scrollbar 初始化成功')
     } catch (error) {
       console.error('[滚动标签管理] smooth-scrollbar 初始化失败:', error)
       scrollbarInstance = null
@@ -156,7 +152,7 @@ export function useScrollAndTags(
       try {
         scrollbarInstance.destroy()
         scrollbarInstance = null
-        console.log('[滚动标签管理] smooth-scrollbar 实例已销毁')
+        // console.log('[滚动标签管理] smooth-scrollbar 实例已销毁')
       } catch (error) {
         console.error('[滚动标签管理] 销毁 smooth-scrollbar 实例失败:', error)
       }
@@ -166,8 +162,8 @@ export function useScrollAndTags(
   const scrollToSelectedItem = useRafThrottle(() => {
     if (!clipboardScrollRef.value || clipboardHistory.value.length === 0 || selectedIndex.value < 0) return
 
-    // 如果 smooth-scrollbar 未初始化，先初始化
-    if (!scrollbarInstance) {
+    // 检查 scrollbar 实例是否有效，如果无效则重新初始化
+    if (!scrollbarInstance || !scrollbarInstance.containerEl || !scrollbarInstance.containerEl.parentNode) {
       initializeScrollbar()
     }
 
@@ -206,22 +202,33 @@ export function useScrollAndTags(
     // 只有在需要滚动时才执行滚动
     if (targetScrollLeft !== null && Math.abs(targetScrollLeft - containerScrollLeft) > 1) {
       scrollToPosition(targetScrollLeft)
-      console.log('[滚动标签管理] 滚动到选中项:', {
-        selectedIndex: selectedIndex.value,
-        selectedCardLeft,
-        selectedCardRight,
-        containerScrollLeft,
-        containerScrollRight,
-        targetScrollLeft,
-        containerWidth
-      })
+      // console.log('[滚动标签管理] 滚动到选中项:', {
+      //   selectedIndex: selectedIndex.value,
+      //   selectedCardLeft,
+      //   selectedCardRight,
+      //   containerScrollLeft,
+      //   containerScrollRight,
+      //   targetScrollLeft,
+      //   containerWidth
+      // })
     }
   })
   
   const scrollToPosition = (targetLeft: number) => {
     if (scrollbarInstance) {
-      // 使用 smooth-scrollbar 的平滑滚动，动画时间设为 300ms
-      scrollbarInstance.scrollTo(targetLeft, 0, 300)
+      try {
+        // 使用 smooth-scrollbar 的平滑滚动，动画时间设为 300ms
+        scrollbarInstance.scrollTo(targetLeft, 0, 300)
+      } catch (error) {
+        console.warn('[滚动标签管理] scrollbar 滚动失败，回退到原生滚动:', error)
+        // 如果 scrollbar 操作失败，回退到原生滚动
+        if (clipboardScrollRef.value) {
+          clipboardScrollRef.value.scrollTo({
+            left: targetLeft,
+            behavior: 'smooth'
+          })
+        }
+      }
     } else if (clipboardScrollRef.value) {
       // 回退到原生滚动
       clipboardScrollRef.value.scrollTo({
@@ -260,46 +267,51 @@ export function useScrollAndTags(
   }
   
   const handleWheelThrottled = useThrottle((event: WheelEvent) => {
-    console.log('[滚动标签管理] 收到滚轮事件:', {
-      animationState: currentAnimationState.value,
-      hasScrollRef: !!clipboardScrollRef.value,
-      historyLength: clipboardHistory.value.length,
-      deltaX: event.deltaX,
-      deltaY: event.deltaY
-    })
+    // console.log('[滚动标签管理] 收到滚轮事件:', {
+    //   animationState: currentAnimationState.value,
+    //   hasScrollRef: !!clipboardScrollRef.value,
+    //   historyLength: clipboardHistory.value.length,
+    //   deltaX: event.deltaX,
+    //   deltaY: event.deltaY
+    // })
 
     // 只有在活跃状态且有剪贴板历史时才响应滚轮事件
     if (currentAnimationState.value !== AnimationState.ACTIVE ||
         !clipboardScrollRef.value ||
         clipboardHistory.value.length === 0) {
-      console.log('[滚动标签管理] 滚轮事件被忽略，条件不满足')
+      // console.log('[滚动标签管理] 滚轮事件被忽略，条件不满足')
       return
     }
-    
-    // 如果 smooth-scrollbar 未初始化，先初始化
-    if (!scrollbarInstance) {
+
+    // 检查 scrollbar 实例是否有效，如果无效则重新初始化
+    if (!scrollbarInstance || !scrollbarInstance.containerEl || !scrollbarInstance.containerEl.parentNode) {
       initializeScrollbar()
     }
-    
+
     event.preventDefault()
-    
+
     // 检查是否为水平滚动
     const isHorizontalScroll = Math.abs(event.deltaX) > Math.abs(event.deltaY)
-    
+
     let scrollAmount = 0
     if (isHorizontalScroll && Math.abs(event.deltaX) > 3) {
       scrollAmount = event.deltaX * 3
     } else {
       scrollAmount = event.deltaY * 5
     }
-    
+
     if (scrollbarInstance) {
-      const currentScrollLeft = scrollbarInstance.scrollLeft
-      const maxScrollLeft = scrollbarInstance.size.content.width - scrollbarInstance.size.container.width
-      const targetScrollLeft = Math.max(0, Math.min(maxScrollLeft, currentScrollLeft + scrollAmount))
-      
-      if (targetScrollLeft !== currentScrollLeft) {
-        scrollbarInstance.scrollTo(targetScrollLeft, 0, 0)
+      try {
+        const currentScrollLeft = scrollbarInstance.scrollLeft
+        const maxScrollLeft = scrollbarInstance.size.content.width - scrollbarInstance.size.container.width
+        const targetScrollLeft = Math.max(0, Math.min(maxScrollLeft, currentScrollLeft + scrollAmount))
+
+        if (targetScrollLeft !== currentScrollLeft) {
+          scrollbarInstance.scrollTo(targetScrollLeft, 0, 0)
+        }
+      } catch (error) {
+        console.warn('[滚动标签管理] scrollbar 实例操作失败，尝试重新初始化:', error)
+        initializeScrollbar()
       }
     } else if (clipboardScrollRef.value) {
       const container = clipboardScrollRef.value
@@ -339,7 +351,7 @@ export function useScrollAndTags(
         ...prev,
         allTags: tagList
       }))
-      console.log('[滚动标签管理] 标签数据加载完成:', tagList)
+      // console.log('[滚动标签管理] 标签数据加载完成:', tagList)
       
       // 加载标签统计数据
       await loadTagStats()
@@ -354,17 +366,20 @@ export function useScrollAndTags(
   
   const loadTagStats = async () => {
     try {
-      // 模拟统计数据，实际应该从后端获取
+      // 从后端获取标签统计数据
+      const statsArray = await tags.getTagStats()
       const stats: Record<string, number> = {}
-      
-      for (const tag of allTags.value) {
-        stats[tag.id] = Math.floor(Math.random() * 20) + 1
+
+      // 将数组格式转换为对象格式，方便查找
+      for (const stat of statsArray) {
+        stats[stat.tagId] = stat.recordCount
       }
-      
+
       tagStateManager.setState(prev => ({
         ...prev,
         tagStats: stats
       }))
+      // console.log('[滚动标签管理] 标签统计数据加载完成:', stats)
     } catch (error) {
       console.error('[滚动标签管理] 加载标签统计数据失败:', error)
       tagStateManager.setState(prev => ({
@@ -376,15 +391,15 @@ export function useScrollAndTags(
   
   const switchTag = async (tagId: string) => {
     if (activeTagId.value === tagId || isTagSwitching.value) return
-    
+
     tagStateManager.setState(prev => ({
       ...prev,
       isTagSwitching: true,
       activeTagId: tagId
     }))
-    
-    console.log('[滚动标签管理] 切换到标签:', tagId)
-    
+
+    // console.log('[滚动标签管理] 切换到标签:', tagId)
+
     try {
       if (tagId === 'all') {
         await loadClipboardHistory()
@@ -396,6 +411,12 @@ export function useScrollAndTags(
           orderDirection: 'DESC'
         })
       }
+
+      // 标签切换完成后，确保 scrollbar 正确初始化
+      nextTick(() => {
+        initializeScrollbar()
+        scrollToSelectedItem()
+      })
     } catch (error) {
       console.error('[滚动标签管理] 切换标签失败:', error)
     } finally {

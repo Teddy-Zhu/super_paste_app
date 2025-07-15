@@ -23,7 +23,7 @@ class ClipboardHistoryCleaner extends BaseWorkerManager {
     }
     super(config)
 
-    logger.info('[历史记录清理器] 初始化主线程接口')
+
 
     // 设置事件监听器
     this.setupEventListeners()
@@ -42,7 +42,7 @@ class ClipboardHistoryCleaner extends BaseWorkerManager {
 
     // 监听清理完成事件
     this.on('cleanup-completed', (data: { stats: CleanupStats }) => {
-      logger.info('[清理器管理器] 清理完成:', data.stats)
+      // 清理完成，可以在这里添加其他逻辑
     })
 
     // 监听清理错误事件
@@ -129,7 +129,7 @@ class ClipboardHistoryCleaner extends BaseWorkerManager {
         this.call('setMemoryDataSyncCallback').catch(error => {
           logger.error('[清理器管理器] 设置内存同步回调失败:', error)
         })
-        logger.info('[历史记录清理器] 已设置内存数据同步回调')
+
       })
       .catch((error) => {
         logger.error('[历史记录清理器] 设置内存同步回调失败:', error)
@@ -158,7 +158,6 @@ class ClipboardHistoryCleaner extends BaseWorkerManager {
       await this.ensureWorkerInitialized()
 
       await this.call('startAutoCleanup')
-      logger.info('[历史记录清理器] 已启动自动清理')
     } catch (error) {
       logger.error('[历史记录清理器] 启动自动清理失败:', error)
     }
@@ -171,7 +170,6 @@ class ClipboardHistoryCleaner extends BaseWorkerManager {
     try {
       if (this.isRunning()) {
         await this.call('stopAutoCleanup')
-        logger.info('[历史记录清理器] 已停止自动清理')
       }
     } catch (error) {
       logger.error('[历史记录清理器] 停止自动清理失败:', error)
@@ -210,8 +208,6 @@ class ClipboardHistoryCleaner extends BaseWorkerManager {
   public updateConfigFromStore(): void {
     const maxKeepTime = store.get(STORE_KEY.SETTINGS_MAX_KEEP_TIME, -1)
 
-    logger.debug('[历史记录清理器] 从 store 更新配置，maxKeepTime:', maxKeepTime)
-
     // 更新 Worker 配置
     if (this.isRunning()) {
       this.call('updateConfig', { maxKeepTime }).catch((error) => {
@@ -227,9 +223,6 @@ class ClipboardHistoryCleaner extends BaseWorkerManager {
     if (this.isRunning()) {
       // 异步获取配置，但为了兼容性返回默认配置
       this.call('getConfig')
-        .then((config) => {
-          logger.debug('[历史记录清理器] 当前配置:', config)
-        })
         .catch((error) => {
           logger.error('[历史记录清理器] 获取配置失败:', error)
         })
@@ -253,7 +246,6 @@ class ClipboardHistoryCleaner extends BaseWorkerManager {
         await this.call('destroy')
       }
       await this.stop()
-      logger.info('[历史记录清理器] 清理器已销毁')
     } catch (error) {
       logger.error('[历史记录清理器] 销毁清理器失败:', error)
     }

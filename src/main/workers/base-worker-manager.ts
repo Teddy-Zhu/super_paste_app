@@ -37,12 +37,10 @@ export abstract class BaseWorkerManager extends EventEmitter implements WorkerMa
    */
   public async start(): Promise<void> {
     if (this.worker) {
-      logger.warn(`[${this.config.name}] Worker 已经在运行中`)
       return
     }
 
     try {
-      logger.info(`[${this.config.name}] 启动 Worker:`, this.config.workerPath)
 
       this.worker = new Worker(this.config.workerPath, this.config.options)
 
@@ -59,7 +57,6 @@ export abstract class BaseWorkerManager extends EventEmitter implements WorkerMa
       await this.waitForWorkerReady()
 
       this.isInitialized = true
-      logger.info(`[${this.config.name}] Worker 启动成功`)
     } catch (error) {
       logger.error(`[${this.config.name}] Worker 启动失败:`, error)
       throw error
@@ -75,7 +72,7 @@ export abstract class BaseWorkerManager extends EventEmitter implements WorkerMa
     }
 
     try {
-      logger.info(`[${this.config.name}] 停止 Worker`)
+
 
       // 清理所有待处理的请求
       this.clearPendingRequests()
@@ -85,7 +82,7 @@ export abstract class BaseWorkerManager extends EventEmitter implements WorkerMa
       this.worker = null
       this.isInitialized = false
 
-      logger.info(`[${this.config.name}] Worker 已停止`)
+
     } catch (error) {
       logger.error(`[${this.config.name}] 停止 Worker 失败:`, error)
       throw error
@@ -204,7 +201,6 @@ export abstract class BaseWorkerManager extends EventEmitter implements WorkerMa
    * 处理 Worker 退出
    */
   private handleWorkerExit(code: number): void {
-    logger.info(`[${this.config.name}] Worker 退出，代码:`, code)
     this.isInitialized = false
     this.worker = null
     this.clearPendingRequests()

@@ -60,17 +60,17 @@ export function useTagManagement(
    */
   async function loadTagStats() {
     try {
-      // 这里可以调用后端API获取每个标签的记录数量
-      // 暂时使用模拟数据，实际应该从后端获取
+      // 从后端获取标签统计数据
+      const statsArray = await tags.getTagStats()
       const stats: Record<string, number> = {}
 
-      for (const tag of allTags.value) {
-        // 模拟统计数据，实际应该调用后端API
-        stats[tag.id] = Math.floor(Math.random() * 20) + 1
+      // 将数组格式转换为对象格式，方便查找
+      for (const stat of statsArray) {
+        stats[stat.tagId] = stat.recordCount
       }
 
       tagStats.value = stats
-      // console.log('[前端] 标签统计数据加载完成:', stats)
+      console.log('[前端] 标签统计数据加载完成:', stats)
     } catch (error) {
       console.error('[前端] 加载标签统计数据失败:', error)
       tagStats.value = {}

@@ -26,14 +26,13 @@ class ClipboardHistoryCleanerWorker {
       enableAutoCleanup: false
     }
 
-    log.info('[历史记录清理器 Worker] 初始化完成')
+
   }
 
   /**
    * 初始化清理器
    */
   public initialize(): void {
-    log.info('[历史记录清理器 Worker] 开始初始化')
     // 这里可以添加初始化逻辑，比如从主线程获取配置
   }
 
@@ -46,10 +45,7 @@ class ClipboardHistoryCleanerWorker {
     this.config.maxKeepTime = newConfig.maxKeepTime
     this.config.enableAutoCleanup = newConfig.maxKeepTime !== -1
 
-    console.log('[历史记录清理器 Worker] 配置已更新:', {
-      old: oldConfig,
-      new: this.config
-    })
+
 
     // 如果配置发生变化，重新启动自动清理
     if (oldConfig.maxKeepTime !== this.config.maxKeepTime) {
@@ -72,16 +68,12 @@ class ClipboardHistoryCleanerWorker {
    */
   public startAutoCleanup(): void {
     if (!this.config.enableAutoCleanup) {
-      console.log('[历史记录清理器 Worker] 自动清理已禁用（maxKeepTime = -1）')
       return
     }
 
     if (this.cleanupTimer) {
-      console.log('[历史记录清理器 Worker] 自动清理已在运行中')
       return
     }
-
-    console.log('[历史记录清理器 Worker] 启动自动清理，检查间隔:', this.config.cleanupInterval / 1000, '秒')
     
     // 立即执行一次清理
     this.performCleanup()
@@ -99,7 +91,6 @@ class ClipboardHistoryCleanerWorker {
     if (this.cleanupTimer) {
       clearInterval(this.cleanupTimer)
       this.cleanupTimer = null
-      console.log('[历史记录清理器 Worker] 自动清理已停止')
     }
   }
 
@@ -108,7 +99,6 @@ class ClipboardHistoryCleanerWorker {
    */
   public async performCleanup(): Promise<CleanupStats> {
     if (this.isRunning) {
-      log.info('[历史记录清理器 Worker] 清理操作正在进行中，跳过本次清理')
       return {
         totalRecords: 0,
         expiredRecords: 0,
@@ -118,7 +108,6 @@ class ClipboardHistoryCleanerWorker {
     }
 
     if (!this.config.enableAutoCleanup) {
-      log.info('[历史记录清理器 Worker] 清理已禁用')
       return {
         totalRecords: 0,
         expiredRecords: 0,
@@ -131,13 +120,10 @@ class ClipboardHistoryCleanerWorker {
     const startTime = Date.now()
 
     try {
-      log.info('[历史记录清理器 Worker] 开始执行清理操作')
-
       // 通过主线程调用数据库操作
       const totalRecords = await this.callMainThread('database-getRecordCount')
 
       if (totalRecords === 0) {
-        log.info('[历史记录清理器 Worker] 没有记录需要清理')
         return {
           totalRecords: 0,
           expiredRecords: 0,
@@ -153,7 +139,6 @@ class ClipboardHistoryCleanerWorker {
       const expiredRecordIds = await this.callMainThread('database-getExpiredRecordIds', { expireTimestamp })
       
       if (expiredRecordIds.length === 0) {
-        log.info('[历史记录清理器 Worker] 没有过期记录需要删除')
         return {
           totalRecords,
           expiredRecords: 0,
@@ -174,15 +159,11 @@ class ClipboardHistoryCleanerWorker {
       }
 
       if (deletedCount > 0) {
-        log.info(`[历史记录清理器 Worker] 清理完成，删除了 ${deletedCount} 条过期记录，耗时 ${cleanupTime}ms`)
-
         // 通知内存数据同步
         this.sendEvent('memory-sync-required', { deletedIds: expiredRecordIds })
 
         // 通知清理完成
         this.sendEvent('cleanup-completed', { stats })
-      } else {
-        log.info(`[历史记录清理器 Worker] 清理完成，没有过期记录需要删除，耗时 ${cleanupTime}ms`)
       }
 
       return stats
@@ -206,7 +187,6 @@ class ClipboardHistoryCleanerWorker {
   public setMemoryDataSyncCallback(): void {
     // 在 Worker 中，这个方法主要是为了兼容原有接口
     // 实际的同步通过事件机制实现
-    log.info('[历史记录清理器 Worker] 内存数据同步回调已设置')
   }
 
   /**
@@ -214,7 +194,6 @@ class ClipboardHistoryCleanerWorker {
    */
   public syncDeletedRecords(deletedIds: string[]): void {
     // 这个方法在 Worker 中不需要实现，因为同步是通过事件机制处理的
-    log.debug('[历史记录清理器 Worker] 收到删除记录同步请求:', deletedIds.length)
   }
 
   /**
@@ -222,7 +201,7 @@ class ClipboardHistoryCleanerWorker {
    */
   public destroy(): void {
     this.stopAutoCleanup()
-    console.log('[历史记录清理器 Worker] 清理器已销毁')
+
     this.sendEvent('worker-destroyed', {})
   }
 

@@ -32,6 +32,10 @@ const selectedIndex = ref(0)
 // ==================== 快捷选择状态 ====================
 const isQuickSelectMode = ref(false)
 
+// ==================== 下拉菜单状态 ====================
+const isDropdownVisible = ref(false)
+const dropdownMenuRef = ref<HTMLElement>()
+
 // ==================== 事件管理器 ====================
 const eventManager = useEventManager()
 
@@ -161,6 +165,51 @@ const restoreClipboardContent = (itemId: string) => restoreClipboard(itemId, 're
  * 还原剪贴板内容为纯文本
  */
 const restoreClipboardContentAsText = (itemId: string) => restoreClipboard(itemId, 'restoreAsText')
+
+/**
+ * 切换下拉菜单显示状态
+ */
+const toggleDropdownMenu = (): void => {
+  isDropdownVisible.value = !isDropdownVisible.value
+}
+
+/**
+ * 隐藏下拉菜单
+ */
+const hideDropdownMenu = (): void => {
+  isDropdownVisible.value = false
+}
+
+/**
+ * 打开设置窗口
+ */
+const openSettings = (): void => {
+  try {
+    hideDropdownMenu()
+    // 关闭当前覆盖层窗口
+    closeWindow()
+    // 发送消息到主进程打开设置窗口
+    send('open-main-window')
+  } catch (error) {
+    console.error('[前端] 打开设置失败:', error)
+  }
+}
+
+/**
+ * 清空剪贴板历史
+ */
+const clearClipboardHistory = async (): Promise<void> => {
+  try {
+    hideDropdownMenu()
+    // 添加确认对话框
+    if (confirm('确定要清空所有剪贴板历史记录吗？此操作不可撤销。')) {
+      await clipboard.clearHistory()
+      // await loadClipboardHistory()
+    }
+  } catch (error) {
+    console.error('[前端] 清空历史失败:', error)
+  }
+}
 
 /**
  * 等待动画完成的通用函数
@@ -423,6 +472,10 @@ const handleKeyboardUpEvent = (event: KeyboardEvent) => {
   }
 }
 
+// ==================== 样式初始化 ====================
+
+
+
 // ==================== 生命周期钩子 ====================
 
 /**
@@ -472,6 +525,16 @@ onMounted(async () => {
     // 绑定键盘释放事件监听器
     eventManager.addEventListener(document, 'keyup', (event: Event) => {
       handleKeyboardUpEvent(event as KeyboardEvent)
+    })
+
+    // 绑定点击外部关闭下拉菜单的事件监听器
+    eventManager.addEventListener(document, 'click', (event: Event) => {
+      const target = event.target as HTMLElement
+      const dropdownContainer = target.closest('.dropdown-container')
+
+      if (!dropdownContainer && isDropdownVisible.value) {
+        hideDropdownMenu()
+      }
     })
 
     // 添加滚轮事件监听器（支持触摸板手势）
@@ -580,19 +643,27 @@ onUnmounted(() => {
 
         <!-- 右侧按钮组 -->
         <div class="toolbar-buttons">
-          <button class="toolbar-icon add-icon">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <line x1="12" y1="5" x2="12" y2="19"></line>
-              <line x1="5" y1="12" x2="19" y2="12"></line>
-            </svg>
-          </button>
-          <button class="toolbar-icon menu-icon">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <circle cx="12" cy="12" r="1"></circle>
-              <circle cx="19" cy="12" r="1"></circle>
-              <circle cx="5" cy="12" r="1"></circle>
-            </svg>
-          </button>
+          <div class="dropdown-container">
+            <button class="toolbar-icon menu-icon" @click="toggleDropdownMenu">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="12" cy="12" r="1"></circle>
+                <circle cx="19" cy="12" r="1"></circle>
+                <circle cx="5" cy="12" r="1"></circle>
+              </svg>
+            </button>
+
+            <!-- 下拉菜单 -->
+            <div v-if="isDropdownVisible" ref="dropdownMenuRef" class="dropdown-menu">
+              <div class="dropdown-item" @click="openSettings">
+                <span class="dropdown-icon">⚙️</span>
+                <span class="dropdown-label">设置</span>
+              </div>
+              <div class="dropdown-item" @click="clearClipboardHistory">
+                <span class="dropdown-icon">🗑️</span>
+                <span class="dropdown-label">清空历史</span>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -661,6 +732,7 @@ onUnmounted(() => {
   min-height: 56px;
   max-height: 56px;
   box-sizing: border-box;
+  z-index: 1000;
 }
 
 .toolbar-icon {
@@ -686,6 +758,69 @@ onUnmounted(() => {
   align-items: center;
   gap: 8px;
   margin-left: auto;
+}
+
+/* 下拉菜单容器 */
+.dropdown-container {
+  position: relative;
+}
+
+/* 下拉菜单样式 */
+.dropdown-menu {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  margin-top: 4px;
+  background: rgba(255, 255, 255, 0.95);
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  border-radius: 8px;
+  box-shadow:
+    0 4px 20px rgba(0, 0, 0, 0.15),
+    0 2px 8px rgba(0, 0, 0, 0.1);
+  backdrop-filter: blur(10px);
+  min-width: 140px;
+  padding: 4px 0;
+  font-size: 14px;
+  user-select: none;
+  animation: dropdownFadeIn 0.15s ease-out;
+}
+
+@keyframes dropdownFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* 下拉菜单项 */
+.dropdown-item {
+  display: flex;
+  align-items: center;
+  padding: 8px 12px;
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+  color: #333;
+}
+
+.dropdown-item:hover {
+  background-color: rgba(0, 123, 255, 0.1);
+  color: #007bff;
+}
+
+.dropdown-icon {
+  margin-right: 8px;
+  font-size: 16px;
+  width: 16px;
+  text-align: center;
+}
+
+.dropdown-label {
+  flex: 1;
+  white-space: nowrap;
 }
 
 /* 搜索容器样式 */
@@ -929,6 +1064,18 @@ onUnmounted(() => {
 }
 
 /* 隐藏 smooth-scrollbar 滚动条 */
+.scrollbar-track,
+.scrollbar-thumb,
+.scrollbar-track-x,
+.scrollbar-track-y,
+.scrollbar-thumb-x,
+.scrollbar-thumb-y {
+  display: none !important;
+  opacity: 0 !important;
+  visibility: hidden !important;
+}
+
+/* 针对容器内的 smooth-scrollbar 元素 */
 .clipboard-scroll-container :deep(.scrollbar-track),
 .clipboard-scroll-container :deep(.scrollbar-thumb),
 .clipboard-scroll-container :deep(.scrollbar-track-x),
@@ -936,6 +1083,8 @@ onUnmounted(() => {
 .clipboard-scroll-container :deep(.scrollbar-thumb-x),
 .clipboard-scroll-container :deep(.scrollbar-thumb-y) {
   display: none !important;
+  opacity: 0 !important;
+  visibility: hidden !important;
 }
 
 /* 响应式设计 */

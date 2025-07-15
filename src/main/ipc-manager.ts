@@ -38,7 +38,7 @@ class IpcManager {
         }
       })
 
-      logger.debug('[IPC管理器] 已通知前端标签数据更新')
+
     } catch (error) {
       logger.error('[IPC管理器] 通知前端标签更新失败:', error)
     }
@@ -49,14 +49,14 @@ class IpcManager {
    */
   public initialize(): void {
     if (this.isInitialized) {
-      logger.debug('[IPC管理器] 已经初始化过了')
+
       return
     }
 
     this.registerClipboardHandlers()
     this.isInitialized = true
 
-    logger.info('[IPC管理器] 已初始化所有 IPC 事件处理器')
+
   }
 
   /**
@@ -328,7 +328,24 @@ class IpcManager {
       }
     })
 
-    logger.info('[IPC管理器] 剪贴板相关 IPC 事件处理器已注册')
+    // 获取标签统计信息
+    ipcMain.handle('get-tag-stats', async () => {
+      try {
+        const stats = await clipboardManager.getTagStats()
+        return {
+          success: true,
+          data: stats
+        }
+      } catch (error) {
+        logger.error('[IPC管理器] 获取标签统计信息失败:', error)
+        return {
+          success: false,
+          error: (error as Error).message || '获取标签统计信息失败'
+        }
+      }
+    })
+
+
   }
 
   /**
@@ -361,7 +378,6 @@ class IpcManager {
     })
 
     this.isInitialized = false
-    logger.info('[IPC管理器] 已清理所有 IPC 事件处理器')
   }
 
   /**

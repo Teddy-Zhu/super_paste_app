@@ -66,7 +66,7 @@ class ClipboardDatabase {
       // 预加载应用信息缓存
       this.preloadAppCache()
 
-      logger.info('[剪贴板数据库] 数据库初始化成功:', this.dbPath)
+
     } catch (error) {
       logger.error('[剪贴板数据库] 数据库初始化失败:', error)
       throw error
@@ -364,7 +364,7 @@ class ClipboardDatabase {
       // 重置自增ID
       this.db.exec('DELETE FROM sqlite_sequence WHERE name = "clipboard_history"')
 
-      logger.info(`[剪贴板数据库] 已清空所有历史记录，删除了 ${result.changes} 条记录`)
+
       return true
     } catch (error) {
       logger.error('[剪贴板数据库] 清空历史记录失败:', error)
@@ -391,9 +391,7 @@ class ClipboardDatabase {
       const stmt = this.db.prepare(deleteSQL)
       const result = stmt.run(keepCount)
 
-      if (result.changes > 0) {
-        logger.info(`[剪贴板数据库] 删除了 ${result.changes} 条旧记录，保留最新的 ${keepCount} 条`)
-      }
+
 
       return result.changes
     } catch (error) {
@@ -440,7 +438,7 @@ class ClipboardDatabase {
         this.db = null
         // 清空应用信息缓存
         this.clearAppCache()
-        logger.info('[剪贴板数据库] 数据库连接已关闭')
+
       } catch (error) {
         logger.error('[剪贴板数据库] 关闭数据库连接失败:', error)
       }
@@ -479,9 +477,7 @@ class ClipboardDatabase {
       const stmt = this.db.prepare(deleteSQL)
       const result = stmt.run(beforeTimestamp)
 
-      if (result.changes > 0) {
-        logger.info(`[剪贴板数据库] 删除了 ${result.changes} 条时间戳早于 ${beforeTimestamp} 的记录（已排除有标签的记录）`)
-      }
+
 
       return result.changes
     } catch (error) {
@@ -1045,7 +1041,7 @@ class ClipboardDatabase {
         this.appCacheByAppPath.delete(this.generateAppCacheKey(app.application, app.path))
       }
 
-      logger.info(`[剪贴板数据库] 清理了 ${toDelete.length} 个应用缓存项`)
+
     }
   }
 
@@ -1108,7 +1104,7 @@ class ClipboardDatabase {
         this.addToAppCache(app)
       }
 
-      logger.debug(`[剪贴板数据库] 预加载了 ${apps.length} 个应用信息到缓存`)
+
     } catch (error) {
       logger.error('[剪贴板数据库] 预加载应用缓存失败:', error)
     }

@@ -43,6 +43,7 @@ export interface IpcChannels {
   'create-tag': { name: string; color: string; description?: string }
   'update-tag': { tagId: string; updates: { name?: string; color?: string; description?: string } }
   'delete-tag': string
+  'get-tag-stats': void
 
   // 应用信息相关
   'get-all-apps': void
@@ -70,6 +71,7 @@ export interface IpcResponses {
   'create-tag': { success: boolean; data?: { tagId: string }; message?: string; error?: string }
   'update-tag': { success: boolean; message?: string; error?: string }
   'delete-tag': { success: boolean; message?: string; error?: string }
+  'get-tag-stats': { success: boolean; data?: TagStats[]; error?: string }
 
   // 应用信息相关响应
   'get-all-apps': { success: boolean; data?: AppInfo[]; error?: string }
@@ -161,6 +163,13 @@ export interface TagGroup {
   updatedAt: number
 }
 
+// 标签统计信息类型
+export interface TagStats {
+  tagId: string
+  tagName: string
+  recordCount: number
+}
+
 // 剪贴板历史记录项类型
 export interface ClipboardItem {
   id: string
@@ -229,6 +238,7 @@ export interface TagOperations {
   createTag(name: string, color: string, description?: string): Promise<string>
   updateTag(tagId: string, updates: { name?: string; color?: string; description?: string }): Promise<boolean>
   deleteTag(tagId: string): Promise<boolean>
+  getTagStats(): Promise<TagStats[]>
 }
 
 // 应用信息操作类型

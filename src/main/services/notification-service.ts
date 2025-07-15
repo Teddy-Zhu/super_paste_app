@@ -22,7 +22,7 @@ export class NotificationService {
         }
       })
 
-      logger.debug('[通知服务] 已通知前端剪贴板历史更新:', data)
+
     } catch (error) {
       logger.error('[通知服务] 通知前端剪贴板历史更新失败:', error)
     }
@@ -43,7 +43,7 @@ export class NotificationService {
         }
       })
 
-      logger.debug('[通知服务] 已通知前端剪贴板变化:', data)
+
     } catch (error) {
       logger.error('[通知服务] 通知前端剪贴板变化失败:', error)
     }
@@ -65,7 +65,7 @@ export class NotificationService {
         }
       })
 
-      logger.debug('[通知服务] 已通知前端标签更新:', data)
+
     } catch (error) {
       logger.error('[通知服务] 通知前端标签更新失败:', error)
     }
@@ -84,7 +84,7 @@ export class NotificationService {
         }
       })
 
-      logger.debug(`[通知服务] 已发送前端事件 ${eventName}:`, data)
+
     } catch (error) {
       logger.error(`[通知服务] 发送前端事件 ${eventName} 失败:`, error)
     }

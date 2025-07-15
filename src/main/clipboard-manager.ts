@@ -30,7 +30,7 @@ class ClipboardManager extends BaseWorkerManager {
     }
     super(config)
 
-    logger.info('[剪贴板管理器] 初始化主线程接口')
+
 
     // 初始化 ActiveWindow
     try {
@@ -42,7 +42,7 @@ class ClipboardManager extends BaseWorkerManager {
           logger.warn('[剪贴板管理器] macOS 需要屏幕录制权限才能获取窗口标题')
         }
       }
-      logger.info('[剪贴板管理器] ActiveWindow 已初始化')
+
     } catch (error) {
       logger.error('[剪贴板管理器] ActiveWindow 初始化失败:', error)
     }
@@ -57,14 +57,12 @@ class ClipboardManager extends BaseWorkerManager {
   private setupEventListeners(): void {
     // 监听剪贴板变化事件
     this.on('clipboard-changed', (data: { timestamp: number }) => {
-      logger.debug('[剪贴板管理器] 剪贴板已变化:', data.timestamp)
       // 通知前端剪贴板历史更新
       this.notifyFrontendUpdate('clipboard-changed', data)
     })
 
     // 监听历史记录更新事件
     this.on('history-updated', (data: { timestamp: number, source?: string }) => {
-      logger.debug('[剪贴板管理器] 历史记录已更新:', data)
       // 通知前端剪贴板历史更新
       // this.notifyFrontendUpdate('history-updated', data)
     })
@@ -261,7 +259,6 @@ class ClipboardManager extends BaseWorkerManager {
       // 一次性写入所有格式
       if (Object.keys(clipboardData).length > 0) {
         clipboard.write(clipboardData)
-        logger.debug('[剪贴板管理器] 已使用 write 方法设置剪贴板，格式:', Object.keys(clipboardData))
       }
 
       // 单独处理书签（因为 write 方法不支持书签）
@@ -269,7 +266,6 @@ class ClipboardManager extends BaseWorkerManager {
         try {
           const bookmark = JSON.parse(content.bookmark)
           clipboard.writeBookmark(bookmark.title, bookmark.url)
-          logger.debug('[剪贴板管理器] 已设置书签:', bookmark.title)
         } catch (e) {
           logger.warn('[剪贴板管理器] 设置书签失败:', e)
         }
@@ -301,7 +297,6 @@ class ClipboardManager extends BaseWorkerManager {
       // 只设置纯文本格式，去除所有其他格式
       if (content.text && content.text.trim()) {
         clipboard.writeText(content.text)
-        logger.info('[剪贴板管理器] 已设置剪贴板为纯文本格式，长度: %d', content.text.length)
         return true
       } else {
         logger.warn('[剪贴板管理器] 内容中没有有效的文本数据，无法设置为纯文本')
@@ -351,7 +346,6 @@ class ClipboardManager extends BaseWorkerManager {
     }
 
     await this.call('initialize', finalConfig)
-    logger.info('[剪贴板管理器] 已初始化，配置:', finalConfig)
   }
 
   /**
@@ -361,7 +355,6 @@ class ClipboardManager extends BaseWorkerManager {
     await this.ensureWorkerInitialized()
 
     await this.call('startListening')
-    logger.info('[剪贴板管理器] 开始监听剪贴板变化')
   }
 
   /**
@@ -370,7 +363,6 @@ class ClipboardManager extends BaseWorkerManager {
   public async stopListening(): Promise<void> {
     if (this.isRunning()) {
       await this.call('stopListening')
-      logger.info('[剪贴板管理器] 停止监听剪贴板变化')
     }
   }
 
@@ -384,7 +376,6 @@ class ClipboardManager extends BaseWorkerManager {
       const success = await this.call('restoreClipboard', itemId)
 
       if (success) {
-        logger.info('[剪贴板管理器] 已还原剪贴板内容:', itemId)
         // 通知前端更新（因为 last_used 时间已更新）
         this.notifyFrontendUpdate('clipboard-restored', { itemId })
       } else {
@@ -416,7 +407,6 @@ class ClipboardManager extends BaseWorkerManager {
       const success = await this.call('restoreClipboardAsText', itemId)
 
       if (success) {
-        logger.info('[剪贴板管理器] 已还原剪贴板内容为纯文本:', itemId)
         // 通知前端更新（因为 last_used 时间已更新）
         this.notifyFrontendUpdate('clipboard-restored', { itemId, type: 'text-only' })
       } else {
@@ -453,7 +443,6 @@ class ClipboardManager extends BaseWorkerManager {
       try {
         // 实现剪贴板设置逻辑（从原文件复制）
         // 这里需要实现具体的剪贴板设置逻辑
-        logger.debug('[剪贴板管理器] 设置剪贴板内容:', Object.keys(content))
 
         // 更新内部哈希值以保持同步
         if (updateHash) {
@@ -485,7 +474,6 @@ class ClipboardManager extends BaseWorkerManager {
       const success = await this.call('deleteHistoryItem', itemId)
 
       if (success) {
-        logger.info('[剪贴板管理器] 已删除剪贴板项:', itemId)
         this.notifyFrontendUpdate('item-deleted', { itemId })
       }
 
@@ -504,7 +492,6 @@ class ClipboardManager extends BaseWorkerManager {
       await this.ensureWorkerInitialized()
 
       await this.call('clearHistory')
-      logger.info('[剪贴板管理器] 已清空所有历史记录')
       this.notifyFrontendUpdate('history-cleared', {})
     } catch (error) {
       logger.error('[剪贴板管理器] 清空历史记录失败:', error)
@@ -553,7 +540,6 @@ class ClipboardManager extends BaseWorkerManager {
       await this.ensureWorkerInitialized()
 
       await this.call('updateConfig', newConfig)
-      logger.info('[剪贴板管理器] 配置已更新:', newConfig)
     } catch (error) {
       logger.error('[剪贴板管理器] 更新配置失败:', error)
     }
@@ -566,7 +552,6 @@ class ClipboardManager extends BaseWorkerManager {
     try {
       const maxHistorySize = store.get(STORE_KEY.SETTINGS_MAX_HISTORY_SIZE, 100)
       await this.updateConfig({ maxHistorySize })
-      logger.info('[剪贴板管理器] 从store更新maxHistorySize:', maxHistorySize)
     } catch (error) {
       logger.error('[剪贴板管理器] 从store更新maxHistorySize失败:', error)
     }
@@ -582,7 +567,6 @@ class ClipboardManager extends BaseWorkerManager {
       import('./clipboard-history-cleaner').then(module => {
         const clipboardHistoryCleaner = module.default
         clipboardHistoryCleaner.updateConfigFromStore()
-        logger.info('[剪贴板管理器] 已更新历史记录清理器配置')
       })
     } catch (error) {
       logger.error('[剪贴板管理器] 更新清理器配置失败:', error)
@@ -611,7 +595,6 @@ class ClipboardManager extends BaseWorkerManager {
       await this.ensureWorkerInitialized()
 
       await this.call('syncClipboardHash')
-      logger.info('[剪贴板管理器] 已同步剪贴板哈希值')
     } catch (error) {
       logger.error('[剪贴板管理器] 同步剪贴板哈希值失败:', error)
     }
@@ -637,7 +620,6 @@ class ClipboardManager extends BaseWorkerManager {
   public testClipboard(): void {
     // 这个方法需要在主线程中实现，因为涉及到剪贴板 API
     try {
-      logger.info('[剪贴板管理器] 测试剪贴板功能（主线程实现）')
       // 实现测试逻辑
     } catch (error) {
       logger.error('[剪贴板管理器] 测试剪贴板功能失败:', error)
@@ -650,7 +632,6 @@ class ClipboardManager extends BaseWorkerManager {
   public verifyClipboardContent(): { isValid: boolean; details: any } {
     // 这个方法需要在主线程中实现，因为涉及到剪贴板 API
     try {
-      logger.debug('[剪贴板管理器] 验证剪贴板内容（主线程实现）')
       return { isValid: true, details: {} }
     } catch (error) {
       logger.error('[剪贴板管理器] 验证剪贴板内容失败:', error)

@@ -53,7 +53,6 @@ class Logger {
       log.scope('main')
 
       this.isInitialized = true
-      log.info('[日志系统] 日志系统初始化完成')
     } catch (error) {
       console.error('[日志系统] 初始化失败:', error)
     }

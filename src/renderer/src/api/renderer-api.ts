@@ -25,6 +25,7 @@ import type {
   ClipboardIpcResponse,
   ClipboardHistoryQueryOptions,
   TagGroup,
+  TagStats,
   AppInfo,
   AppCacheStats,
   AppOperations
@@ -167,6 +168,14 @@ export const tags = {
       return true
     }
     throw new Error(result.error || '删除标签失败')
+  },
+
+  async getTagStats(): Promise<TagStats[]> {
+    const result: { success: boolean; data?: TagStats[]; error?: string } = await invoke('get-tag-stats')
+    if (result.success) {
+      return result.data || []
+    }
+    throw new Error(result.error || '获取标签统计信息失败')
   }
 }
 
