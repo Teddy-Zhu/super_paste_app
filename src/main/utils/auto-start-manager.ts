@@ -11,16 +11,20 @@ class AutoStartManager {
   private autoLauncher: AutoLaunch | null = null
   private readonly appName: string = 'Super Paste'
 
-  private readonly isLinux: boolean =
-    process.platform === 'linux' || process.platform === 'freebsd' || process.platform === 'openbsd'
+  private readonly isUnix: boolean =
+    process.platform === 'linux' || process.platform === 'freebsd' || process.platform === 'openbsd' || process.platform === 'darwin'
 
   constructor() {
     // 仅在 Linux 平台初始化 auto-launch
-    if (this.isLinux) {
+    if (this.isUnix) {
       this.autoLauncher = new AutoLaunch({
+        mac: {
+          useLaunchAgent: true
+        },
         name: this.appName,
         path: process.execPath,
         isHidden: true // Linux 下隐藏启动
+        
       })
     }
   }
@@ -31,7 +35,7 @@ class AutoStartManager {
    */
   async isEnabled(): Promise<boolean> {
     try {
-      if (this.isLinux) {
+      if (this.isUnix) {
         if (!this.autoLauncher) {
           throw new Error('Auto launcher not initialized for Linux')
         }
@@ -54,7 +58,7 @@ class AutoStartManager {
    */
   async setEnabled(enabled: boolean): Promise<boolean> {
     try {
-      if (this.isLinux) {
+      if (this.isUnix) {
         if (!this.autoLauncher) {
           throw new Error('Auto launcher not initialized for Linux')
         }
@@ -66,12 +70,19 @@ class AutoStartManager {
         }
       } else {
         // Windows 和 macOS 使用 Electron 原生 API
-        app.setLoginItemSettings({
-          openAtLogin: enabled,
-          openAsHidden: enabled, // 自动启动时隐藏窗口
-          name: this.appName,
-          path: process.execPath
-        })
+        if (enabled) {
+          app.setLoginItemSettings({
+            openAtLogin: enabled,
+            openAsHidden: true, // 自动启动时隐藏窗口
+            name: this.appName,
+            path: process.execPath
+          })
+        }else {
+          app.setLoginItemSettings({
+            openAtLogin: false,
+          })
+        }
+
       }
 
       logger.info(`[自启管理器] 自动启动设置已更新: ${enabled} (平台: ${process.platform})`)
@@ -110,7 +121,7 @@ class AutoStartManager {
   getPlatformInfo(): { platform: string; method: string } {
     return {
       platform: process.platform,
-      method: this.isLinux ? 'auto-launch' : 'electron-native'
+      method: this.isUnix ? 'auto-launch' : 'electron-native'
     }
   }
 }
