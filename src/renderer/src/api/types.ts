@@ -44,6 +44,8 @@ export interface IpcChannels {
   'update-tag': { tagId: string; updates: { name?: string; color?: string; description?: string } }
   'delete-tag': string
   'get-tag-stats': void
+  'bind-tag-to-record': { contentId: string; tagId: string }
+  'unbind-tag-from-record': { contentId: string; tagId: string }
 
   // 应用信息相关
   'get-all-apps': void
@@ -239,6 +241,8 @@ export interface TagOperations {
   updateTag(tagId: string, updates: { name?: string; color?: string; description?: string }): Promise<boolean>
   deleteTag(tagId: string): Promise<boolean>
   getTagStats(): Promise<TagStats[]>
+  bindTagToRecord(contentId: string, tagId: string): Promise<boolean>
+  unbindTagFromRecord(contentId: string, tagId: string): Promise<boolean>
 }
 
 // 应用信息操作类型

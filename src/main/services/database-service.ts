@@ -161,6 +161,13 @@ export class DatabaseService {
   }
 
   /**
+   * 根据ID获取标签组
+   */
+  public getTagGroupById(params: { tagId: string }): TagGroupRecord | null {
+    return clipboardDatabase.getTagGroupById(params.tagId)
+  }
+
+  /**
    * 更新标签组
    */
   public updateTagGroup(params: { tagId: string, updates: Partial<Omit<TagGroup, 'id' | 'createdAt'>> }): boolean {
@@ -249,6 +256,8 @@ export class DatabaseService {
           return this.createTagGroup(params)
         case 'getAllTagGroups':
           return this.getAllTagGroups()
+        case 'getTagGroupById':
+          return this.getTagGroupById(params)
         case 'updateTagGroup':
           return this.updateTagGroup(params)
         case 'deleteTagGroup':

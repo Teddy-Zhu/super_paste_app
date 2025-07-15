@@ -1,5 +1,5 @@
-appId: com.electron.app
-productName: super_paste_app
+appId: com.v2dawn.sp
+productName: Super Paste
 directories:
   buildResources: build
 icon: build/icon/icons/icon

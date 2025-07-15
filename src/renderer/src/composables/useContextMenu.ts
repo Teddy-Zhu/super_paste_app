@@ -3,8 +3,10 @@ import { reactive } from 'vue'
 interface MenuItem {
   label: string
   action: () => void
-  icon?: string
+  icon?: string | any // 支持字符串或组件
+  iconColor?: string // 支持图标颜色
   disabled?: boolean
+  submenu?: MenuItem[] // 支持二级菜单
 }
 
 interface ContextMenuState {
@@ -24,10 +26,7 @@ const contextMenuState = reactive<ContextMenuState>({
   sourceId: undefined
 })
 
-// 鼠标移动计时器
-let mouseMoveTimer: number | null = null
-let lastMouseX = 0
-let lastMouseY = 0
+
 
 /**
  * 全局上下文菜单管理器
@@ -56,12 +55,7 @@ export function useContextMenu() {
     contextMenuState.items = items
     contextMenuState.sourceId = sourceId
 
-    // 记录当前鼠标位置
-    lastMouseX = event.clientX
-    lastMouseY = event.clientY
 
-    // 开始监听鼠标移动
-    startMouseMoveDetection()
   }
 
   /**
@@ -70,7 +64,6 @@ export function useContextMenu() {
   const hideContextMenu = () => {
     contextMenuState.visible = false
     contextMenuState.sourceId = undefined
-    stopMouseMoveDetection()
   }
 
   /**
@@ -112,52 +105,7 @@ export function useContextMenu() {
     return { x, y }
   }
 
-  /**
-   * 开始鼠标移动检测
-   */
-  const startMouseMoveDetection = () => {
-    stopMouseMoveDetection() // 清除之前的计时器
 
-    let mouseMoveHandler: ((event: MouseEvent) => void) | null = null
-
-    const handleMouseMove = (event: MouseEvent) => {
-      const deltaX = Math.abs(event.clientX - lastMouseX)
-      const deltaY = Math.abs(event.clientY - lastMouseY)
-
-      // 如果鼠标在菜单区域内，不隐藏菜单
-      if (isMouseInMenuArea(event.clientX, event.clientY)) {
-        return
-      }
-
-      // 如果鼠标移动超过阈值，隐藏菜单
-      if (deltaX > 8 || deltaY > 8) {
-        hideContextMenu()
-        if (mouseMoveHandler) {
-          document.removeEventListener('mousemove', mouseMoveHandler)
-          mouseMoveHandler = null
-        }
-      }
-    }
-
-    mouseMoveHandler = handleMouseMove
-
-    // 延迟添加鼠标移动监听，避免立即触发
-    mouseMoveTimer = window.setTimeout(() => {
-      if (mouseMoveHandler && contextMenuState.visible) {
-        document.addEventListener('mousemove', mouseMoveHandler)
-      }
-    }, 150)
-  }
-
-  /**
-   * 停止鼠标移动检测
-   */
-  const stopMouseMoveDetection = () => {
-    if (mouseMoveTimer) {
-      clearTimeout(mouseMoveTimer)
-      mouseMoveTimer = null
-    }
-  }
 
   /**
    * 检查菜单是否属于指定来源
@@ -174,19 +122,7 @@ export function useContextMenu() {
   }
 }
 
-// 检查鼠标是否在菜单区域内
-const isMouseInMenuArea = (mouseX: number, mouseY: number) => {
-  if (!contextMenuState.visible) return false
 
-  const menuWidth = 160
-  const menuHeight = contextMenuState.items.length * 40 + 8
-  const padding = 10 // 额外的容错区域
-
-  return mouseX >= contextMenuState.x - padding &&
-         mouseX <= contextMenuState.x + menuWidth + padding &&
-         mouseY >= contextMenuState.y - padding &&
-         mouseY <= contextMenuState.y + menuHeight + padding
-}
 
 // 全局点击事件监听器
 document.addEventListener('click', (event) => {
@@ -195,9 +131,14 @@ document.addEventListener('click', (event) => {
   if (contextMenuState.visible) {
     // 检查点击是否在菜单外部
     const target = event.target as HTMLElement
-    const menuElement = document.querySelector('.context-menu')
+    const mainMenuElement = document.querySelector('.context-menu:not(.submenu)')
+    const submenuElement = document.querySelector('.context-menu.submenu')
 
-    if (!menuElement || !menuElement.contains(target)) {
+    // 如果点击在主菜单或二级菜单内，不关闭菜单
+    const isInMainMenu = mainMenuElement && mainMenuElement.contains(target)
+    const isInSubmenu = submenuElement && submenuElement.contains(target)
+
+    if (!isInMainMenu && !isInSubmenu) {
       hideContextMenu()
     }
   }

@@ -45,6 +45,26 @@ class IpcManager {
   }
 
   /**
+   * 通知前端剪贴板历史已更新
+   */
+  private notifyClipboardHistoryUpdated(): void {
+    try {
+      const allWindows = BrowserWindow.getAllWindows()
+
+      allWindows.forEach((window) => {
+        if (window && !window.isDestroyed()) {
+          window.webContents.send('clipboard-history-updated', {
+            timestamp: Date.now()
+          })
+        }
+      })
+
+    } catch (error) {
+      logger.error('[IPC管理器] 通知前端剪贴板历史更新失败:', error)
+    }
+  }
+
+  /**
    * 初始化所有 IPC 事件处理器
    */
   public initialize(): void {
@@ -345,6 +365,49 @@ class IpcManager {
       }
     })
 
+    // 绑定标签到记录
+    ipcMain.handle('bind-tag-to-record', async (_, data: { contentId: string; tagId: string }) => {
+      try {
+        const success = await clipboardManager.bindTagToRecord(data.contentId, data.tagId)
+        if (success) {
+          // 通知前端剪贴板历史已更新
+          this.notifyClipboardHistoryUpdated()
+          this.notifyTagsUpdated()
+        }
+        return {
+          success,
+          message: success ? '标签绑定成功' : '绑定标签失败'
+        }
+      } catch (error) {
+        logger.error('[IPC管理器] 绑定标签失败:', error)
+        return {
+          success: false,
+          error: (error as Error).message || '绑定标签失败'
+        }
+      }
+    })
+
+    // 解除标签绑定
+    ipcMain.handle('unbind-tag-from-record', async (_, data: { contentId: string; tagId: string }) => {
+      try {
+        const success = await clipboardManager.unbindTagFromRecord(data.contentId, data.tagId)
+        if (success) {
+          // 通知前端剪贴板历史已更新
+          this.notifyClipboardHistoryUpdated()
+          this.notifyTagsUpdated()
+        }
+        return {
+          success,
+          message: success ? '标签解绑成功' : '解除标签绑定失败'
+        }
+      } catch (error) {
+        logger.error('[IPC管理器] 解除标签绑定失败:', error)
+        return {
+          success: false,
+          error: (error as Error).message || '解除标签绑定失败'
+        }
+      }
+    })
 
   }
 
@@ -370,7 +433,10 @@ class IpcManager {
       'get-all-tags',
       'create-tag',
       'update-tag',
-      'delete-tag'
+      'delete-tag',
+      'get-tag-stats',
+      'bind-tag-to-record',
+      'unbind-tag-from-record'
     ]
 
     clipboardChannels.forEach(channel => {

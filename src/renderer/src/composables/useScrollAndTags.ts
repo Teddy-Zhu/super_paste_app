@@ -8,6 +8,7 @@ import type { ClipboardItem, TagGroup, ClipboardHistoryQueryOptions } from '@ren
 import { tags } from '@renderer/api/renderer-api'
 import { useRafThrottle, useThrottle, useStateManager } from './useUtils'
 import { AnimationState } from './useAnimation'
+import { useContextMenu } from './useContextMenu'
 import Scrollbar from 'smooth-scrollbar'
 import type { ScrollbarOptions } from 'smooth-scrollbar/interfaces'
 
@@ -75,13 +76,17 @@ export function useScrollAndTags(
   clipboardHistory: Ref<ClipboardItem[]>,
   selectedIndex: Ref<number>,
   currentAnimationState: Ref<AnimationState>,
-  loadClipboardHistory: (options?: ClipboardHistoryQueryOptions) => Promise<void>
+  loadClipboardHistory: (options?: ClipboardHistoryQueryOptions) => Promise<void>,
+  getSearchText: () => string
 ): ScrollAndTagsManager {
-  
+
   // ==================== 状态管理 ====================
-  
+
   const isScrolling = ref(false)
   let scrollbarInstance: Scrollbar | null = null
+
+  // 获取上下文菜单管理器
+  const { hideContextMenu } = useContextMenu()
   
   const tagStateManager = useStateManager<TagState>({
     allTags: [],
@@ -215,6 +220,9 @@ export function useScrollAndTags(
   })
   
   const scrollToPosition = (targetLeft: number) => {
+    // 程序化滚动时也隐藏菜单
+    hideContextMenu()
+
     if (scrollbarInstance) {
       try {
         // 使用 smooth-scrollbar 的平滑滚动，动画时间设为 300ms
@@ -330,6 +338,8 @@ export function useScrollAndTags(
 
   // 创建实际的 handleWheel 函数
   const handleWheel = (event: WheelEvent) => {
+    // 滚动时隐藏所有菜单
+    hideContextMenu()
     handleWheelThrottled(event)
   }
   
@@ -401,16 +411,16 @@ export function useScrollAndTags(
     // console.log('[滚动标签管理] 切换到标签:', tagId)
 
     try {
-      if (tagId === 'all') {
-        await loadClipboardHistory()
-      } else {
-        await loadClipboardHistory({
-          tagIds: [tagId],
-          limit: 50,
-          orderBy: 'last_used',
-          orderDirection: 'DESC'
-        })
-      }
+      const currentTagIds = tagId === 'all' ? [] : [tagId]
+      const currentSearchText = getSearchText()
+
+      await loadClipboardHistory({
+        tagIds: currentTagIds,
+        searchText: currentSearchText,
+        limit: 50,
+        orderBy: 'last_used',
+        orderDirection: 'DESC'
+      })
 
       // 标签切换完成后，确保 scrollbar 正确初始化
       nextTick(() => {

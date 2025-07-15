@@ -19,6 +19,10 @@ import { useEventManager, useThrottle, withTimeout } from '@renderer/composables
 import ClipboardCard from '@renderer/components/ClipboardCard.vue'
 import ContextMenu from '@renderer/components/ContextMenu.vue'
 
+// 导入图标
+import IconSettings from '~icons/mdi/cog'
+import IconDelete from '~icons/mdi/delete'
+
 // ==================== DOM 引用 ====================
 const overlayContentRef = ref<HTMLElement>()
 const clipboardScrollRef = ref<HTMLElement>()
@@ -95,18 +99,22 @@ const loadClipboardHistory = async (options?: ClipboardHistoryQueryOptions): Pro
 }
 
 const throttledLoadClipboardHistory = useThrottle(
-  () => loadClipboardHistory().catch(console.error),
+  () => {
+    const currentTagIds = scrollAndTagsManager.activeTagId.value === 'all'
+      ? []
+      : [scrollAndTagsManager.activeTagId.value]
+    const currentSearchText = searchAndNavManager.searchText.value || ''
+
+    loadClipboardHistory({
+      tagIds: currentTagIds,
+      searchText: currentSearchText
+    }).catch(console.error)
+  },
   500
 )
 
-// ==================== 初始化滚动和标签管理 ====================
-const scrollAndTagsManager = useScrollAndTags(
-  clipboardScrollRef,
-  clipboardHistory,
-  selectedIndex,
-  animationManager.currentAnimationState,
-  loadClipboardHistory
-)
+// ==================== 临时占位符，将在 searchAndNavManager 定义后重新定义 ====================
+let scrollAndTagsManager: any
 
 // ==================== 事件监听器管理 ====================
 
@@ -216,6 +224,11 @@ const clearClipboardHistory = async (): Promise<void> => {
  */
 const waitForAnimationFinish = (playState: any): Promise<void> => {
   return new Promise((resolve) => {
+    if (playState.value === 'finished') {
+      resolve()
+      return
+    }
+
     const stopWatching = watch(playState, (newState) => {
       if (newState === 'finished') {
         stopWatching()
@@ -322,9 +335,17 @@ const showSearchBox = async (withBuffer: boolean): Promise<void> => {
 // ==================== 搜索回调函数 ====================
 const performSearchCallback = async (text: string): Promise<void> => {
   try {
-    const options = text.trim()
-      ? { searchText: text.trim(), limit: 50, orderBy: 'last_used' as const, orderDirection: 'DESC' as const }
-      : undefined
+    const currentTagIds = scrollAndTagsManager.activeTagId.value === 'all'
+      ? []
+      : [scrollAndTagsManager.activeTagId.value]
+
+    const options: ClipboardHistoryQueryOptions = {
+      searchText: text.trim(),
+      tagIds: currentTagIds,
+      limit: 50,
+      orderBy: 'last_used' as const,
+      orderDirection: 'DESC' as const
+    }
 
     await loadClipboardHistory(options)
   } catch (error) {
@@ -346,6 +367,16 @@ const searchAndNavManager = useSearchAndNavigation(
   restoreClipboardContent,
   closeWindow,
   toggleSearch
+)
+
+// ==================== 初始化滚动和标签管理 ====================
+scrollAndTagsManager = useScrollAndTags(
+  clipboardScrollRef,
+  clipboardHistory,
+  selectedIndex,
+  animationManager.currentAnimationState,
+  loadClipboardHistory,
+  () => searchAndNavManager.searchText.value || ''
 )
 
 // ==================== 动画流程函数 ====================
@@ -546,7 +577,10 @@ onMounted(async () => {
 
     // 并行预加载数据
     const preloadPromises = [
-      loadClipboardHistory().catch(() => []),
+      loadClipboardHistory({
+        tagIds: [],
+        searchText: ''
+      }).catch(() => []),
       scrollAndTagsManager.loadAllTags().catch(() => [])
     ]
 
@@ -655,11 +689,15 @@ onUnmounted(() => {
             <!-- 下拉菜单 -->
             <div v-if="isDropdownVisible" ref="dropdownMenuRef" class="dropdown-menu">
               <div class="dropdown-item" @click="openSettings">
-                <span class="dropdown-icon">⚙️</span>
+                <span class="dropdown-icon">
+                  <IconSettings />
+                </span>
                 <span class="dropdown-label">设置</span>
               </div>
               <div class="dropdown-item" @click="clearClipboardHistory">
-                <span class="dropdown-icon">🗑️</span>
+                <span class="dropdown-icon">
+                  <IconDelete />
+                </span>
                 <span class="dropdown-label">清空历史</span>
               </div>
             </div>
@@ -680,6 +718,8 @@ onUnmounted(() => {
           <transition-group name="clipboard-list" tag="div" class="clipboard-list-wrapper">
             <ClipboardCard v-for="(item, index) in clipboardHistory" :key="item.id" :item="item" :index="index"
               :is-selected="index === selectedIndex" :is-quick-select-mode="isQuickSelectMode"
+              :all-tags="scrollAndTagsManager.allTags.value"
+              :active-tag-id="scrollAndTagsManager.activeTagId.value"
               @click="() => restoreClipboardContent(item.id)"
               @restore-as-text="() => restoreClipboardContentAsText(item.id)" />
           </transition-group>

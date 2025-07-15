@@ -1,17 +1,26 @@
 <script setup lang="ts">
-import type { ClipboardItem } from '@renderer/api/types'
+import type { ClipboardItem, TagGroup } from '@renderer/api/types'
 import { computed, ref } from 'vue'
 import { convertRtfToHtml } from 'rtf-to-html-converter'
 import DOMPurify from 'dompurify'
 import IconFile from '~icons/mdi/file'
 import IconFileMultiple from '~icons/mdi/file-multiple'
+import IconTextBox from '~icons/mdi/text-box'
+
+import IconTag from '~icons/mdi/tag'
+import IconCheck from '~icons/mdi/check'
+import IconDelete from '~icons/mdi/delete'
+import IconCircle from '~icons/mdi/circle'
 import { useContextMenu } from '@renderer/composables/useContextMenu'
+import { tags } from '@renderer/api/renderer-api'
 
 interface Props {
   item: ClipboardItem
   index: number
   isSelected: boolean
   isQuickSelectMode: boolean
+  allTags?: TagGroup[]
+  activeTagId?: string
 }
 
 const props = defineProps<Props>()
@@ -312,15 +321,62 @@ const handleClick = () => {
 
 // 处理右键菜单
 const handleContextMenu = (event: MouseEvent) => {
-  // 创建菜单项
+  // 创建基础菜单项
   const menuItems = [
     {
       label: '粘贴为纯文本',
-      icon: '📝',
+      icon: IconTextBox,
       action: () => handleRestoreAsText(),
       disabled: !props.item.content.text || !props.item.content.text.trim() // 如果没有有效文本内容则禁用
     }
   ]
+
+  // 添加标签相关菜单项
+  if (props.allTags && props.allTags.length > 0) {
+    // 获取当前项目已有的标签ID
+    const currentTagIds = props.item.tags?.map(tag => tag.id) || []
+
+    // 创建标签二级菜单
+    const tagSubmenu: any[] = []
+
+    // 添加可选择的标签
+    props.allTags.forEach(tag => {
+      const isTagged = currentTagIds.includes(tag.id)
+      tagSubmenu.push({
+        label: isTagged ? `${tag.name}` : tag.name,
+        icon: isTagged ? IconCheck : IconCircle, // 已绑定显示勾选，未绑定显示圆点
+        iconColor: tag.color, // 使用标签定义的颜色
+        action: () => isTagged ? handleRemoveTag(tag.id) : handleAddTag(tag.id),
+        disabled: false
+      })
+    })
+
+    // 如果当前不是all标签且有标签，添加移除当前标签选项
+    if (props.activeTagId !== 'all' && currentTagIds.length > 0) {
+      tagSubmenu.push({
+        label: '---',
+        icon: '',
+        action: () => {},
+        disabled: true
+      })
+
+      tagSubmenu.push({
+        label: '移除当前标签',
+        icon: IconDelete,
+        action: () => handleRemoveCurrentTag(),
+        disabled: false
+      })
+    }
+
+    // 添加标签主菜单项（带二级菜单）
+    menuItems.push({
+      label: '标签管理',
+      icon: IconTag,
+      action: () => {}, // 二级菜单不需要action
+      disabled: false,
+      submenu: tagSubmenu
+    } as any)
+  }
 
   // 显示上下文菜单
   showContextMenu(event, menuItems, `clipboard-card-${props.item.id}`)
@@ -329,6 +385,45 @@ const handleContextMenu = (event: MouseEvent) => {
 // 处理粘贴为纯文本
 const handleRestoreAsText = () => {
   emit('restoreAsText', props.item.id)
+}
+
+
+
+// 处理添加标签
+const handleAddTag = async (tagId: string) => {
+  try {
+    await tags.bindTagToRecord(props.item.id, tagId)
+    console.log('标签绑定成功')
+  } catch (error) {
+    console.error('绑定标签失败:', error)
+    alert('绑定标签失败: ' + (error as Error).message)
+  }
+}
+
+// 处理移除标签
+const handleRemoveTag = async (tagId: string) => {
+  try {
+    await tags.unbindTagFromRecord(props.item.id, tagId)
+    console.log('标签解绑成功')
+  } catch (error) {
+    console.error('解绑标签失败:', error)
+    alert('解绑标签失败: ' + (error as Error).message)
+  }
+}
+
+// 处理移除当前标签（当前tab不是all时）
+const handleRemoveCurrentTag = async () => {
+  if (!props.activeTagId || props.activeTagId === 'all') {
+    return
+  }
+
+  try {
+    await tags.unbindTagFromRecord(props.item.id, props.activeTagId)
+    console.log('当前标签解绑成功')
+  } catch (error) {
+    console.error('解绑当前标签失败:', error)
+    alert('解绑当前标签失败: ' + (error as Error).message)
+  }
 }
 
 // 计算快捷键标签
@@ -421,8 +516,18 @@ const shortcutLabel = computed(() => {
 
     <!-- 卡片底部信息 -->
     <div class="card-footer">
-      <!-- 左侧占位 -->
-      <div class="footer-left"></div>
+      <!-- 左侧标签颜色点 -->
+      <div class="footer-left">
+        <div v-if="item.tags && item.tags.length > 0" class="tag-dots">
+          <div
+            v-for="tag in item.tags"
+            :key="tag.id"
+            class="tag-dot"
+            :style="{ backgroundColor: tag.color }"
+            :title="tag.name"
+          ></div>
+        </div>
+      </div>
 
       <!-- 字符数显示（居中显示） -->
       <span class="character-count">{{ getCharacterCount(item) }}</span>
@@ -654,6 +759,9 @@ const shortcutLabel = computed(() => {
   font-weight: 500;
 }
 
+:global(.rich-content pre) {
+  overflow: hidden!important;
+}
 .rich-content p {
   margin: 0 0 8px 0;
 }
@@ -836,6 +944,28 @@ const shortcutLabel = computed(() => {
 .footer-left {
   flex: 1;
   min-width: 0;
+  display: flex;
+  align-items: center;
+}
+
+.tag-dots {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+}
+
+.tag-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.8);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+  transition: transform 0.2s ease;
+  cursor: help;
+}
+
+.tag-dot:hover {
+  transform: scale(1.2);
 }
 
 .character-count {

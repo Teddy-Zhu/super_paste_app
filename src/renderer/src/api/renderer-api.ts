@@ -176,6 +176,22 @@ export const tags = {
       return result.data || []
     }
     throw new Error(result.error || '获取标签统计信息失败')
+  },
+
+  async bindTagToRecord(contentId: string, tagId: string): Promise<boolean> {
+    const result: { success: boolean; message?: string; error?: string } = await invoke('bind-tag-to-record', { contentId, tagId })
+    if (result.success) {
+      return true
+    }
+    throw new Error(result.error || '绑定标签失败')
+  },
+
+  async unbindTagFromRecord(contentId: string, tagId: string): Promise<boolean> {
+    const result: { success: boolean; message?: string; error?: string } = await invoke('unbind-tag-from-record', { contentId, tagId })
+    if (result.success) {
+      return true
+    }
+    throw new Error(result.error || '解除标签绑定失败')
   }
 }
 
