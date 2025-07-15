@@ -62,7 +62,7 @@ class ClipboardManager extends BaseWorkerManager {
     })
 
     // 监听历史记录更新事件
-    this.on('history-updated', (data: { timestamp: number, source?: string }) => {
+    this.on('history-updated', (_: { timestamp: number, source?: string }) => {
       // 通知前端剪贴板历史更新
       // this.notifyFrontendUpdate('history-updated', data)
     })
@@ -431,7 +431,7 @@ class ClipboardManager extends BaseWorkerManager {
   /**
    * 手动设置剪贴板内容（不触发监控）
    */
-  public async setClipboardContent(content: ClipboardContent, updateHash: boolean = true): Promise<boolean> {
+  public async setClipboardContent(_: ClipboardContent, updateHash: boolean = true): Promise<boolean> {
     try {
       // 这个方法需要在主线程中实现，因为涉及到剪贴板 API
       // 暂停监听以避免触发变更检测

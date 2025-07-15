@@ -41,7 +41,7 @@ class ClipboardHistoryCleaner extends BaseWorkerManager {
     })
 
     // 监听清理完成事件
-    this.on('cleanup-completed', (data: { stats: CleanupStats }) => {
+    this.on('cleanup-completed', (_: { stats: CleanupStats }) => {
       // 清理完成，可以在这里添加其他逻辑
     })
 

@@ -192,7 +192,7 @@ class ClipboardHistoryCleanerWorker {
   /**
    * 同步删除的记录（由主线程调用）
    */
-  public syncDeletedRecords(deletedIds: string[]): void {
+  public syncDeletedRecords(_: string[]): void {
     // 这个方法在 Worker 中不需要实现，因为同步是通过事件机制处理的
   }
 

@@ -359,7 +359,7 @@ class ClipboardDatabase {
     try {
       const deleteSQL = 'DELETE FROM clipboard_history'
       const stmt = this.db.prepare(deleteSQL)
-      const result = stmt.run()
+      stmt.run()
 
       // 重置自增ID
       this.db.exec('DELETE FROM sqlite_sequence WHERE name = "clipboard_history"')
