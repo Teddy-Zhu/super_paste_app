@@ -1,11 +1,12 @@
 <script setup lang="ts">
 import { send } from '@renderer/api'
-import { tags } from '@renderer/api/renderer-api'
+import { tags, clipboard } from '@renderer/api/renderer-api'
 import type { TagGroup } from '@renderer/api/types'
 import IconSettings from '~icons/mdi/settings'
 import IconKeyboard from '~icons/mdi/keyboard'
 import IconInformation from '~icons/mdi/information'
 import IconTag from '~icons/mdi/tag'
+import IconBug from '~icons/mdi/bug'
 
 // 当前选中的设置项
 const activeSection = ref('general')
@@ -53,6 +54,11 @@ const settingSections = [
     id: 'shortcuts',
     name: '快捷键',
     icon: IconKeyboard
+  },
+  {
+    id: 'debug',
+    name: '调试设置',
+    icon: IconBug
   },
   {
     id: 'about',
@@ -623,9 +629,50 @@ const formatDate = (timestamp: number): string => {
   return new Date(timestamp).toLocaleString('zh-CN')
 }
 
-// 组件挂载时加载标签
+// 切换剪贴板监听
+const toggleClipboardListening = async () => {
+  try {
+    const newState = !settingsStore.clipboardListening
+    
+    if (newState) {
+      const success = await clipboard.startListening()
+      if (success) {
+        settingsStore.clipboardListening = true
+        console.log('剪贴板监听已开启')
+      } else {
+        console.error('开启剪贴板监听失败')
+      }
+    } else {
+      const success = await clipboard.stopListening()
+      if (success) {
+        settingsStore.clipboardListening = false
+        console.log('剪贴板监听已关闭')
+      } else {
+        console.error('关闭剪贴板监听失败')
+      }
+    }
+  } catch (error) {
+    console.error('切换剪贴板监听状态失败:', error)
+  }
+}
+
+// 同步剪贴板监听状态
+const syncClipboardListeningStatus = async () => {
+  try {
+    const status = await clipboard.getStatus()
+    if (status && typeof status.isListening === 'boolean') {
+      settingsStore.clipboardListening = status.isListening
+      console.log('剪贴板监听状态已同步:', status.isListening)
+    }
+  } catch (error) {
+    console.error('获取剪贴板监听状态失败:', error)
+  }
+}
+
+// 组件挂载时加载标签和同步剪贴板状态
 onMounted(() => {
   loadAllTags()
+  syncClipboardListeningStatus()
 })
 
 // 组件卸载时清理事件监听
@@ -707,19 +754,6 @@ onUnmounted(() => {
                   max="365" step="1" class="number-input">
                 <span class="number-unit">{{ settingsStore.maxKeepTime === -1 ? '不限制' : '天' }}</span>
               </div>
-            </div>
-          </div>
-
-          <!-- 测试覆盖层 -->
-          <div class="setting-card">
-            <div class="setting-info">
-              <h4 class="setting-title">测试覆盖层</h4>
-              <p class="setting-description">打开覆盖层窗口进行测试</p>
-            </div>
-            <div class="setting-control">
-              <button class="test-button" @click="openOverlayWindow">
-                打开测试
-              </button>
             </div>
           </div>
         </div>
@@ -891,6 +925,43 @@ onUnmounted(() => {
                   </ul>
                 </div>
               </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 调试设置 -->
+      <div v-if="activeSection === 'debug'" class="content-section">
+        <div class="section-header">
+          <h3 class="section-title">调试设置</h3>
+          <p class="section-subtitle">用于开发和调试的额外选项</p>
+        </div>
+
+        <div class="settings-grid">
+          <!-- 剪贴板监听开关 -->
+          <div class="setting-card">
+            <div class="setting-info">
+              <h4 class="setting-title">剪贴板监听</h4>
+              <p class="setting-description">控制是否监听剪贴板内容变化并保存历史记录</p>
+            </div>
+            <div class="setting-control">
+              <label class="toggle-switch">
+                <input type="checkbox" :checked="settingsStore.clipboardListening" @change="toggleClipboardListening">
+                <span class="toggle-slider"></span>
+              </label>
+            </div>
+          </div>
+
+          <!-- 测试覆盖层 -->
+          <div class="setting-card">
+            <div class="setting-info">
+              <h4 class="setting-title">测试覆盖层</h4>
+              <p class="setting-description">打开覆盖层窗口进行测试</p>
+            </div>
+            <div class="setting-control">
+              <button class="test-button" @click="openOverlayWindow">
+                打开测试
+              </button>
             </div>
           </div>
         </div>
