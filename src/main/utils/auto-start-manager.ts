@@ -11,9 +11,12 @@ class AutoStartManager {
   private autoLauncher: AutoLaunch | null = null
   private readonly appName: string = 'Super Paste'
 
+  private readonly isLinux: boolean =
+    process.platform === 'linux' || process.platform === 'freebsd' || process.platform === 'openbsd'
+
   constructor() {
     // 仅在 Linux 平台初始化 auto-launch
-    if (process.platform === 'linux') {
+    if (this.isLinux) {
       this.autoLauncher = new AutoLaunch({
         name: this.appName,
         path: process.execPath,
@@ -28,7 +31,7 @@ class AutoStartManager {
    */
   async isEnabled(): Promise<boolean> {
     try {
-      if (process.platform === 'linux') {
+      if (this.isLinux) {
         if (!this.autoLauncher) {
           throw new Error('Auto launcher not initialized for Linux')
         }
@@ -51,7 +54,7 @@ class AutoStartManager {
    */
   async setEnabled(enabled: boolean): Promise<boolean> {
     try {
-      if (process.platform === 'linux') {
+      if (this.isLinux) {
         if (!this.autoLauncher) {
           throw new Error('Auto launcher not initialized for Linux')
         }
@@ -107,7 +110,7 @@ class AutoStartManager {
   getPlatformInfo(): { platform: string; method: string } {
     return {
       platform: process.platform,
-      method: process.platform === 'linux' ? 'auto-launch' : 'electron-native'
+      method: this.isLinux ? 'auto-launch' : 'electron-native'
     }
   }
 }

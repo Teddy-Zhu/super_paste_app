@@ -17,13 +17,12 @@ import { STORE_KEY } from './common'
 import clipboardHistoryCleaner from './clipboard-history-cleaner'
 import { debounceExecution, clearAllDebounceTimers } from './utils/common'
 import autoStartManager from './utils/auto-start-manager'
-import os from 'os'
 
 let overlayWindow: BrowserWindow | null = null
 let mainWindow: BrowserWindow | null = null
 let tray: Tray | null = null
 
-if(os.platform() === 'darwin' && is.dev){
+if(process.platform === 'darwin' && is.dev){
   app.disableHardwareAcceleration()
 }
 // Overlay窗口状态枚举
