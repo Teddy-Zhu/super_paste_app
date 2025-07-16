@@ -10,6 +10,7 @@ declare module 'vue' {
   export interface GlobalComponents {
     ClipboardCard: typeof import('./components/ClipboardCard.vue')['default']
     ContextMenu: typeof import('./components/ContextMenu.vue')['default']
+    copy: typeof import('./components/ClipboardCard copy.vue')['default']
     RouterLink: typeof import('vue-router')['RouterLink']
     RouterView: typeof import('vue-router')['RouterView']
     Versions: typeof import('./components/Versions.vue')['default']

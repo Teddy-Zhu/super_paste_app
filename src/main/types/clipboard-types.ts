@@ -389,7 +389,7 @@ export class ClipboardDataConverter {
     if (content.text) {
       const text = content.text.trim()
       // 检测电话号码
-      const phoneRegex = /^[\+]?[1-9][\d]{0,15}$|^[\+]?[(]?[\d\s\-\(\)]{10,}$/
+      const phoneRegex = /^1[3-9]\d{9}$/
       if (phoneRegex.test(text.replace(/\s/g, ''))) {
         return 'phone'
       }

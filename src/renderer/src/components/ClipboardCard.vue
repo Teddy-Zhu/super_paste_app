@@ -12,7 +12,7 @@ import IconCheck from '~icons/mdi/check'
 import IconDelete from '~icons/mdi/delete'
 import IconCircle from '~icons/mdi/circle'
 import { useContextMenu } from '@renderer/composables/useContextMenu'
-import { tags } from '@renderer/api/renderer-api'
+import { tags, clipboard } from '@renderer/api/renderer-api'
 
 interface Props {
   item: ClipboardItem
@@ -28,6 +28,7 @@ const props = defineProps<Props>()
 const emit = defineEmits<{
   click: [itemId: string]
   restoreAsText: [itemId: string]
+  delete: [itemId: string]
 }>()
 
 // 计算 RTF 内容的 HTML 表示（使用 rtf-to-html-converter 和 DOMPurify）
@@ -378,6 +379,22 @@ const handleContextMenu = (event: MouseEvent) => {
     } as any)
   }
 
+  // 添加分隔符
+  menuItems.push({
+    label: '---',
+    icon: '',
+    action: () => {},
+    disabled: true
+  } as any)
+
+  // 添加删除选项
+  menuItems.push({
+    label: '删除',
+    icon: IconDelete,
+    action: () => handleDeleteItem(),
+    disabled: false
+  } as any)
+
   // 显示上下文菜单
   showContextMenu(event, menuItems, `clipboard-card-${props.item.id}`)
 }
@@ -385,6 +402,22 @@ const handleContextMenu = (event: MouseEvent) => {
 // 处理粘贴为纯文本
 const handleRestoreAsText = () => {
   emit('restoreAsText', props.item.id)
+}
+
+// 处理删除项目
+const handleDeleteItem = async () => {
+  try {
+    const success = await clipboard.deleteItem(props.item.id)
+    if (success) {
+      emit('delete', props.item.id)
+      console.log('剪贴板项目删除成功')
+    } else {
+      alert('删除失败')
+    }
+  } catch (error) {
+    console.error('删除剪贴板项目失败:', error)
+    alert('删除失败: ' + (error as Error).message)
+  }
 }
 
 
@@ -438,6 +471,47 @@ const shortcutLabel = computed(() => {
   }
   return ''
 })
+
+// 禁用富文本内容中的所有跳转事件
+const handleRichContentClick = (event: Event) => {
+  const target = event.target as HTMLElement
+
+  // 检查所有可能触发跳转的元素
+  const interactiveElements = [
+    'A',           // 链接
+    'BUTTON',      // 按钮
+    'INPUT',       // 输入框
+    'SELECT',      // 下拉选择
+    'TEXTAREA',    // 文本域
+    'FORM',        // 表单
+    'AREA',        // 图像映射区域
+    'OBJECT',      // 嵌入对象
+    'EMBED',       // 嵌入内容
+    'IFRAME',      // 内嵌框架
+    'VIDEO',       // 视频
+    'AUDIO'        // 音频
+  ]
+
+  // 检查当前元素或其父元素是否为交互元素
+  const isInteractiveElement = interactiveElements.includes(target.tagName) ||
+    interactiveElements.some(tag => target.closest(tag.toLowerCase()))
+
+  // 检查是否有可能触发跳转的属性
+  const hasNavigationAttributes = target.hasAttribute('onclick') ||
+    target.hasAttribute('href') ||
+    target.hasAttribute('src') ||
+    target.hasAttribute('action') ||
+    target.hasAttribute('formaction') ||
+    target.style.cursor === 'pointer'
+
+  // 如果是交互元素或有导航属性，阻止默认行为
+  if (isInteractiveElement || hasNavigationAttributes) {
+    event.preventDefault()
+    return false
+  }
+
+  // 对于普通文本元素，允许事件正常冒泡到父组件
+}
 </script>
 
 <template>
@@ -468,17 +542,29 @@ const shortcutLabel = computed(() => {
 
       <!-- RTF 内容预览 - 如果存在 HTML 则优先使用 HTML -->
       <div class="card-rich-preview" v-if="item.parseType === 'rtf' && item.content.html">
-        <div class="rich-content" v-html="htmlContent"></div>
+        <div
+          class="rich-content"
+          v-html="htmlContent"
+          @click="handleRichContentClick"
+        ></div>
       </div>
 
       <!-- RTF 内容预览 - 仅当没有 HTML 时使用 RTF 转换 -->
       <div class="card-rich-preview" v-else-if="item.parseType === 'rtf' && item.content.rtf">
-        <div class="rich-content" v-html="rtfToHtml"></div>
+        <div
+          class="rich-content"
+          v-html="rtfToHtml"
+          @click="handleRichContentClick"
+        ></div>
       </div>
 
       <!-- HTML 内容预览 -->
       <div class="card-rich-preview" v-else-if="item.parseType === 'html' && item.content.html">
-        <div class="rich-content" v-html="htmlContent"></div>
+        <div
+          class="rich-content"
+          v-html="htmlContent"
+          @click="handleRichContentClick"
+        ></div>
       </div>
 
       <!-- 颜色预览 -->
@@ -759,55 +845,49 @@ const shortcutLabel = computed(() => {
   font-weight: 500;
 }
 
-:global(.rich-content pre) {
+:global(.rich-content>*:first-child) {
   overflow: hidden!important;
-}
-.rich-content p {
-  margin: 0 0 8px 0;
+  padding: 0!important;
+  margin: 0!important;
+  border: none!important;
+
 }
 
-.rich-content h1,
-.rich-content h2,
-.rich-content h3,
-.rich-content h4,
-.rich-content h5,
-.rich-content h6 {
-  margin: 12px 0 8px 0;
-  font-weight: 700;
-  color: #1e293b;
+
+/* 禁用所有可能的交互元素 */
+.rich-content a,
+.rich-content button,
+.rich-content input,
+.rich-content select,
+.rich-content textarea,
+.rich-content area,
+.rich-content object,
+.rich-content embed,
+.rich-content iframe,
+.rich-content video,
+.rich-content audio,
+.rich-content [onclick],
+.rich-content [href],
+.rich-content [style*="cursor: pointer"] {
+  color: #64748b !important;
+  text-decoration: none !important;
+  cursor: default !important;
+  pointer-events: none !important;
+  background: none !important;
+  border: none !important;
+  outline: none !important;
 }
 
-.rich-content ul,
-.rich-content ol {
-  margin: 8px 0;
-  padding-left: 24px;
+.rich-content a:hover,
+.rich-content button:hover,
+.rich-content input:hover,
+.rich-content select:hover,
+.rich-content textarea:hover {
+  color: #64748b !important;
+  text-decoration: none !important;
+  background: none !important;
 }
 
-.rich-content li {
-  margin: 4px 0;
-}
-
-.rich-content a {
-  color: #3b82f6;
-  text-decoration: none;
-  font-weight: 600;
-  transition: color 0.3s ease;
-}
-
-.rich-content a:hover {
-  color: #2563eb;
-  text-decoration: underline;
-}
-
-.rich-content strong {
-  font-weight: 700;
-  color: #1e293b;
-}
-
-.rich-content em {
-  font-style: italic;
-  color: #64748b;
-}
 
 .card-image {
   flex: 1;

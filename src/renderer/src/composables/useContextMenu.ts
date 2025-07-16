@@ -37,16 +37,19 @@ export function useContextMenu() {
    * 显示上下文菜单
    */
   const showContextMenu = (
-    event: MouseEvent, 
-    items: MenuItem[], 
+    event: MouseEvent,
+    items: MenuItem[],
     sourceId?: string
   ) => {
     // 阻止默认右键菜单
     event.preventDefault()
     event.stopPropagation()
 
+    // 获取真实的鼠标位置（考虑元素变换）
+    const { x: realX, y: realY } = getRealMousePosition(event)
+
     // 计算菜单位置，确保不超出屏幕边界
-    const { x, y } = calculateMenuPosition(event.clientX, event.clientY, items.length)
+    const { x, y } = calculateMenuPosition(realX, realY, items.length)
 
     // 更新全局状态
     contextMenuState.visible = true
@@ -54,8 +57,6 @@ export function useContextMenu() {
     contextMenuState.y = y
     contextMenuState.items = items
     contextMenuState.sourceId = sourceId
-
-
   }
 
   /**
@@ -67,11 +68,26 @@ export function useContextMenu() {
   }
 
   /**
+   * 获取真实的鼠标位置（考虑元素变换）
+   */
+  const getRealMousePosition = (event: MouseEvent) => {
+    // 对于 fixed 定位的菜单，直接使用 clientX/clientY
+    // 这些坐标是相对于视口的，已经考虑了所有变换
+    const x = event.clientX
+    const y = event.clientY
+
+    // 调试信息
+    console.log('[ContextMenu] 鼠标位置:', { x, y })
+
+    return { x, y }
+  }
+
+  /**
    * 计算菜单位置，确保不超出屏幕边界
    */
   const calculateMenuPosition = (clientX: number, clientY: number, itemCount: number) => {
     const menuWidth = 160 // 菜单宽度
-    const menuHeight = itemCount * 40 + 8 // 每个菜单项40px高度 + 8px padding
+    const menuHeight = itemCount * 24 + 4 // 每个菜单项24px高度 + 4px padding (上下各2px)
     const margin = 10 // 边距
 
     const screenWidth = window.innerWidth
@@ -101,6 +117,14 @@ export function useContextMenu() {
     if (y + menuHeight > screenHeight - margin) {
       y = screenHeight - menuHeight - margin
     }
+
+    // 调试信息
+    console.log('[ContextMenu] 菜单位置计算:', {
+      原始坐标: { x: clientX, y: clientY },
+      计算后坐标: { x, y },
+      菜单尺寸: { width: menuWidth, height: menuHeight },
+      屏幕尺寸: { width: screenWidth, height: screenHeight }
+    })
 
     return { x, y }
   }

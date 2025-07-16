@@ -175,6 +175,26 @@ const restoreClipboardContent = (itemId: string) => restoreClipboard(itemId, 're
 const restoreClipboardContentAsText = (itemId: string) => restoreClipboard(itemId, 'restoreAsText')
 
 /**
+ * 删除剪贴板项目
+ */
+const deleteClipboardItem = async (itemId: string): Promise<void> => {
+  try {
+    if (!itemId || typeof itemId !== 'string') {
+      throw new OverlayError(
+        '无效的剪贴板项目ID',
+        OverlayErrorCode.INVALID_STATE,
+        { itemId, type: typeof itemId }
+      )
+    }
+
+    // 删除项目后重新加载历史记录
+    throttledLoadClipboardHistory()
+  } catch (error) {
+    console.error('[前端] 删除剪贴板项目失败:', error)
+  }
+}
+
+/**
  * 切换下拉菜单显示状态
  */
 const toggleDropdownMenu = (): void => {
@@ -721,7 +741,8 @@ onUnmounted(() => {
               :all-tags="scrollAndTagsManager.allTags.value"
               :active-tag-id="scrollAndTagsManager.activeTagId.value"
               @click="() => restoreClipboardContent(item.id)"
-              @restore-as-text="() => restoreClipboardContentAsText(item.id)" />
+              @restore-as-text="() => restoreClipboardContentAsText(item.id)"
+              @delete="() => deleteClipboardItem(item.id)" />
           </transition-group>
         </div>
       </div>

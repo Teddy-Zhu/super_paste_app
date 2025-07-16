@@ -22,7 +22,7 @@ let overlayWindow: BrowserWindow | null = null
 let mainWindow: BrowserWindow | null = null
 let tray: Tray | null = null
 
-if(process.platform === 'darwin' && is.dev){
+if (process.platform === 'darwin' && is.dev) {
   app.disableHardwareAcceleration()
 }
 // Overlay窗口状态枚举
@@ -499,6 +499,8 @@ function createOverlayWindow(): void {
   } else {
     overlayWindow.loadFile(join(__dirname, '../renderer/index.html'), { hash: '/overlay' })
   }
+
+
 }
 
 function closeOverlayWindow(): void {
@@ -547,18 +549,18 @@ async function syncAutoStartStatus(): Promise<void> {
   try {
     // 获取配置中的自启状态
     const configuredAutoStart = store.get(STORE_KEY.SETTINGS_AUTO_START, false) as boolean
-    
+
     // 获取系统中的实际自启状态
     const actualAutoStart = await autoStartManager.isEnabled()
-    
+
     logger.info(`[主进程] 自启状态检查 - 配置: ${configuredAutoStart}, 实际: ${actualAutoStart}`)
 
     // 如果状态不一致，则根据配置更新系统状态
     if (configuredAutoStart !== actualAutoStart) {
       logger.info(`[主进程] 自启状态不一致，正在同步到配置状态: ${configuredAutoStart}`)
-      
+
       const success = await autoStartManager.setEnabled(configuredAutoStart)
-      
+
       if (success) {
         logger.info(`[主进程] 自启状态同步成功`)
       } else {
@@ -662,9 +664,9 @@ if (!gotTheLock) {
       try {
         const isEnabled = await autoStartManager.isEnabled()
         const platformInfo = autoStartManager.getPlatformInfo()
-        return { 
-          success: true, 
-          data: { 
+        return {
+          success: true,
+          data: {
             enabled: isEnabled,
             platform: platformInfo.platform,
             method: platformInfo.method
