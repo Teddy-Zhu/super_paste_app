@@ -182,6 +182,12 @@ class ClipboardManager extends BaseWorkerManager {
       }
     } catch (error) {
       logger.error('[剪贴板管理器] 读取剪贴板失败:', error)
+
+      // 如果是系统刚从休眠恢复，剪贴板API可能暂时不可用
+      if (error instanceof Error) {
+        logger.warn('[剪贴板管理器] 剪贴板API调用失败，可能系统刚从休眠恢复:', error.message)
+      }
+
       return {}
     }
   }
@@ -215,6 +221,11 @@ class ClipboardManager extends BaseWorkerManager {
       }
     } catch (error) {
       logger.error('[剪贴板管理器] 读取剪贴板内容失败:', error)
+
+      // 如果是系统刚从休眠恢复，剪贴板API可能暂时不可用
+      if (error instanceof Error) {
+        logger.warn('[剪贴板管理器] 剪贴板内容读取失败，可能系统刚从休眠恢复:', error.message)
+      }
     }
 
     return content
@@ -597,6 +608,35 @@ class ClipboardManager extends BaseWorkerManager {
       await this.call('syncClipboardHash')
     } catch (error) {
       logger.error('[剪贴板管理器] 同步剪贴板哈希值失败:', error)
+    }
+  }
+
+  /**
+   * 系统唤醒后的恢复处理
+   * 确保剪贴板管理器在系统休眠唤醒后正常工作
+   */
+  public async handleSystemResume(): Promise<void> {
+    try {
+      logger.info('[剪贴板管理器] 开始处理系统唤醒恢复')
+
+      // 确保Worker已初始化
+      await this.ensureWorkerInitialized()
+
+      // 重置错误状态
+      await this.call('resetErrorState')
+
+      // 同步剪贴板哈希值
+      await this.syncClipboardHash()
+
+      // 如果之前在监听，重新启动监听
+      const wasListening = await this.isListeningActive()
+      if (!wasListening) {
+        await this.startListening()
+      }
+
+      logger.info('[剪贴板管理器] 系统唤醒恢复完成')
+    } catch (error) {
+      logger.error('[剪贴板管理器] 系统唤醒恢复失败:', error)
     }
   }
 

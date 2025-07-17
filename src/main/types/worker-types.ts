@@ -73,7 +73,8 @@ export interface ClipboardManagerWorkerMethods {
   'restoreClipboard': (itemId: string) => boolean
   'restoreClipboardAsText': (itemId: string) => boolean
   'syncClipboardHash': () => void
-  
+  'resetErrorState': () => void
+
   // 历史记录管理
   'getHistory': (limit?: number) => any[]
   'deleteHistoryItem': (itemId: string) => boolean

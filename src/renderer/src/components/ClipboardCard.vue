@@ -510,7 +510,7 @@ const handleRichContentClick = (event: Event) => {
     return false
   }
 
-  // 对于普通文本元素，允许事件正常冒泡到父组件
+  return
 }
 </script>
 

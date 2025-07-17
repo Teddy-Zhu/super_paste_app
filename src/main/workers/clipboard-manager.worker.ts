@@ -1,5 +1,6 @@
 import { parentPort } from 'node:worker_threads'
 import { HashUtils } from '../utils/common'
+import { BaseWorker } from './base-worker'
 import type {
   WorkerMessage,
   WorkerRequest,
@@ -21,7 +22,7 @@ import log from 'electron-log'
  * 剪贴板管理器 Worker
  * 在独立线程中运行，负责剪贴板历史记录管理和数据库操作
  */
-class ClipboardManagerWorker {
+class ClipboardManagerWorker extends BaseWorker {
   private config: ClipboardManagerConfig
   private isListening: boolean = false
   private checkTimer: NodeJS.Timeout | null = null
@@ -30,14 +31,21 @@ class ClipboardManagerWorker {
   private historyItems: ClipboardItem[] = []
 
   constructor() {
+    super()
+
     // 默认配置
     this.config = {
       maxHistorySize: 100,
       checkInterval: 200,
       enableAutoSave: false
     }
+  }
 
-
+  /**
+   * 获取Worker名称
+   */
+  protected getWorkerName(): string {
+    return '剪贴板管理器 Worker'
   }
 
   /**
@@ -102,10 +110,17 @@ class ClipboardManagerWorker {
    */
   private async checkClipboardChange(): Promise<void> {
     try {
+      // 如果在错误退避期间，跳过检查
+      if (this.isInErrorBackoff()) {
+        return
+      }
+
       // 首先进行快速检查：只检查是否有内容和基本格式
       const hasQuickChange = await this.hasQuickClipboardChange()
 
       if (!hasQuickChange) {
+        // 成功检查，重置错误计数
+        this.onOperationSuccess()
         return
       }
 
@@ -121,8 +136,11 @@ class ClipboardManagerWorker {
 
         this.sendEvent('clipboard-changed', { timestamp: Date.now() })
       }
+
+      // 成功完成检查，重置错误计数
+      this.onOperationSuccess()
     } catch (error) {
-      log.error('[剪贴板管理器 Worker] 检查剪贴板变化失败:', error)
+      this.handleCheckError(error, '剪贴板检查')
     }
   }
 
@@ -133,7 +151,7 @@ class ClipboardManagerWorker {
     try {
       // 通过主线程获取剪贴板内容
       const clipboardData = await this.callMainThread('clipboard-readAll')
-      
+
       // 生成快速哈希（不包含图片具体内容）
       const quickContent = {
         text: clipboardData.text || undefined,
@@ -160,7 +178,14 @@ class ClipboardManagerWorker {
       return hasChange
     } catch (error) {
       log.error('[剪贴板管理器 Worker] 快速检查失败:', error)
-      return true // 出错时假设有变化，进行完整检查
+
+      // 如果是超时错误，可能是系统刚从休眠中恢复，暂时跳过检查
+      if (error instanceof Error && error.message.includes('超时')) {
+        log.warn('[剪贴板管理器 Worker] 检测到超时错误，可能系统刚从休眠恢复，跳过本次检查')
+        return false // 超时时不假设有变化，避免连续错误
+      }
+
+      return true // 其他错误时假设有变化，进行完整检查
     }
   }
 
@@ -180,6 +205,12 @@ class ClipboardManagerWorker {
       return await this.callMainThread('clipboard-readContent')
     } catch (error) {
       log.error('[剪贴板管理器 Worker] 读取剪贴板内容失败:', error)
+
+      // 如果是超时错误，可能是系统刚从休眠中恢复
+      if (error instanceof Error && error.message.includes('超时')) {
+        log.warn('[剪贴板管理器 Worker] 剪贴板读取超时，可能系统刚从休眠恢复')
+      }
+
       return {}
     }
   }
@@ -525,10 +556,14 @@ class ClipboardManagerWorker {
   public async syncClipboardHash(): Promise<void> {
     try {
       this.lastClipboardHash = await this.generateClipboardHash()
+      // 同步成功时重置错误状态
+      this.resetErrorState()
     } catch (error) {
       log.error('[剪贴板管理器 Worker] 同步剪贴板哈希值失败:', error)
     }
   }
+
+
 
   /**
    * 获取当前剪贴板内容（不触发监控）
@@ -767,59 +802,9 @@ class ClipboardManagerWorker {
     }
   }
 
-  /**
-   * 调用主线程方法
-   */
-  private async callMainThread(method: string, params?: any): Promise<any> {
-    return new Promise((resolve, reject) => {
-      const requestId = `worker-${Date.now()}-${Math.random()}`
 
-      const request: WorkerRequest = {
-        id: requestId,
-        type: 'request',
-        method,
-        params,
-        timestamp: Date.now()
-      }
 
-      // 设置超时
-      const timeout = setTimeout(() => {
-        reject(new Error(`调用主线程方法超时: ${method}`))
-      }, 30000)
 
-      // 监听响应
-      const messageHandler = (message: WorkerMessage) => {
-        if (message.type === 'response' && (message as WorkerResponse).requestId === requestId) {
-          clearTimeout(timeout)
-          parentPort?.off('message', messageHandler)
-
-          const response = message as WorkerResponse
-          if (response.success) {
-            resolve(response.data)
-          } else {
-            reject(new Error(response.error || '主线程调用失败'))
-          }
-        }
-      }
-
-      parentPort?.on('message', messageHandler)
-      parentPort?.postMessage(request)
-    })
-  }
-
-  /**
-   * 发送事件到主线程
-   */
-  private sendEvent(event: string, data?: any): void {
-    const eventMessage: WorkerEvent = {
-      id: `event-${Date.now()}-${Math.random()}`,
-      type: 'event',
-      event,
-      data,
-      timestamp: Date.now()
-    }
-    parentPort?.postMessage(eventMessage)
-  }
 
   /**
    * 处理来自主线程的消息
@@ -867,6 +852,9 @@ class ClipboardManagerWorker {
           break
         case 'syncClipboardHash':
           result = await this.syncClipboardHash()
+          break
+        case 'resetErrorState':
+          result = this.resetErrorState()
           break
         case 'getHistory':
           result = this.getHistory(request.params)

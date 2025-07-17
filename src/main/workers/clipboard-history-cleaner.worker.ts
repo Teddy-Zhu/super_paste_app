@@ -1,4 +1,5 @@
 import { parentPort } from 'node:worker_threads'
+import { BaseWorker } from './base-worker'
 import type {
   WorkerMessage,
   WorkerRequest,
@@ -12,13 +13,15 @@ import log from 'electron-log'
  * 剪贴板历史记录清理器 Worker
  * 在独立线程中运行，负责定期清理过期的历史记录
  */
-class ClipboardHistoryCleanerWorker {
+class ClipboardHistoryCleanerWorker extends BaseWorker {
   private config: CleanupConfig
   private cleanupTimer: NodeJS.Timeout | null = null
   private isRunning: boolean = false
   // private memoryDataSyncCallback: ((deletedIds: string[]) => void) | null = null
 
   constructor() {
+    super()
+
     // 默认配置
     this.config = {
       maxKeepTime: -1,
@@ -27,6 +30,13 @@ class ClipboardHistoryCleanerWorker {
     }
 
 
+  }
+
+  /**
+   * 获取Worker名称
+   */
+  protected getWorkerName(): string {
+    return '剪贴板历史清理器 Worker'
   }
 
   /**
@@ -116,6 +126,17 @@ class ClipboardHistoryCleanerWorker {
       }
     }
 
+    // 如果在错误退避期间，跳过清理
+    if (this.isInErrorBackoff()) {
+      log.info('[历史记录清理器 Worker] 在错误退避期间，跳过清理操作')
+      return {
+        totalRecords: 0,
+        expiredRecords: 0,
+        deletedRecords: 0,
+        cleanupTime: 0
+      }
+    }
+
     this.isRunning = true
     const startTime = Date.now()
 
@@ -124,6 +145,7 @@ class ClipboardHistoryCleanerWorker {
       const totalRecords = await this.callMainThread('database-getRecordCount')
 
       if (totalRecords === 0) {
+        this.onOperationSuccess()
         return {
           totalRecords: 0,
           expiredRecords: 0,
@@ -134,11 +156,12 @@ class ClipboardHistoryCleanerWorker {
 
       // 计算过期时间戳
       const expireTimestamp = this.calculateExpireTimestamp()
-      
+
       // 获取过期记录ID列表
       const expiredRecordIds = await this.callMainThread('database-getExpiredRecordIds', { expireTimestamp })
-      
+
       if (expiredRecordIds.length === 0) {
+        this.onOperationSuccess()
         return {
           totalRecords,
           expiredRecords: 0,
@@ -166,9 +189,12 @@ class ClipboardHistoryCleanerWorker {
         this.sendEvent('cleanup-completed', { stats })
       }
 
+      // 成功完成清理，重置错误计数
+      this.onOperationSuccess()
+
       return stats
     } catch (error) {
-      log.error('[历史记录清理器 Worker] 清理操作失败:', error)
+      this.handleCheckError(error, '历史记录清理')
       this.sendEvent('cleanup-error', { error: error instanceof Error ? error.message : String(error) })
       return {
         totalRecords: 0,
@@ -214,59 +240,9 @@ class ClipboardHistoryCleanerWorker {
     return now - maxKeepTimeMs
   }
 
-  /**
-   * 调用主线程方法
-   */
-  private async callMainThread(method: string, params?: any): Promise<any> {
-    return new Promise((resolve, reject) => {
-      const requestId = `worker-${Date.now()}-${Math.random()}`
-      
-      const request: WorkerRequest = {
-        id: requestId,
-        type: 'request',
-        method,
-        params,
-        timestamp: Date.now()
-      }
 
-      // 设置超时
-      const timeout = setTimeout(() => {
-        reject(new Error(`调用主线程方法超时: ${method}`))
-      }, 30000)
 
-      // 监听响应
-      const messageHandler = (message: WorkerMessage) => {
-        if (message.type === 'response' && (message as WorkerResponse).requestId === requestId) {
-          clearTimeout(timeout)
-          parentPort?.off('message', messageHandler)
-          
-          const response = message as WorkerResponse
-          if (response.success) {
-            resolve(response.data)
-          } else {
-            reject(new Error(response.error || '主线程调用失败'))
-          }
-        }
-      }
 
-      parentPort?.on('message', messageHandler)
-      parentPort?.postMessage(request)
-    })
-  }
-
-  /**
-   * 发送事件到主线程
-   */
-  private sendEvent(event: string, data?: any): void {
-    const eventMessage: WorkerEvent = {
-      id: `event-${Date.now()}-${Math.random()}`,
-      type: 'event',
-      event,
-      data,
-      timestamp: Date.now()
-    }
-    parentPort?.postMessage(eventMessage)
-  }
 
   /**
    * 处理来自主线程的消息
