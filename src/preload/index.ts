@@ -1,14 +1,62 @@
-import { contextBridge } from 'electron'
-import { electronAPI } from '@electron-toolkit/preload'
+import { contextBridge, ipcRenderer } from 'electron'
 
-// Use `contextBridge` APIs to expose Electron APIs to
-// renderer only if context isolation is enabled, otherwise
-// just add to the DOM global.
+/**
+ * 自定义 Electron API
+ * 只暴露项目中实际使用的 API，提高安全性
+ */
+const electronAPI = {
+  // IPC 渲染进程 API
+  ipcRenderer: {
+    // 监听消息
+    on: (channel: string, listener: (...args: any[]) => void) => {
+      return ipcRenderer.on(channel, listener)
+    },
+
+    // 一次性监听
+    once: (channel: string, listener: (...args: any[]) => void) => {
+      return ipcRenderer.once(channel, listener)
+    },
+
+    // 发送异步消息
+    send: (channel: string, ...args: any[]) => {
+      ipcRenderer.send(channel, ...args)
+    },
+
+    // 发送消息并等待响应
+    invoke: (channel: string, ...args: any[]) => {
+      return ipcRenderer.invoke(channel, ...args)
+    },
+
+    // 发送同步消息（仅在必要时使用）
+    sendSync: (channel: string, ...args: any[]) => {
+      return ipcRenderer.sendSync(channel, ...args)
+    },
+
+    // 移除监听器（已废弃，但项目中仍在使用）
+    removeListener: (channel: string, listener: (...args: any[]) => void) => {
+      // @ts-ignore - 已废弃的方法，但仍需支持
+      return ipcRenderer.removeListener(channel, listener)
+    },
+
+    // 移除所有监听器
+    removeAllListeners: (channel: string) => {
+      return ipcRenderer.removeAllListeners(channel)
+    }
+  },
+
+  // 进程信息 API
+  process: {
+    platform: process.platform,
+    versions: process.versions
+  }
+}
+
+// 使用 contextBridge 安全地暴露 API
 if (process.contextIsolated) {
   try {
     contextBridge.exposeInMainWorld('electron', electronAPI)
   } catch (error) {
-    console.error(error)
+    console.error('Failed to expose electron API:', error)
   }
 } else {
   // @ts-ignore (define in dts)

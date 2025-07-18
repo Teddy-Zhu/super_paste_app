@@ -3,16 +3,16 @@
  * 提供更便捷的方法来与主进程通信
  */
 
-import { 
-  on, 
-  onSimple, 
-  once, 
-  onceSimple, 
-  send, 
-  invoke, 
-  sendSync, 
-  removeListener, 
-  removeAllListeners 
+import {
+  on,
+  onSimple,
+  once,
+  onceSimple,
+  send,
+  invoke,
+  sendSync,
+  removeListener,
+  removeAllListeners
 } from './ipc'
 
 import type {

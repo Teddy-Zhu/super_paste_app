@@ -1,7 +1,14 @@
 import { ipcMain, BrowserWindow } from 'electron'
 import clipboardManager from './clipboard-manager'
+import clipboardHistoryService from './services/clipboard-history-service'
+import clipboardTagService from './services/clipboard-tag-service'
+import clipboardHistoryCleaner from './clipboard-history-cleaner'
 import type { ClipboardItem, ClipboardManagerConfig } from './types/clipboard-types'
+import type { BaseWorkerManager } from './workers/base-worker-manager'
 import logger from './utils/logger'
+import { writeHeapSnapshot } from 'v8'
+import { join } from 'path'
+import { app } from 'electron'
 
 /**
  * IPC 管理器
@@ -96,7 +103,7 @@ class IpcManager {
       try {
         // 如果没有传入筛选选项，使用原有的简单获取方法
         if (!options || (Object.keys(options).length === 1 && 'limit' in options)) {
-          const history = await clipboardManager.getHistory(options?.limit)
+          const history = await clipboardHistoryService.getHistory(options?.limit)
           return {
             success: true,
             data: history
@@ -104,7 +111,7 @@ class IpcManager {
         }
 
         // 使用新的搜索方法
-        const history = await clipboardManager.searchHistory(options)
+        const history = await clipboardHistoryService.searchHistory(options)
         return {
           success: true,
           data: history
@@ -121,10 +128,17 @@ class IpcManager {
     // 还原剪贴板内容
     ipcMain.handle('clipboard-restore', async (_, itemId: string) => {
       try {
-        const success = await clipboardManager.restoreClipboard(itemId)
+        const result = await clipboardHistoryService.restoreClipboard(itemId)
+        if (result.success && result.content) {
+          const success = clipboardManager.restoreClipboardContent({ content: result.content })
+          return {
+            success,
+            message: success ? '剪贴板内容已还原' : '还原失败'
+          }
+        }
         return {
-          success,
-          message: success ? '剪贴板内容已还原' : '还原失败，未找到指定项目'
+          success: false,
+          message: '还原失败，未找到指定项目'
         }
       } catch (error) {
         logger.error('[IPC管理器] 还原剪贴板失败:', error)
@@ -138,10 +152,17 @@ class IpcManager {
     // 还原剪贴板内容为纯文本
     ipcMain.handle('clipboard-restore-as-text', async (_, itemId: string) => {
       try {
-        const success = await clipboardManager.restoreClipboardAsText(itemId)
+        const result = await clipboardHistoryService.restoreClipboardAsText(itemId)
+        if (result.success && result.content) {
+          const success = clipboardManager.restoreClipboardContentAsText({ content: result.content })
+          return {
+            success,
+            message: success ? '剪贴板内容已还原为纯文本' : '还原失败'
+          }
+        }
         return {
-          success,
-          message: success ? '剪贴板内容已还原为纯文本' : '还原失败，未找到指定项目或无文本内容'
+          success: false,
+          message: '还原失败，未找到指定项目或无文本内容'
         }
       } catch (error) {
         logger.error('[IPC管理器] 还原剪贴板为纯文本失败:', error)
@@ -155,7 +176,12 @@ class IpcManager {
     // 删除剪贴板历史项
     ipcMain.handle('clipboard-delete-item', async (_, itemId: string) => {
       try {
-        const success = await clipboardManager.deleteHistoryItem(itemId)
+        const success = await clipboardHistoryService.deleteHistoryItem(itemId)
+        if (success) {
+          // 通知 clipboard-manager 同步删除状态
+          await clipboardManager.syncDeletedRecords([itemId])
+          this.notifyClipboardHistoryUpdated()
+        }
         return {
           success,
           message: success ? '剪贴板项已删除' : '删除失败，未找到指定项目'
@@ -172,7 +198,10 @@ class IpcManager {
     // 清空剪贴板历史
     ipcMain.handle('clipboard-clear-history', async () => {
       try {
-        await clipboardManager.clearHistory()
+        await clipboardHistoryService.clearHistory()
+        // 通知 clipboard-manager 同步清空状态
+        await clipboardManager.syncDeletedRecords(['*'])
+        this.notifyClipboardHistoryUpdated()
         return {
           success: true,
           message: '剪贴板历史已清空'
@@ -191,9 +220,9 @@ class IpcManager {
       try {
         const isListening = await clipboardManager.isListeningActive()
         const config = await clipboardManager.getConfig()
-        const history = await clipboardManager.getHistory()
+        const history = await clipboardHistoryService.getHistory()
         const historyCount = history.length
-        
+
         return {
           success: true,
           data: {
@@ -265,7 +294,7 @@ class IpcManager {
     // 获取所有标签
     ipcMain.handle('get-all-tags', async () => {
       try {
-        const tags = await clipboardManager.getAllTagGroups()
+        const tags = await clipboardTagService.getAllTagGroups()
         return {
           success: true,
           data: tags
@@ -282,7 +311,7 @@ class IpcManager {
     // 创建标签
     ipcMain.handle('create-tag', async (_, data: { name: string; color: string; description?: string }) => {
       try {
-        const tagId = await clipboardManager.createTagGroup(data.name, data.color, data.description)
+        const tagId = await clipboardTagService.createTagGroup(data.name, data.color, data.description)
         if (tagId) {
           // 通知前端标签数据已更新
           this.notifyTagsUpdated()
@@ -309,7 +338,7 @@ class IpcManager {
     // 更新标签
     ipcMain.handle('update-tag', async (_, data: { tagId: string; updates: { name?: string; color?: string; description?: string } }) => {
       try {
-        const success = await clipboardManager.updateTagGroup(data.tagId, data.updates)
+        const success = await clipboardTagService.updateTagGroup(data.tagId, data.updates)
         if (success) {
           // 通知前端标签数据已更新
           this.notifyTagsUpdated()
@@ -330,7 +359,7 @@ class IpcManager {
     // 删除标签
     ipcMain.handle('delete-tag', async (_, tagId: string) => {
       try {
-        const success = await clipboardManager.deleteTagGroup(tagId)
+        const success = await clipboardTagService.deleteTagGroup(tagId)
         if (success) {
           // 通知前端标签数据已更新
           this.notifyTagsUpdated()
@@ -351,7 +380,7 @@ class IpcManager {
     // 获取标签统计信息
     ipcMain.handle('get-tag-stats', async () => {
       try {
-        const stats = await clipboardManager.getTagStats()
+        const stats = await clipboardTagService.getTagStats()
         return {
           success: true,
           data: stats
@@ -368,7 +397,7 @@ class IpcManager {
     // 绑定标签到记录
     ipcMain.handle('bind-tag-to-record', async (_, data: { contentId: string; tagId: string }) => {
       try {
-        const success = await clipboardManager.bindTagToRecord(data.contentId, data.tagId)
+        const success = await clipboardTagService.bindTagToRecord(data.contentId, data.tagId)
         if (success) {
           // 通知前端剪贴板历史已更新
           this.notifyClipboardHistoryUpdated()
@@ -390,7 +419,7 @@ class IpcManager {
     // 解除标签绑定
     ipcMain.handle('unbind-tag-from-record', async (_, data: { contentId: string; tagId: string }) => {
       try {
-        const success = await clipboardManager.unbindTagFromRecord(data.contentId, data.tagId)
+        const success = await clipboardTagService.unbindTagFromRecord(data.contentId, data.tagId)
         if (success) {
           // 通知前端剪贴板历史已更新
           this.notifyClipboardHistoryUpdated()
@@ -405,6 +434,55 @@ class IpcManager {
         return {
           success: false,
           error: (error as Error).message || '解除标签绑定失败'
+        }
+      }
+    })
+
+    // 导出 heapdump
+    ipcMain.handle('export-heapdump', async () => {
+      try {
+        const timestamp = new Date().toISOString().replace(/[:.]/g, '-')
+        const desktopPath = app.getPath('desktop')
+        const exportedFiles: string[] = []
+
+        // 1. 导出主进程的 heapdump
+        const mainFilename = `heapdump-main-${timestamp}.heapsnapshot`
+        const mainFilepath = join(desktopPath, mainFilename)
+        const actualMainFilepath = writeHeapSnapshot(mainFilepath)
+        exportedFiles.push(actualMainFilepath)
+        logger.info('[IPC管理器] 主进程 heapdump 导出成功:', actualMainFilepath)
+
+        // 2. 导出所有 Worker 的 heapdump
+        const workers = this.getAllWorkerManagers()
+        const workerPromises = workers.map(async (worker) => {
+          try {
+            const workerFilepath = await worker.exportWorkerHeapdump(desktopPath)
+            if (workerFilepath) {
+              exportedFiles.push(workerFilepath)
+            }
+          } catch (error) {
+            logger.error('[IPC管理器] Worker heapdump 导出失败:', error)
+          }
+        })
+
+        // 等待所有 Worker heapdump 导出完成
+        await Promise.all(workerPromises)
+
+        const message = exportedFiles.length > 1
+          ? `内存快照已导出到桌面 (${exportedFiles.length} 个文件)`
+          : `内存快照已导出到桌面: ${mainFilename}`
+
+        return {
+          success: true,
+          message,
+          files: exportedFiles,
+          mainFile: actualMainFilepath
+        }
+      } catch (error) {
+        logger.error('[IPC管理器] 导出 heapdump 失败:', error)
+        return {
+          success: false,
+          error: (error as Error).message || '导出 heapdump 失败'
         }
       }
     })
@@ -436,7 +514,8 @@ class IpcManager {
       'delete-tag',
       'get-tag-stats',
       'bind-tag-to-record',
-      'unbind-tag-from-record'
+      'unbind-tag-from-record',
+      'export-heapdump'
     ]
 
     clipboardChannels.forEach(channel => {
@@ -451,6 +530,25 @@ class IpcManager {
    */
   public getInitializationStatus(): boolean {
     return this.isInitialized
+  }
+
+  /**
+   * 获取所有活跃的 Worker 管理器
+   */
+  private getAllWorkerManagers(): BaseWorkerManager[] {
+    const workers: BaseWorkerManager[] = []
+
+    // 添加剪贴板管理器
+    if (clipboardManager.isRunning()) {
+      workers.push(clipboardManager)
+    }
+
+    // 添加剪贴板历史清理器
+    if (clipboardHistoryCleaner.isRunning()) {
+      workers.push(clipboardHistoryCleaner)
+    }
+
+    return workers
   }
 }
 

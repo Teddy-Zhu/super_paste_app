@@ -11,6 +11,7 @@ import type {
   TagStats,
   AppInfoRecord
 } from './types/clipboard-types'
+import { ClipboardDataConverter } from './types/clipboard-types'
 import logger from './utils/logger'
 
 /**
@@ -97,6 +98,7 @@ class ClipboardDatabase {
       CREATE TABLE IF NOT EXISTS clipboard_history (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         content_id TEXT NOT NULL UNIQUE,
+        hash TEXT NOT NULL,
         content_text TEXT,
         content_html TEXT,
         content_image TEXT,
@@ -146,6 +148,8 @@ class ClipboardDatabase {
 
   }
 
+
+
   /**
    * 创建数据库索引以优化查询性能
    */
@@ -160,6 +164,7 @@ class ClipboardDatabase {
 
       // 剪贴板历史记录表索引
       'CREATE INDEX IF NOT EXISTS idx_content_id ON clipboard_history(content_id)',
+      'CREATE INDEX IF NOT EXISTS idx_hash ON clipboard_history(hash)',
       'CREATE INDEX IF NOT EXISTS idx_timestamp ON clipboard_history(timestamp DESC)',
       'CREATE INDEX IF NOT EXISTS idx_last_used ON clipboard_history(last_used DESC)',
       'CREATE INDEX IF NOT EXISTS idx_primary_type ON clipboard_history(primary_type)',
@@ -195,22 +200,27 @@ class ClipboardDatabase {
     timestamp: number,
     lastUsed: number,
     parseType: string,
-    sourceApp?: string
+    sourceApp?: string,
+    hash?: string
   ): boolean {
     if (!this.db) throw new Error('数据库未初始化')
 
     try {
+      // 如果没有提供 hash，则生成一个
+      const contentHash = hash || ClipboardDataConverter.generateContentHash(content)
+
       const insertSQL = `
         INSERT OR REPLACE INTO clipboard_history (
-          content_id, content_text, content_html, content_image,
+          content_id, hash, content_text, content_html, content_image,
           content_rtf, content_bookmark, primary_type, available_formats,
           timestamp, last_used, parse_type, source_app, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
       `
 
       const stmt = this.db.prepare(insertSQL)
       const result = stmt.run(
         contentId,
+        contentHash,
         content.text || null,
         content.html || null,
         content.image || null,
@@ -328,6 +338,77 @@ class ClipboardDatabase {
       return stmt.get(contentId) as ClipboardHistoryRecord | null
     } catch (error) {
       logger.error('[剪贴板数据库] 根据内容ID查询记录失败:', error)
+      return null
+    }
+  }
+
+  /**
+   * 根据内容哈希查询记录
+   */
+  public getRecordByHash(hash: string): ClipboardHistoryRecord | null {
+    if (!this.db) throw new Error('数据库未初始化')
+
+    try {
+      const querySQL = 'SELECT * FROM clipboard_history WHERE hash = ? ORDER BY last_used DESC LIMIT 1'
+      const stmt = this.db.prepare(querySQL)
+      return stmt.get(hash) as ClipboardHistoryRecord | null
+    } catch (error) {
+      logger.error('[剪贴板数据库] 根据哈希查询记录失败:', error)
+      return null
+    }
+  }
+
+  /**
+   * 轻量级查询：只获取记录的 content_id 和 hash
+   * 用于缓存初始化，避免加载完整记录数据
+   */
+  public queryRecordIdsAndHashes(options: QueryOptions = {}): Array<{ content_id: string, hash: string }> {
+    if (!this.db) throw new Error('数据库未初始化')
+
+    try {
+      const {
+        limit = 10000,
+        offset = 0,
+        orderBy = 'last_used',
+        orderDirection = 'DESC'
+      } = options
+
+      // 只查询 content_id 和 hash 字段
+      let querySQL = 'SELECT content_id, hash FROM clipboard_history'
+      const params: any[] = []
+
+      // 添加ORDER BY子句
+      querySQL += ` ORDER BY ${orderBy} ${orderDirection}`
+
+      // 添加LIMIT和OFFSET
+      querySQL += ' LIMIT ? OFFSET ?'
+      params.push(limit, offset)
+
+      const stmt = this.db.prepare(querySQL)
+      const results = stmt.all(...params) as Array<{ content_id: string, hash: string }>
+
+      // 过滤掉没有 hash 的记录
+      return results.filter(record => record.hash)
+    } catch (error) {
+      logger.error('[剪贴板数据库] 查询记录ID和哈希失败:', error)
+      return []
+    }
+  }
+
+  /**
+   * 轻量级查询：获取最后使用的记录的基本信息（content_id 和 hash）
+   */
+  public getLastRecordInfo(): { content_id: string, hash: string } | null {
+    if (!this.db) throw new Error('数据库未初始化')
+
+    try {
+      const querySQL = 'SELECT content_id, hash FROM clipboard_history ORDER BY last_used DESC LIMIT 1'
+      const stmt = this.db.prepare(querySQL)
+      const result = stmt.get() as { content_id: string, hash: string } | undefined
+
+      return result && result.hash ? result : null
+    } catch (error) {
+      logger.error('[剪贴板数据库] 获取最后记录信息失败:', error)
       return null
     }
   }

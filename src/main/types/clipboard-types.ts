@@ -56,6 +56,7 @@ export interface ClipboardItem {
 export interface ClipboardHistoryRecord {
   id: number
   content_id: string
+  hash: string
   content_text?: string
   content_html?: string
   content_image?: string
@@ -83,8 +84,10 @@ export interface ClipboardManagerConfig {
  */
 export interface CleanupConfig {
   maxKeepTime: number // 最大保存时间（天），-1 表示不限制
+  maxHistorySize: number // 最大历史记录数量，-1 表示不限制
   cleanupInterval: number // 清理检查间隔（毫秒）
   enableAutoCleanup: boolean // 是否启用自动清理
+  enableCountBasedCleanup: boolean // 是否启用基于数量的清理
 }
 
 /**

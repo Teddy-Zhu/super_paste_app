@@ -2,12 +2,33 @@ import type { IpcRendererEvent } from 'electron'
 
 /**
  * IPC 渲染进程服务封装
- * 对 ipcRenderer 的 on, removeListener, removeAllListeners, once, send, invoke 方法进行封装
+ * 只暴露项目中实际使用的 IPC 方法，提高安全性和性能
  */
 
 // 类型定义
 type IpcRendererListener = (event: IpcRendererEvent, ...args: any[]) => void
 type SimpleListener = (...args: any[]) => void
+
+// 确保 window.electron 类型可用
+declare global {
+  interface Window {
+    electron: {
+      ipcRenderer: {
+        on: (channel: string, listener: (...args: any[]) => void) => () => void
+        once: (channel: string, listener: (...args: any[]) => void) => () => void
+        send: (channel: string, ...args: any[]) => void
+        invoke: (channel: string, ...args: any[]) => Promise<any>
+        sendSync: (channel: string, ...args: any[]) => any
+        removeListener: (channel: string, listener: (...args: any[]) => void) => void
+        removeAllListeners: (channel: string) => void
+      }
+      process: {
+        platform: NodeJS.Platform
+        versions: NodeJS.ProcessVersions
+      }
+    }
+  }
+}
 
 /**
  * 获取 ipcRenderer 实例
@@ -38,7 +59,7 @@ export function on(channel: string, listener: IpcRendererListener): () => void {
  */
 export function onSimple(channel: string, listener: SimpleListener): () => void {
   const ipcRenderer = getIpcRenderer()
-  return ipcRenderer.on(channel, (_, ...args) => listener(...args))
+  return ipcRenderer.on(channel, (_: any, ...args: any[]) => listener(...args))
 }
 
 /**
@@ -60,7 +81,7 @@ export function once(channel: string, listener: IpcRendererListener): () => void
  */
 export function onceSimple(channel: string, listener: SimpleListener): () => void {
   const ipcRenderer = getIpcRenderer()
-  return ipcRenderer.once(channel, (_, ...args) => listener(...args))
+  return ipcRenderer.once(channel, (_: any, ...args: any[]) => listener(...args))
 }
 
 /**
@@ -106,7 +127,7 @@ export function invoke<T = any>(channel: string, ...args: any[]): Promise<T> {
 }
 
 /**
- * 向主进程发送同步消息（不推荐使用）
+ * 向主进程发送同步消息（仅在必要时使用，如 Pinia 持久化存储）
  * @param channel 频道名称
  * @param args 要发送的参数
  * @returns 主进程的同步响应
@@ -116,41 +137,9 @@ export function sendSync<T = any>(channel: string, ...args: any[]): T {
   return ipcRenderer.sendSync(channel, ...args)
 }
 
-/**
- * 向主进程发送消息并传输 MessagePort
- * @param channel 频道名称
- * @param message 要发送的消息
- * @param transfer 要传输的 MessagePort 数组
- */
-export function postMessage(channel: string, message: any, transfer?: MessagePort[]): void {
-  const ipcRenderer = getIpcRenderer()
-  ipcRenderer.postMessage(channel, message, transfer)
-}
 
-/**
- * 向指定的 webContents 发送消息
- * @param webContentsId webContents ID
- * @param channel 频道名称
- * @param args 要发送的参数
- * @deprecated 此方法在 Electron 28 中已被移除
- */
-export function sendTo(webContentsId: number, channel: string, ...args: any[]): void {
-  const ipcRenderer = getIpcRenderer()
-  // @ts-ignore - 已废弃的方法
-  ipcRenderer.sendTo(webContentsId, channel, ...args)
-}
 
-/**
- * 向宿主页面的 webview 元素发送消息
- * @param channel 频道名称
- * @param args 要发送的参数
- */
-export function sendToHost(channel: string, ...args: any[]): void {
-  const ipcRenderer = getIpcRenderer()
-  ipcRenderer.sendToHost(channel, ...args)
-}
-
-// 默认导出所有方法
+// 默认导出实际使用的方法
 export default {
   on,
   onSimple,
@@ -161,9 +150,5 @@ export default {
   removeAllListeners,
   send,
   invoke,
-  sendSync,
-  postMessage,
-  /** @deprecated 此方法在 Electron 28 中已被移除 */
-  sendTo,
-  sendToHost
+  sendSync
 }

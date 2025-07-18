@@ -17,7 +17,6 @@ class ClipboardHistoryCleanerWorker extends BaseWorker {
   private config: CleanupConfig
   private cleanupTimer: NodeJS.Timeout | null = null
   private isRunning: boolean = false
-  // private memoryDataSyncCallback: ((deletedIds: string[]) => void) | null = null
 
   constructor() {
     super()
@@ -25,8 +24,10 @@ class ClipboardHistoryCleanerWorker extends BaseWorker {
     // 默认配置
     this.config = {
       maxKeepTime: -1,
-      cleanupInterval: 60 * 60 * 1000, // 默认每小时检查一次
-      enableAutoCleanup: false
+      maxHistorySize: -1,
+      cleanupInterval: 10 * 60 * 1000, // 默认每小时检查一次
+      enableAutoCleanup: false,
+      enableCountBasedCleanup: false
     }
 
 
@@ -154,13 +155,47 @@ class ClipboardHistoryCleanerWorker extends BaseWorker {
         }
       }
 
-      // 计算过期时间戳
-      const expireTimestamp = this.calculateExpireTimestamp()
+      let deletedRecordIds: string[] = []
+      let deletedCount = 0
 
-      // 获取过期记录ID列表
-      const expiredRecordIds = await this.callMainThread('database-getExpiredRecordIds', { expireTimestamp })
+      // 1. 基于时间的清理
+      if (this.config.maxKeepTime > 0) {
+        const expireTimestamp = this.calculateExpireTimestamp()
+        const expiredRecordIds = await this.callMainThread('database-getExpiredRecordIds', { expireTimestamp })
 
-      if (expiredRecordIds.length === 0) {
+        if (expiredRecordIds.length > 0) {
+          // 优化：直接删除，无需查询 hash
+          const timeBasedDeletedCount = await this.callMainThread('database-deleteExpiredRecords', { expireTimestamp })
+          deletedRecordIds.push(...expiredRecordIds)
+          deletedCount += timeBasedDeletedCount
+        }
+      }
+
+      // 2. 基于数量的清理
+      if (this.config.enableCountBasedCleanup && this.config.maxHistorySize > 0) {
+        const currentCount = await this.callMainThread('database-getRecordCount')
+
+        if (currentCount > this.config.maxHistorySize) {
+          const excessCount = currentCount - this.config.maxHistorySize
+
+          // 优化：只获取需要删除的记录 ID，无需完整记录数据
+          const recordsToDelete = await this.callMainThread('database-queryRecordIdsAndHashes', {
+            limit: excessCount,
+            offset: this.config.maxHistorySize,
+            orderBy: 'last_used',
+            orderDirection: 'DESC'
+          })
+
+          // 删除这些记录
+          for (const record of recordsToDelete) {
+            await this.callMainThread('database-deleteRecord', { contentId: record.content_id })
+            deletedRecordIds.push(record.content_id)
+            deletedCount++
+          }
+        }
+      }
+
+      if (deletedCount === 0) {
         this.onOperationSuccess()
         return {
           totalRecords,
@@ -170,23 +205,20 @@ class ClipboardHistoryCleanerWorker extends BaseWorker {
         }
       }
 
-      // 执行删除操作
-      const deletedCount = await this.callMainThread('database-deleteExpiredRecords', { expireTimestamp })
-
       const cleanupTime = Date.now() - startTime
       const stats: CleanupStats = {
         totalRecords,
-        expiredRecords: expiredRecordIds.length,
+        expiredRecords: deletedRecordIds.length,
         deletedRecords: deletedCount,
         cleanupTime
       }
 
       if (deletedCount > 0) {
-        // 通知内存数据同步
-        this.sendEvent('memory-sync-required', { deletedIds: expiredRecordIds })
-
-        // 通知清理完成
-        this.sendEvent('cleanup-completed', { stats })
+        // 通知清理完成，只传递删除的记录 ID
+        this.sendEvent('cleanup-completed', {
+          stats,
+          deletedRecordIds
+        })
       }
 
       // 成功完成清理，重置错误计数
@@ -208,19 +240,56 @@ class ClipboardHistoryCleanerWorker extends BaseWorker {
   }
 
   /**
-   * 设置内存数据同步回调
+   * 检查是否需要基于数量的清理
    */
-  public setMemoryDataSyncCallback(): void {
-    // 在 Worker 中，这个方法主要是为了兼容原有接口
-    // 实际的同步通过事件机制实现
+  public async checkCountBasedCleanup(maxHistorySize: number): Promise<void> {
+    if (!this.config.enableCountBasedCleanup || maxHistorySize <= 0) {
+      return
+    }
+
+    try {
+      const currentCount = await this.callMainThread('database-getRecordCount')
+
+      if (currentCount > maxHistorySize) {
+        const excessCount = currentCount - maxHistorySize
+
+        // 优化：只获取需要删除的记录 ID，无需完整记录数据
+        const recordsToDelete = await this.callMainThread('database-queryRecordIdsAndHashes', {
+          limit: excessCount,
+          offset: maxHistorySize,
+          orderBy: 'last_used',
+          orderDirection: 'DESC'
+        })
+
+        const deletedIds: string[] = []
+
+        // 删除这些记录
+        for (const record of recordsToDelete) {
+          await this.callMainThread('database-deleteRecord', { contentId: record.content_id })
+          deletedIds.push(record.content_id)
+        }
+
+        if (deletedIds.length > 0) {
+          log.info(`[历史记录清理器 Worker] 基于数量清理完成，删除了 ${deletedIds.length} 条记录`)
+
+          // 通知清理完成，只传递删除的记录 ID
+          this.sendEvent('cleanup-completed', {
+            stats: {
+              totalRecords: currentCount,
+              expiredRecords: 0,
+              deletedRecords: deletedIds.length,
+              cleanupTime: 0
+            },
+            deletedRecordIds: deletedIds
+          })
+        }
+      }
+    } catch (error) {
+      log.error('[历史记录清理器 Worker] 基于数量的清理失败:', error)
+    }
   }
 
-  /**
-   * 同步删除的记录（由主线程调用）
-   */
-  public syncDeletedRecords(_: string[]): void {
-    // 这个方法在 Worker 中不需要实现，因为同步是通过事件机制处理的
-  }
+
 
   /**
    * 销毁清理器
@@ -279,14 +348,14 @@ class ClipboardHistoryCleanerWorker extends BaseWorker {
         case 'performCleanup':
           result = await this.performCleanup()
           break
-        case 'setMemoryDataSyncCallback':
-          result = this.setMemoryDataSyncCallback()
-          break
-        case 'syncDeletedRecords':
-          result = this.syncDeletedRecords(request.params)
+        case 'checkCountBasedCleanup':
+          result = await this.checkCountBasedCleanup(request.params)
           break
         case 'destroy':
           result = this.destroy()
+          break
+        case 'exportHeapdump':
+          result = this.exportHeapdump(request.params)
           break
         default:
           throw new Error(`未知方法: ${request.method}`)

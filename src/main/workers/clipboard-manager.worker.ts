@@ -9,31 +9,28 @@ import type {
 } from '../types/worker-types'
 import type {
   ClipboardContent,
-  ClipboardItem,
   ClipboardManagerConfig,
-  TagGroup,
-  TagStats,
   AppInfo
 } from '../types/clipboard-types'
 import { ClipboardDataConverter } from '../types/clipboard-types'
-import log from 'electron-log'
 
-/**
- * 剪贴板管理器 Worker
- * 在独立线程中运行，负责剪贴板历史记录管理和数据库操作
- */
 class ClipboardManagerWorker extends BaseWorker {
   private config: ClipboardManagerConfig
   private isListening: boolean = false
   private checkTimer: NodeJS.Timeout | null = null
   private lastClipboardHash: string = ''
   private lastQuickHash: string = ''
-  private historyItems: ClipboardItem[] = []
+  private lastItemId: string = ''
+  private lastItemHash: string = ''
+
+  // 历史记录缓存：hash -> { id, hash }
+  private historyCache: Map<string, { id: string, hash: string }> = new Map()
+  // 反向索引：id -> hash，用于根据 ID 快速查找和删除
+  private idToHashIndex: Map<string, string> = new Map()
+  private maxCacheSize: number = 10000 // 最大缓存条目数
 
   constructor() {
     super()
-
-    // 默认配置
     this.config = {
       maxHistorySize: 100,
       checkInterval: 200,
@@ -41,62 +38,41 @@ class ClipboardManagerWorker extends BaseWorker {
     }
   }
 
-  /**
-   * 获取Worker名称
-   */
   protected getWorkerName(): string {
-    return '剪贴板管理器 Worker'
+    return '剪贴板变化检测 Worker'
   }
 
-  /**
-   * 初始化剪贴板管理器
-   */
   public async initialize(config?: Partial<ClipboardManagerConfig>): Promise<void> {
     if (config) {
       this.config = { ...this.config, ...config }
     }
 
     try {
-      // 通过主线程初始化数据库
-      await this.callMainThread('database-initialize')
+      // 初始化历史记录缓存
+      await this.initializeHistoryCache()
 
-      // 从数据库加载历史记录
-      await this.loadHistoryFromDatabase()
-
-      // 初始化时获取当前剪贴板内容哈希
-      this.lastClipboardHash = await this.generateClipboardHash()
-
-      // 初始化快速哈希
-      await this.hasQuickClipboardChange()
+      // 数据库已在主进程中初始化，直接加载最后一项信息
+      await this.loadLastItemInfo()
+      // 一次性获取剪贴板数据进行初始化
+      const clipboardData = await this.callMainThread('clipboard-readAll')
+      this.lastClipboardHash = await this.generateClipboardHashFromData(clipboardData)
+      this.checkQuickClipboardChange(clipboardData)
     } catch (error) {
-      log.error('[剪贴板管理器 Worker] 初始化失败:', error)
-      // 即使数据库初始化失败，也要继续初始化剪贴板管理器
-      this.lastClipboardHash = await this.generateClipboardHash()
-      await this.hasQuickClipboardChange()
+      console.log('初始化失败')
     }
   }
 
-  /**
-   * 开始监听剪贴板变化
-   */
   public startListening(): void {
-    if (this.isListening) {
-      return
-    }
+    if (this.isListening) return
 
     this.isListening = true
-    this.checkTimer = setInterval(() => {
-      this.checkClipboardChange()
+    this.checkTimer = setInterval(async () => {
+      await this.checkClipboardChange()
     }, this.config.checkInterval)
   }
 
-  /**
-   * 停止监听剪贴板变化
-   */
   public stopListening(): void {
-    if (!this.isListening) {
-      return
-    }
+    if (!this.isListening) return
 
     this.isListening = false
     if (this.checkTimer) {
@@ -106,38 +82,43 @@ class ClipboardManagerWorker extends BaseWorker {
   }
 
   /**
-   * 检查剪贴板内容变化
+   * 检查剪贴板变化 - 优化版本
+   * 每次检查只获取一次剪贴板内容，避免重复读取
    */
   private async checkClipboardChange(): Promise<void> {
     try {
-      // 如果在错误退避期间，跳过检查
-      if (this.isInErrorBackoff()) {
-        return
-      }
+      if (this.isInErrorBackoff()) return
 
-      // 首先进行快速检查：只检查是否有内容和基本格式
-      const hasQuickChange = await this.hasQuickClipboardChange()
-
+      // 一次性获取所有剪贴板内容（不包含图片数据，仅检查是否有图片）
+      console.log('read clipboard from main thread', new Date().toDateString())
+      const clipboardData = await this.callMainThread('clipboard-readAll')
+      console.log('check quick hash', new Date().toDateString())
+      // 检查快速变化（基于文本、HTML、RTF、书签和图片存在性）
+      const hasQuickChange = this.checkQuickClipboardChange(clipboardData)
       if (!hasQuickChange) {
-        // 成功检查，重置错误计数
         this.onOperationSuccess()
         return
       }
+      console.log('quick failed , check full hash', new Date().toDateString())
 
-      // 如果快速检查发现变化，再进行完整的哈希计算
-      const currentHash = await this.generateClipboardHash()
+      // 生成完整内容哈希（如果有图片会额外获取图片数据）
+      const currentHash = await this.generateClipboardHashFromData(clipboardData)
+      console.log('full hash', currentHash)
       if (currentHash && currentHash !== this.lastClipboardHash) {
         this.lastClipboardHash = currentHash
 
         if (this.config.enableAutoSave) {
-          const clipboardContent = await this.getCurrentClipboardContent()
+          // 从已获取的数据构建完整内容（复用已获取的数据）
+          console.log('build content from data', new Date().toDateString())
+          const clipboardContent = await this.buildClipboardContentFromData(clipboardData)
+          console.log('save clipboard item', new Date().toDateString())
           await this.saveClipboardItem(clipboardContent)
+          console.log('save clipboard item done', new Date().toDateString())
         }
 
         this.sendEvent('clipboard-changed', { timestamp: Date.now() })
       }
 
-      // 成功完成检查，重置错误计数
       this.onOperationSuccess()
     } catch (error) {
       this.handleCheckError(error, '剪贴板检查')
@@ -145,31 +126,33 @@ class ClipboardManagerWorker extends BaseWorker {
   }
 
   /**
-   * 快速检查剪贴板是否有变化
+   * 检查快速剪贴板变化 - 基于已获取的数据
+   * @param clipboardData 已获取的剪贴板数据
+   * @returns 是否有变化
    */
-  private async hasQuickClipboardChange(): Promise<boolean> {
+  private checkQuickClipboardChange(clipboardData: any): boolean {
     try {
-      // 通过主线程获取剪贴板内容
-      const clipboardData = await this.callMainThread('clipboard-readAll')
-
-      // 生成快速哈希（不包含图片具体内容）
       const quickContent = {
         text: clipboardData.text || undefined,
         html: clipboardData.html || undefined,
         rtf: clipboardData.rtf || undefined,
         bookmark: clipboardData.bookmark ? JSON.stringify(clipboardData.bookmark) : undefined,
-        hasImage: clipboardData.hasImage
+        hasImage: clipboardData.hasImage,
+        // 包含图片的基本信息用于区分不同的图片
+        imageInfo: clipboardData.imageInfo || undefined
       }
-
+      if(quickContent.hasImage) {
+        console.log('has image', quickContent.imageInfo)
+      }
       const quickHash = this.generateQuickHash(quickContent)
-
-      // 如果没有上次的快速哈希，说明是第一次检查
+      if(quickContent.hasImage) {
+        console.log('quick hash changed', quickHash, this.lastQuickHash)
+      }
       if (!this.lastQuickHash) {
         this.lastQuickHash = quickHash
         return true
       }
 
-      // 比较快速哈希
       const hasChange = quickHash !== this.lastQuickHash
       if (hasChange) {
         this.lastQuickHash = quickHash
@@ -177,404 +160,373 @@ class ClipboardManagerWorker extends BaseWorker {
 
       return hasChange
     } catch (error) {
-      log.error('[剪贴板管理器 Worker] 快速检查失败:', error)
-
-      // 如果是超时错误，可能是系统刚从休眠中恢复，暂时跳过检查
-      if (error instanceof Error && error.message.includes('超时')) {
-        log.warn('[剪贴板管理器 Worker] 检测到超时错误，可能系统刚从休眠恢复，跳过本次检查')
-        return false // 超时时不假设有变化，避免连续错误
-      }
-
-      return true // 其他错误时假设有变化，进行完整检查
+      return true
     }
   }
 
-  /**
-   * 生成快速哈希
-   */
   private generateQuickHash(content: any): string {
     return HashUtils.generateQuickHash(content)
   }
 
   /**
-   * 获取当前剪贴板所有格式的内容
+   * 基于已获取的剪贴板数据生成内容哈希
+   * @param clipboardData 已获取的剪贴板数据
+   * @returns 内容哈希值
    */
-  private async getCurrentClipboardContent(): Promise<ClipboardContent> {
+  private async generateClipboardHashFromData(clipboardData: any): Promise<string> {
     try {
-      // 通过主线程获取剪贴板内容
-      return await this.callMainThread('clipboard-readContent')
-    } catch (error) {
-      log.error('[剪贴板管理器 Worker] 读取剪贴板内容失败:', error)
-
-      // 如果是超时错误，可能是系统刚从休眠中恢复
-      if (error instanceof Error && error.message.includes('超时')) {
-        log.warn('[剪贴板管理器 Worker] 剪贴板读取超时，可能系统刚从休眠恢复')
-      }
-
-      return {}
-    }
-  }
-
-  /**
-   * 生成剪贴板内容的哈希值用于比较
-   */
-  private async generateClipboardHash(): Promise<string> {
-    try {
-      const content = await this.getCurrentClipboardContent()
+      const content = await this.buildClipboardContentFromData(clipboardData)
       return ClipboardDataConverter.generateContentHash(content)
     } catch (error) {
-      log.error('[剪贴板管理器 Worker] 生成剪贴板哈希失败:', error)
       return ''
     }
   }
 
   /**
-   * 保存剪贴板项到历史记录
+   * 基于已获取的剪贴板数据构建完整的剪贴板内容
+   * 优化策略：只有在需要图片数据且没有图片数据时才额外获取
+   * @param clipboardData 已获取的剪贴板数据
+   * @returns 完整的剪贴板内容
    */
-  private async saveClipboardItem(content: ClipboardContent): Promise<void> {
-    if (!content || ClipboardDataConverter.isEmptyContent(content)) {
-      return
+  private async buildClipboardContentFromData(clipboardData: any): Promise<ClipboardContent> {
+    try {
+      // 如果已经有图片数据，直接使用
+      if (clipboardData.hasImage && clipboardData.image) {
+        return {
+          text: clipboardData.text || undefined,
+          html: clipboardData.html || undefined,
+          rtf: clipboardData.rtf || undefined,
+          bookmark: clipboardData.bookmark ? JSON.stringify(clipboardData.bookmark) : undefined,
+          image: clipboardData.image
+        }
+      }
+
+      // 没有图片，直接构建内容
+      return {
+        text: clipboardData.text || undefined,
+        html: clipboardData.html || undefined,
+        rtf: clipboardData.rtf || undefined,
+        bookmark: clipboardData.bookmark ? JSON.stringify(clipboardData.bookmark) : undefined
+      }
+    } catch (error) {
+      return {}
     }
+  }
+
+  private async saveClipboardItem(content: ClipboardContent): Promise<void> {
+    if (!content || ClipboardDataConverter.isEmptyContent(content)) return
 
     try {
       const now = Date.now()
       const contentHash = ClipboardDataConverter.generateContentHash(content)
 
-      // 检查是否已存在相同内容
-      const existingIndex = this.historyItems.findIndex(item =>
-        ClipboardDataConverter.generateContentHash(item.content) === contentHash
-      )
+      if (this.lastItemHash === contentHash) {
+        await this.callMainThread('database-updateLastUsed', {
+          contentId: this.lastItemId,
+          lastUsed: now
+        })
+        this.sendEvent('history-updated', { timestamp: Date.now() })
+        return
+      }
 
-      if (existingIndex !== -1) {
-        // 更新现有项的最后使用时间并移到最前面
-        const existingItem = this.historyItems[existingIndex]
-        existingItem.lastUsed = now
-        this.historyItems.splice(existingIndex, 1)
-        this.historyItems.unshift(existingItem)
+      // 优化：使用缓存查找记录而不是数据库查询
+      const cachedRecord = this.getRecordFromCache(contentHash)
 
-        // 同步更新数据库中的最后使用时间
-        await this.syncToDatabase(existingItem, true)
+      if (cachedRecord) {
+        await this.callMainThread('database-updateLastUsed', {
+          contentId: cachedRecord.id,
+          lastUsed: now
+        })
+        this.lastItemId = cachedRecord.id
+        this.lastItemHash = contentHash
       } else {
-        // 获取当前激活窗口的应用信息
         const sourceAppInfo = await this.getCurrentAppInfo()
-
-        // 创建新的剪贴板项
         const availableFormats = ClipboardDataConverter.getAvailableFormats(content)
-        const newItem: ClipboardItem = {
-          id: ClipboardDataConverter.generateId(),
+        const newItemId = ClipboardDataConverter.generateId()
+
+        let sourceAppId: string | undefined = undefined
+        if (sourceAppInfo) {
+          sourceAppId = await this.callMainThread('database-insertOrUpdateApp', {
+            application: sourceAppInfo.application,
+            path: sourceAppInfo.path,
+            icon: sourceAppInfo.icon
+          })
+        }
+
+        await this.callMainThread('database-insertRecord', {
+          contentId: newItemId,
           content,
           primaryType: ClipboardDataConverter.detectPrimaryType(content, availableFormats),
           availableFormats: availableFormats,
           timestamp: now,
           lastUsed: now,
           parseType: ClipboardDataConverter.detectParseType(content, availableFormats),
-          tags: [],
-          sourceAppInfo: sourceAppInfo
-        }
+          sourceAppId,
+          hash: contentHash
+        })
 
-        // 添加到历史记录开头
-        this.historyItems.unshift(newItem)
+        // 添加到缓存
+        this.addToCache(newItemId, contentHash)
 
-        // 同步保存到数据库
-        await this.syncToDatabase(newItem, false)
+        this.lastItemId = newItemId
+        this.lastItemHash = contentHash
 
-        // 如果超过最大数量，删除最久未使用的项
-        if (this.historyItems.length > this.config.maxHistorySize) {
-          const removedItems = this.historyItems.splice(this.config.maxHistorySize)
-          // 从数据库中删除被移除的项
-          for (const item of removedItems) {
-            await this.removeFromDatabase(item.id)
-          }
-        }
+        this.sendEvent('cleanup-check-required', {
+          reason: 'new-record-added',
+          maxHistorySize: this.config.maxHistorySize
+        })
       }
 
-      // 通知前端剪贴板历史已更新
       this.sendEvent('history-updated', { timestamp: Date.now() })
     } catch (error) {
-      log.error('[剪贴板管理器 Worker] 保存剪贴板项失败:', error)
+      // 静默处理错误，避免过多日志
     }
   }
 
   /**
-   * 从数据库加载历史记录
+   * 初始化历史记录缓存
+   * 从数据库加载所有记录的 id 和 hash 到内存缓存
+   * 优化：使用轻量级查询，只获取 content_id 和 hash，避免加载完整记录数据
    */
-  private async loadHistoryFromDatabase(): Promise<void> {
+  private async initializeHistoryCache(): Promise<void> {
     try {
-      const recordsWithTags = await this.callMainThread('database-queryRecordsWithTags', {
-        limit: this.config.maxHistorySize,
+      // 使用轻量级查询，只获取 content_id 和 hash
+      const records = await this.callMainThread('database-queryRecordIdsAndHashes', {
+        limit: this.maxCacheSize,
         orderBy: 'last_used',
         orderDirection: 'DESC'
       })
 
-      this.historyItems = ClipboardDataConverter.batchRecordsToItems(recordsWithTags)
-    } catch (error) {
-      log.error('[剪贴板管理器 Worker] 从数据库加载历史记录失败:', error)
-      this.historyItems = []
-    }
-  }
+      this.historyCache.clear()
+      this.idToHashIndex.clear()
 
-  /**
-   * 同步剪贴板项到数据库
-   */
-  private async syncToDatabase(item: ClipboardItem, isUpdate: boolean): Promise<void> {
-    try {
-      if (isUpdate) {
-        // 更新最后使用时间
-        await this.callMainThread('database-updateLastUsed', {
-          contentId: item.id,
-          lastUsed: item.lastUsed
+      for (const record of records) {
+        this.historyCache.set(record.hash, {
+          id: record.content_id,
+          hash: record.hash
         })
-      } else {
-        // 如果有应用信息，先保存应用信息到数据库
-        let sourceAppId: string | undefined = undefined
-        if (item.sourceAppInfo) {
-          sourceAppId = await this.callMainThread('database-insertOrUpdateApp', {
-            application: item.sourceAppInfo.application,
-            path: item.sourceAppInfo.path,
-            icon: item.sourceAppInfo.icon
-          })
-        }
-
-        // 插入新记录
-        await this.callMainThread('database-insertRecord', {
-          contentId: item.id,
-          content: item.content,
-          primaryType: item.primaryType,
-          availableFormats: item.availableFormats,
-          timestamp: item.timestamp,
-          lastUsed: item.lastUsed,
-          parseType: item.parseType,
-          sourceAppId
-        })
+        // 维护反向索引
+        this.idToHashIndex.set(record.content_id, record.hash)
       }
     } catch (error) {
-      log.error('[剪贴板管理器 Worker] 同步到数据库失败:', error)
+      // 静默处理错误，缓存初始化失败不影响主要功能
     }
   }
 
   /**
-   * 从数据库中删除记录
+   * 从缓存中查找记录
+   * 替代 database-getRecordByHash 查询
    */
-  private async removeFromDatabase(contentId: string): Promise<void> {
+  private getRecordFromCache(hash: string): { id: string, hash: string } | null {
+    return this.historyCache.get(hash) || null
+  }
+
+  /**
+   * 向缓存中添加记录
+   */
+  private addToCache(id: string, hash: string): void {
+    // 如果缓存已满，删除最旧的条目（简单的 LRU 策略）
+    if (this.historyCache.size >= this.maxCacheSize) {
+      const firstKey = this.historyCache.keys().next().value
+      if (firstKey) {
+        const oldRecord = this.historyCache.get(firstKey)
+        if (oldRecord) {
+          this.idToHashIndex.delete(oldRecord.id)
+        }
+        this.historyCache.delete(firstKey)
+      }
+    }
+
+    this.historyCache.set(hash, { id, hash })
+    this.idToHashIndex.set(id, hash)
+  }
+
+  /**
+   * 从缓存中移除记录（通过 hash）
+   */
+  private removeFromCache(hash: string): void {
+    const record = this.historyCache.get(hash)
+    if (record) {
+      this.idToHashIndex.delete(record.id)
+    }
+    this.historyCache.delete(hash)
+  }
+
+  /**
+   * 从缓存中移除记录（通过 ID）
+   */
+  private removeFromCacheById(id: string): void {
+    const hash = this.idToHashIndex.get(id)
+    if (hash) {
+      this.historyCache.delete(hash)
+      this.idToHashIndex.delete(id)
+    }
+  }
+
+  /**
+   * 批量从缓存中移除记录（通过 hash）
+   */
+  private removeMultipleFromCache(hashes: string[]): void {
+    for (const hash of hashes) {
+      this.removeFromCache(hash)
+    }
+  }
+
+  /**
+   * 批量从缓存中移除记录（通过 ID）
+   */
+  private removeMultipleFromCacheByIds(ids: string[]): void {
+    for (const id of ids) {
+      this.removeFromCacheById(id)
+    }
+  }
+
+  /**
+   * 清空缓存
+   */
+  private clearCache(): void {
+    this.historyCache.clear()
+    this.idToHashIndex.clear()
+  }
+
+  private async loadLastItemInfo(): Promise<void> {
     try {
-      await this.callMainThread('database-deleteRecord', { contentId })
+      // 优化：使用轻量级查询，直接获取最后记录的 content_id 和 hash
+      const lastRecordInfo = await this.callMainThread('database-getLastRecordInfo')
+
+      if (lastRecordInfo) {
+        this.lastItemId = lastRecordInfo.content_id
+        this.lastItemHash = lastRecordInfo.hash
+      } else {
+        this.lastItemId = ''
+        this.lastItemHash = ''
+      }
     } catch (error) {
-      log.error('[剪贴板管理器 Worker] 从数据库删除记录失败:', error)
+      this.lastItemId = ''
+      this.lastItemHash = ''
     }
   }
 
-  /**
-   * 同步删除内存中的记录（由清理器调用）
-   */
   public syncDeletedRecords(deletedIds: string[]): void {
     try {
-      const originalLength = this.historyItems.length
+      if (deletedIds.includes('*')) {
+        // 清空所有记录
+        this.lastItemId = ''
+        this.lastItemHash = ''
+        this.clearCache()
+      } else {
+        // 从缓存中移除已删除的记录
+        const deletedHashes: string[] = []
+        for (const [hash, record] of this.historyCache.entries()) {
+          if (deletedIds.includes(record.id)) {
+            deletedHashes.push(hash)
+          }
+        }
+        this.removeMultipleFromCache(deletedHashes)
 
-      // 从内存中删除指定ID的记录
-      this.historyItems = this.historyItems.filter(item => !deletedIds.includes(item.id))
+        // 如果当前项被删除，重新加载最后一项信息
+        if (deletedIds.includes(this.lastItemId)) {
+          this.loadLastItemInfo()
+        }
+      }
 
-      const deletedCount = originalLength - this.historyItems.length
-
-      if (deletedCount > 0) {
+      if (deletedIds.length > 0) {
         this.sendEvent('history-updated', { timestamp: Date.now(), source: 'cleanup' })
       }
     } catch (error) {
-      log.error('[剪贴板管理器 Worker] 同步删除内存记录失败:', error)
+      // 静默处理错误
     }
   }
 
   /**
-   * 获取历史记录
+   * 处理来自清理器的删除通知
+   * 接收删除的记录哈希列表，从缓存中移除
    */
-  public getHistory(limit?: number): ClipboardItem[] {
-    if (limit && limit > 0) {
-      return [...this.historyItems.slice(0, limit)]
-    }
-    return [...this.historyItems]
-  }
-
-  /**
-   * 还原指定的剪贴板内容到当前剪贴板
-   */
-  public async restoreClipboard(itemId: string): Promise<boolean> {
+  public syncDeletedRecordsByHash(deletedHashes: string[]): void {
     try {
-      const item = this.historyItems.find(h => h.id === itemId)
+      if (deletedHashes.length === 0) return
 
-      if (!item) {
-        log.error('[剪贴板管理器 Worker] 未找到指定的剪贴板项:', itemId)
-        return false
+      // 检查是否包含当前项
+      if (deletedHashes.includes(this.lastItemHash)) {
+        this.lastItemId = ''
+        this.lastItemHash = ''
+        this.loadLastItemInfo()
       }
 
-      // 通过主线程还原剪贴板内容
-      const success = await this.callMainThread('clipboard-restore', {
-        content: item.content
-      })
+      // 从缓存中移除
+      this.removeMultipleFromCache(deletedHashes)
 
-      if (success) {
-        // 更新最后使用时间并重新排序
-        item.lastUsed = Date.now()
-        const itemIndex = this.historyItems.findIndex(h => h.id === itemId)
-        if (itemIndex > 0) {
-          this.historyItems.splice(itemIndex, 1)
-          this.historyItems.unshift(item)
-        }
-
-        // 同步更新数据库中的最后使用时间
-        await this.syncToDatabase(item, true)
-
-        return true
-      } else {
-        log.error('[剪贴板管理器 Worker] 还原失败:', itemId)
-        return false
-      }
+      this.sendEvent('history-updated', { timestamp: Date.now(), source: 'cleanup' })
     } catch (error) {
-      log.error('[剪贴板管理器 Worker] 还原剪贴板失败:', error)
-      return false
+      // 静默处理错误
     }
   }
 
   /**
-   * 还原剪贴板内容为纯文本
-   * @param itemId 剪贴板项目ID
-   * @returns Promise<boolean> 是否成功还原
+   * 处理来自清理器的删除通知（优化版本）
+   * 接收删除的记录 ID 列表，从缓存中移除
+   * 优化：直接使用 ID，无需查询 hash
    */
-  private async restoreClipboardAsText(itemId: string): Promise<boolean> {
+  public syncDeletedRecordsByIds(deletedIds: string[]): void {
     try {
-      // 参数验证
-      if (!itemId || typeof itemId !== 'string') {
-        log.error('[剪贴板管理器 Worker] 还原为纯文本失败: 无效的项目ID:', itemId)
-        return false
+      if (deletedIds.length === 0) return
+
+      // 检查是否包含当前项
+      if (deletedIds.includes(this.lastItemId)) {
+        this.lastItemId = ''
+        this.lastItemHash = ''
+        this.loadLastItemInfo()
       }
 
-      const item = this.historyItems.find(h => h.id === itemId)
+      // 从缓存中移除（通过 ID）
+      this.removeMultipleFromCacheByIds(deletedIds)
 
-      if (!item) {
-        log.error('[剪贴板管理器 Worker] 未找到指定的剪贴板项:', itemId)
-        return false
-      }
-
-      // 检查是否有文本内容
-      if (!item.content.text || !item.content.text.trim()) {
-        return false
-      }
-
-      // 通过主线程还原剪贴板内容为纯文本
-      const success = await this.callMainThread('clipboard-restore-as-text', {
-        content: item.content
-      })
-
-      if (success) {
-        // 更新最后使用时间并重新排序
-        item.lastUsed = Date.now()
-        const itemIndex = this.historyItems.findIndex(h => h.id === itemId)
-        if (itemIndex > 0) {
-          this.historyItems.splice(itemIndex, 1)
-          this.historyItems.unshift(item)
-        }
-
-        // 同步更新数据库中的最后使用时间
-        await this.syncToDatabase(item, true)
-
-        return true
-      } else {
-        log.error('[剪贴板管理器 Worker] 主线程还原为纯文本失败:', itemId)
-        return false
-      }
+      this.sendEvent('history-updated', { timestamp: Date.now(), source: 'cleanup' })
     } catch (error) {
-      log.error('[剪贴板管理器 Worker] 还原剪贴板为纯文本时发生异常:', error, '项目ID:', itemId)
-      return false
+      // 静默处理错误
     }
   }
 
-  /**
-   * 删除指定的历史记录项
-   */
-  public async deleteHistoryItem(itemId: string): Promise<boolean> {
-    try {
-      const itemIndex = this.historyItems.findIndex(h => h.id === itemId)
 
-      if (itemIndex === -1) {
-        log.error('[剪贴板管理器 Worker] 未找到指定的剪贴板项:', itemId)
-        return false
-      }
-
-      // 从内存中删除
-      this.historyItems.splice(itemIndex, 1)
-
-      // 从数据库中删除
-      await this.removeFromDatabase(itemId)
-
-      this.sendEvent('history-updated', { timestamp: Date.now() })
-      return true
-    } catch (error) {
-      log.error('[剪贴板管理器 Worker] 删除剪贴板项失败:', error)
-      return false
-    }
-  }
-
-  /**
-   * 清空所有历史记录
-   */
-  public async clearHistory(): Promise<void> {
-    try {
-      // 清空内存中的历史记录
-      this.historyItems = []
-
-      // 清空数据库中的历史记录
-      await this.callMainThread('database-clearAllRecords')
-
-      this.sendEvent('history-updated', { timestamp: Date.now() })
-    } catch (error) {
-      log.error('[剪贴板管理器 Worker] 清空历史记录失败:', error)
-    }
-  }
-
-  /**
-   * 获取配置
-   */
   public getConfig(): ClipboardManagerConfig {
     return { ...this.config }
   }
 
-  /**
-   * 更新配置
-   */
   public updateConfig(newConfig: Partial<ClipboardManagerConfig>): void {
     this.config = { ...this.config, ...newConfig }
   }
 
-  /**
-   * 获取监听状态
-   */
   public isListeningActive(): boolean {
     return this.isListening
   }
 
-  /**
-   * 强制同步当前剪贴板内容的哈希值
-   */
   public async syncClipboardHash(): Promise<void> {
     try {
-      this.lastClipboardHash = await this.generateClipboardHash()
-      // 同步成功时重置错误状态
+      // 优先使用一次性获取方式
+      try {
+        const clipboardData = await this.callMainThread('clipboard-readAll')
+        this.lastClipboardHash = await this.generateClipboardHashFromData(clipboardData)
+        this.checkQuickClipboardChange(clipboardData)
+      } catch (error) {
+
+      }
       this.resetErrorState()
     } catch (error) {
-      log.error('[剪贴板管理器 Worker] 同步剪贴板哈希值失败:', error)
+      // 静默处理错误
     }
   }
 
-
-
-  /**
-   * 获取当前剪贴板内容（不触发监控）
-   */
   public async getCurrentClipboard(): Promise<ClipboardContent> {
-    return this.getCurrentClipboardContent()
+    try {
+      // 优先使用一次性获取方式
+      const clipboardData = await this.callMainThread('clipboard-readAll')
+      return await this.buildClipboardContentFromData(clipboardData)
+    } catch (error) {
+      console.error('[剪贴板管理器] 获取当前剪贴板内容失败:', error)
+      return {}
+    }
   }
 
-  /**
-   * 获取当前激活窗口的应用信息
-   */
   private async getCurrentAppInfo(): Promise<AppInfo | undefined> {
     try {
       const activeWindow = await this.callMainThread('activeWindow-getActiveWindow')
@@ -592,232 +544,16 @@ class ClipboardManagerWorker extends BaseWorker {
         updatedAt: Date.now()
       }
     } catch (error) {
-      log.error('[剪贴板管理器 Worker] 获取当前应用信息失败:', error)
       return undefined
     }
   }
 
-  // ==================== 标签管理方法 ====================
-
-  /**
-   * 创建新标签组
-   */
-  public async createTagGroup(name: string, color: string, description?: string): Promise<string | null> {
-    try {
-      const tagId = ClipboardDataConverter.generateTagId()
-      const now = Date.now()
-
-      const tag: TagGroup = {
-        id: tagId,
-        name,
-        color,
-        description,
-        createdAt: now,
-        updatedAt: now
-      }
-
-      const success = await this.callMainThread('database-createTagGroup', { tag })
-      if (success) {
-        return tagId
-      } else {
-        log.error('[剪贴板管理器 Worker] 创建标签组失败')
-        return null
-      }
-    } catch (error) {
-      log.error('[剪贴板管理器 Worker] 创建标签组失败:', error)
-      return null
-    }
-  }
-
-  /**
-   * 获取所有标签组
-   */
-  public async getAllTagGroups(): Promise<TagGroup[]> {
-    try {
-      const records = await this.callMainThread('database-getAllTagGroups')
-      return records.map((record: any) => ClipboardDataConverter.tagRecordToTag(record))
-    } catch (error) {
-      log.error('[剪贴板管理器 Worker] 获取标签组列表失败:', error)
-      return []
-    }
-  }
-
-  /**
-   * 更新标签组
-   */
-  public async updateTagGroup(tagId: string, updates: Partial<Omit<TagGroup, 'id' | 'createdAt'>>): Promise<boolean> {
-    try {
-      const updateData = {
-        ...updates,
-        updatedAt: Date.now()
-      }
-
-      const success = await this.callMainThread('database-updateTagGroup', { tagId, updateData })
-      return success
-    } catch (error) {
-      log.error('[剪贴板管理器 Worker] 更新标签组失败:', error)
-      return false
-    }
-  }
-
-  /**
-   * 删除标签组
-   */
-  public async deleteTagGroup(tagId: string): Promise<boolean> {
-    try {
-      const success = await this.callMainThread('database-deleteTagGroup', { tagId })
-      if (success) {
-        // 重新加载历史记录以更新标签信息
-        await this.loadHistoryFromDatabase()
-      }
-      return success
-    } catch (error) {
-      log.error('[剪贴板管理器 Worker] 删除标签组失败:', error)
-      return false
-    }
-  }
-
-  /**
-   * 为历史记录绑定标签
-   */
-  public async bindTagToRecord(contentId: string, tagId: string): Promise<boolean> {
-    try {
-      const success = await this.callMainThread('database-bindTagToRecord', { contentId, tagId })
-      if (success) {
-        // 更新内存中的历史记录
-        const item = this.historyItems.find(item => item.id === contentId)
-        if (item) {
-          const tagRecord = await this.callMainThread('database-getTagGroupById', { tagId })
-          if (tagRecord) {
-            const tag = ClipboardDataConverter.tagRecordToTag(tagRecord)
-            if (!item.tags) item.tags = []
-            if (!item.tags.find(t => t.id === tagId)) {
-              item.tags.push(tag)
-            }
-          }
-        }
-      }
-      return success
-    } catch (error) {
-      log.error('[剪贴板管理器 Worker] 绑定标签失败:', error)
-      return false
-    }
-  }
-
-  /**
-   * 解除历史记录的标签绑定
-   */
-  public async unbindTagFromRecord(contentId: string, tagId: string): Promise<boolean> {
-    try {
-      const success = await this.callMainThread('database-unbindTagFromRecord', { contentId, tagId })
-      if (success) {
-        // 更新内存中的历史记录
-        const item = this.historyItems.find(item => item.id === contentId)
-        if (item && item.tags) {
-          item.tags = item.tags.filter(tag => tag.id !== tagId)
-        }
-      }
-      return success
-    } catch (error) {
-      log.error('[剪贴板管理器 Worker] 解除标签绑定失败:', error)
-      return false
-    }
-  }
-
-  /**
-   * 按标签筛选历史记录
-   */
-  public async getRecordsByTags(tagIds: string[]): Promise<ClipboardItem[]> {
-    try {
-      const recordsWithTags = await this.callMainThread('database-queryRecordsWithTags', {
-        tagIds,
-        orderBy: 'last_used',
-        orderDirection: 'DESC'
-      })
-
-      return ClipboardDataConverter.batchRecordsToItems(recordsWithTags)
-    } catch (error) {
-      log.error('[剪贴板管理器 Worker] 按标签筛选记录失败:', error)
-      return []
-    }
-  }
-
-  /**
-   * 按解析类型筛选历史记录
-   */
-  public async getRecordsByParseType(parseType: string): Promise<ClipboardItem[]> {
-    try {
-      const recordsWithTags = await this.callMainThread('database-queryRecordsWithTags', {
-        parseType,
-        orderBy: 'last_used',
-        orderDirection: 'DESC'
-      })
-
-      return ClipboardDataConverter.batchRecordsToItems(recordsWithTags)
-    } catch (error) {
-      log.error('[剪贴板管理器 Worker] 按解析类型筛选记录失败:', error)
-      return []
-    }
-  }
-
-  /**
-   * 获取标签统计信息
-   */
-  public async getTagStats(): Promise<TagStats[]> {
-    try {
-      return await this.callMainThread('database-getTagGroupStats')
-    } catch (error) {
-      log.error('[剪贴板管理器 Worker] 获取标签统计信息失败:', error)
-      return []
-    }
-  }
-
-  /**
-   * 搜索历史记录（支持标签和内容筛选）
-   */
-  public async searchHistory(options: {
-    limit?: number
-    offset?: number
-    tagIds?: string[]
-    parseType?: string
-    searchText?: string
-    orderBy?: 'timestamp' | 'last_used'
-    orderDirection?: 'ASC' | 'DESC'
-  } = {}): Promise<ClipboardItem[]> {
-    try {
-      const recordsWithTags = await this.callMainThread('database-queryRecordsWithTags', {
-        limit: options.limit,
-        offset: options.offset,
-        tagIds: options.tagIds,
-        parseType: options.parseType,
-        searchText: options.searchText,
-        orderBy: options.orderBy || 'last_used',
-        orderDirection: options.orderDirection || 'DESC'
-      })
-
-      return ClipboardDataConverter.batchRecordsToItems(recordsWithTags)
-    } catch (error) {
-      log.error('[剪贴板管理器 Worker] 搜索历史记录失败:', error)
-      return []
-    }
-  }
-
-
-
-
-
-  /**
-   * 处理来自主线程的消息
-   */
   public handleMessage(message: WorkerMessage): void {
     if (message.type === 'request') {
       this.handleRequest(message as WorkerRequest)
     }
   }
 
-  /**
-   * 处理请求
-   */
   private async handleRequest(request: WorkerRequest): Promise<void> {
     try {
       let result: any
@@ -841,68 +577,28 @@ class ClipboardManagerWorker extends BaseWorker {
         case 'isListeningActive':
           result = this.isListeningActive()
           break
-        case 'getCurrentClipboard':
-          result = await this.getCurrentClipboard()
-          break
-        case 'restoreClipboard':
-          result = await this.restoreClipboard(request.params)
-          break
-        case 'restoreClipboardAsText':
-          result = await this.restoreClipboardAsText(request.params)
-          break
         case 'syncClipboardHash':
           result = await this.syncClipboardHash()
           break
         case 'resetErrorState':
           result = this.resetErrorState()
           break
-        case 'getHistory':
-          result = this.getHistory(request.params)
-          break
-        case 'deleteHistoryItem':
-          result = await this.deleteHistoryItem(request.params)
-          break
-        case 'clearHistory':
-          result = await this.clearHistory()
-          break
-        case 'searchHistory':
-          result = await this.searchHistory(request.params)
-          break
-        case 'createTagGroup':
-          result = await this.createTagGroup(request.params.name, request.params.color, request.params.description)
-          break
-        case 'getAllTagGroups':
-          result = await this.getAllTagGroups()
-          break
-        case 'updateTagGroup':
-          result = await this.updateTagGroup(request.params.tagId, request.params.updates)
-          break
-        case 'deleteTagGroup':
-          result = await this.deleteTagGroup(request.params.tagId)
-          break
-        case 'bindTagToRecord':
-          result = await this.bindTagToRecord(request.params.contentId, request.params.tagId)
-          break
-        case 'unbindTagFromRecord':
-          result = await this.unbindTagFromRecord(request.params.contentId, request.params.tagId)
-          break
-        case 'getRecordsByTags':
-          result = await this.getRecordsByTags(request.params.tagIds)
-          break
-        case 'getRecordsByParseType':
-          result = await this.getRecordsByParseType(request.params.parseType)
-          break
-        case 'getTagStats':
-          result = await this.getTagStats()
-          break
         case 'syncDeletedRecords':
           result = this.syncDeletedRecords(request.params)
+          break
+        case 'syncDeletedRecordsByHash':
+          result = this.syncDeletedRecordsByHash(request.params)
+          break
+        case 'syncDeletedRecordsByIds':
+          result = this.syncDeletedRecordsByIds(request.params)
+          break
+        case 'exportHeapdump':
+          result = this.exportHeapdump(request.params)
           break
         default:
           throw new Error(`未知方法: ${request.method}`)
       }
 
-      // 发送成功响应
       const response: WorkerResponse = {
         id: `response-${Date.now()}`,
         type: 'response',
@@ -913,7 +609,6 @@ class ClipboardManagerWorker extends BaseWorker {
       }
       parentPort?.postMessage(response)
     } catch (error) {
-      // 发送错误响应
       const response: WorkerResponse = {
         id: `response-${Date.now()}`,
         type: 'response',
@@ -927,16 +622,12 @@ class ClipboardManagerWorker extends BaseWorker {
   }
 }
 
-// 创建 Worker 实例
 const worker = new ClipboardManagerWorker()
 
-// 监听主线程消息
 parentPort?.on('message', (message: WorkerMessage) => {
   worker.handleMessage(message)
 })
 
-// Worker 准备就绪，发送 ready 事件
-// 发送 worker-ready 事件，告知主线程 Worker 已启动
 const readyEvent: WorkerEvent = {
   id: `event-${Date.now()}-${Math.random()}`,
   type: 'event',

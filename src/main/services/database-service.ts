@@ -60,8 +60,9 @@ export class DatabaseService {
     lastUsed: number
     parseType: string
     sourceAppId?: string
+    hash?: string
   }): boolean {
-    const { contentId, content, primaryType, availableFormats, timestamp, lastUsed, parseType, sourceAppId } = params
+    const { contentId, content, primaryType, availableFormats, timestamp, lastUsed, parseType, sourceAppId, hash } = params
     return clipboardDatabase.insertRecord(
       contentId,
       content,
@@ -70,7 +71,8 @@ export class DatabaseService {
       timestamp,
       lastUsed,
       parseType,
-      sourceAppId
+      sourceAppId,
+      hash
     )
   }
 
@@ -114,6 +116,27 @@ export class DatabaseService {
    */
   public getExpiredRecordIds(params: { expireTimestamp: number }): string[] {
     return clipboardDatabase.getExpiredRecordIds(params.expireTimestamp)
+  }
+
+  /**
+   * 根据内容哈希查询记录
+   */
+  public getRecordByHash(params: { hash: string }): ClipboardHistoryRecord | null {
+    return clipboardDatabase.getRecordByHash(params.hash)
+  }
+
+  /**
+   * 轻量级查询：只获取记录的 content_id 和 hash
+   */
+  public queryRecordIdsAndHashes(options: QueryOptions = {}): Array<{ content_id: string, hash: string }> {
+    return clipboardDatabase.queryRecordIdsAndHashes(options)
+  }
+
+  /**
+   * 轻量级查询：获取最后使用的记录的基本信息
+   */
+  public getLastRecordInfo(): { content_id: string, hash: string } | null {
+    return clipboardDatabase.getLastRecordInfo()
   }
 
   /**
@@ -262,6 +285,12 @@ export class DatabaseService {
           return this.getRecordCount()
         case 'getExpiredRecordIds':
           return this.getExpiredRecordIds(params)
+        case 'getRecordByHash':
+          return this.getRecordByHash(params)
+        case 'queryRecordIdsAndHashes':
+          return this.queryRecordIdsAndHashes(params)
+        case 'getLastRecordInfo':
+          return this.getLastRecordInfo()
         case 'deleteExpiredRecords':
           return this.deleteExpiredRecords(params)
         case 'createTagGroup':

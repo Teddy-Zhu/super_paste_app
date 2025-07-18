@@ -1,4 +1,6 @@
 import { parentPort } from 'node:worker_threads'
+import { writeHeapSnapshot } from 'v8'
+import { join } from 'path'
 import type {
   WorkerMessage,
   WorkerRequest,
@@ -63,9 +65,6 @@ export abstract class BaseWorker {
 
       // 根据尝试次数调整超时时间
       const timeoutMs = attempt === 0 ? 30000 : 60000 // 第一次30秒，重试时60秒
-      const timeout = setTimeout(() => {
-        reject(new Error(`调用主线程方法超时: ${method}`))
-      }, timeoutMs)
 
       // 监听响应
       const messageHandler = (message: WorkerMessage) => {
@@ -81,6 +80,12 @@ export abstract class BaseWorker {
           }
         }
       }
+
+      const timeout = setTimeout(() => {
+        // 修复：超时时也要移除监听器，防止内存泄漏
+        parentPort?.off('message', messageHandler)
+        reject(new Error(`调用主线程方法超时: ${method}`))
+      }, timeoutMs)
 
       parentPort?.on('message', messageHandler)
       parentPort?.postMessage(request)
@@ -138,6 +143,28 @@ export abstract class BaseWorker {
     this.consecutiveErrors = 0
     this.errorBackoffTime = 0
     log.info(`[${this.getWorkerName()}] 错误状态已重置`)
+  }
+
+  /**
+   * 导出 Worker 的内存快照
+   */
+  public exportHeapdump(desktopPath: string): string {
+    try {
+      const timestamp = new Date().toISOString().replace(/[:.]/g, '-')
+      const workerName = this.getWorkerName().replace(/\s+/g, '-').toLowerCase()
+      const filename = `heapdump-worker-${workerName}-${timestamp}.heapsnapshot`
+      const filepath = join(desktopPath, filename)
+
+      // 使用 V8 内置的 writeHeapSnapshot 导出内存快照
+      const actualFilepath = writeHeapSnapshot(filepath)
+
+      log.info(`[${this.getWorkerName()}] Worker heapdump 导出成功:`, actualFilepath)
+
+      return actualFilepath
+    } catch (error) {
+      log.error(`[${this.getWorkerName()}] 导出 Worker heapdump 失败:`, error)
+      throw error
+    }
   }
 
   /**

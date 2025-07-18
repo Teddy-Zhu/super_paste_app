@@ -13,6 +13,7 @@ import store from './store'
 import ipcManager from './ipc-manager'
 import clipboardManager from './clipboard-manager'
 import clipboardDatabase from './clipboard-database'
+import databaseService from './services/database-service'
 import { STORE_KEY } from './common'
 import clipboardHistoryCleaner from './clipboard-history-cleaner'
 import { debounceExecution, clearAllDebounceTimers } from './utils/common'
@@ -339,12 +340,12 @@ function initializeGlobalShortcut(): void {
       })
 
       if (success) {
-        logger.info(`[主进程] 全局快捷键注册成功: ${shortcutKey}`)
+        logger.debug(`[主进程] 全局快捷键注册成功: ${shortcutKey}`)
       } else {
         logger.error(`[主进程] 全局快捷键注册失败: ${shortcutKey}`)
       }
     } else {
-      logger.info('[主进程] 未配置全局快捷键，跳过注册')
+      logger.debug('[主进程] 未配置全局快捷键，跳过注册')
     }
   } catch (error) {
     logger.error('[主进程] 初始化全局快捷键时发生错误:', error)
@@ -352,7 +353,7 @@ function initializeGlobalShortcut(): void {
 }
 
 function createWindow(): void {
-  logger.info('[主进程] 开始创建主窗口')
+  logger.debug('[主进程] 开始创建主窗口')
 
   // 计算最佳窗口尺寸
   const { width, height } = calculateMainWindowSize()
@@ -373,12 +374,14 @@ function createWindow(): void {
     ...(process.platform === 'linux' ? { icon: getWindowIcon() } : {}),
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
-      sandbox: false
+      sandbox: false,
+      nodeIntegration: false,
+      contextIsolation: true
     }
   })
 
   mainWindow.on('ready-to-show', () => {
-    logger.info('[主进程] 主窗口准备就绪')
+    logger.debug('[主进程] 主窗口准备就绪')
     // 不自动显示主窗口，由用户通过任务栏图标手动打开
     // mainWindow?.show()
     // if (is.dev) {
@@ -419,13 +422,13 @@ function createWindow(): void {
   // Load the remote URL for development or the local html file for production.
   if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
     mainWindow.loadURL(process.env['ELECTRON_RENDERER_URL']).then(() => {
-      logger.info('[主进程] 主窗口加载完成 (开发模式)')
+      logger.debug('[主进程] 主窗口加载完成 (开发模式)')
     }).catch(error => {
       logger.error('[主进程] 主窗口加载失败 (开发模式):', error)
     })
   } else {
     mainWindow.loadFile(join(__dirname, '../renderer/index.html')).then(() => {
-      logger.info('[主进程] 主窗口加载完成 (生产模式)')
+      logger.debug('[主进程] 主窗口加载完成 (生产模式)')
     }).catch(error => {
       logger.error('[主进程] 主窗口加载失败 (生产模式):', error)
     })
@@ -473,9 +476,9 @@ function createOverlayWindow(): void {
     }
 
     // 在窗口准备就绪后初始化全局快捷键（最后执行）
-    logger.info('[主进程] Overlay 窗口准备就绪，开始初始化全局快捷键')
+    logger.debug('[主进程] Overlay 窗口准备就绪，开始初始化全局快捷键')
     initializeGlobalShortcut()
-    logger.info('[主进程] 全局快捷键初始化完成，应用启动流程结束')
+    logger.debug('[主进程] 全局快捷键初始化完成，应用启动流程结束')
   })
   overlayWindow.on('show', () => {
     overlayWindow?.webContents.send('trigger-slide-in-animation')
@@ -530,7 +533,7 @@ function closeOverlayWindow(): void {
 async function createSampleTagsIfNeeded(): Promise<void> {
   try {
     // 检查是否已有标签数据
-    const existingTags = await clipboardManager.getAllTagGroups()
+    const existingTags = databaseService.getAllTagGroups()
 
     if (existingTags.length === 0) {
       // 创建一些示例标签
@@ -544,7 +547,7 @@ async function createSampleTagsIfNeeded(): Promise<void> {
 
       for (const tag of sampleTags) {
         try {
-          const tagId = await clipboardManager.createTagGroup(tag.name, tag.color, tag.description)
+          const tagId = databaseService.createTagGroup({ name: tag.name, color: tag.color, description: tag.description })
           if (!tagId) {
             logger.error(`[主进程] 创建标签失败: ${tag.name}`)
           }
@@ -570,21 +573,21 @@ async function syncAutoStartStatus(): Promise<void> {
     // 获取系统中的实际自启状态
     const actualAutoStart = await autoStartManager.isEnabled()
 
-    logger.info(`[主进程] 自启状态检查 - 配置: ${configuredAutoStart}, 实际: ${actualAutoStart}`)
+    logger.debug(`[主进程] 自启状态检查 - 配置: ${configuredAutoStart}, 实际: ${actualAutoStart}`)
 
     // 如果状态不一致，则根据配置更新系统状态
     if (configuredAutoStart !== actualAutoStart) {
-      logger.info(`[主进程] 自启状态不一致，正在同步到配置状态: ${configuredAutoStart}`)
+      logger.debug(`[主进程] 自启状态不一致，正在同步到配置状态: ${configuredAutoStart}`)
 
       const success = await autoStartManager.setEnabled(configuredAutoStart)
 
       if (success) {
-        logger.info(`[主进程] 自启状态同步成功`)
+        logger.debug(`[主进程] 自启状态同步成功`)
       } else {
         logger.error(`[主进程] 自启状态同步失败`)
       }
     } else {
-      logger.info(`[主进程] 自启状态已同步`)
+      logger.debug(`[主进程] 自启状态已同步`)
     }
   } catch (error) {
     logger.error('[主进程] 同步自启状态失败:', error)
@@ -599,7 +602,7 @@ function setupPowerMonitor(): void {
   try {
     // 监听系统挂起事件
     powerMonitor.on('suspend', () => {
-      logger.info('[主进程] 系统进入休眠状态')
+      logger.debug('[主进程] 系统进入休眠状态')
 
       // 暂停剪贴板监听以避免在休眠期间的错误
       clipboardManager.stopListening().catch(error => {
@@ -609,13 +612,13 @@ function setupPowerMonitor(): void {
 
     // 监听系统恢复事件
     powerMonitor.on('resume', () => {
-      logger.info('[主进程] 系统从休眠中恢复')
+      logger.debug('[主进程] 系统从休眠中恢复')
 
       // 延迟处理系统恢复，给系统一些时间完全恢复
       setTimeout(async () => {
         try {
           await clipboardManager.handleSystemResume()
-          logger.info('[主进程] 系统唤醒恢复处理完成')
+          logger.debug('[主进程] 系统唤醒恢复处理完成')
         } catch (error) {
           logger.error('[主进程] 系统唤醒恢复处理失败:', error)
         }
@@ -624,15 +627,15 @@ function setupPowerMonitor(): void {
 
     // 监听系统锁定事件（可选）
     powerMonitor.on('lock-screen', () => {
-      logger.info('[主进程] 系统屏幕已锁定')
+      logger.debug('[主进程] 系统屏幕已锁定')
     })
 
     // 监听系统解锁事件（可选）
     powerMonitor.on('unlock-screen', () => {
-      logger.info('[主进程] 系统屏幕已解锁')
+      logger.debug('[主进程] 系统屏幕已解锁')
     })
 
-    logger.info('[主进程] 电源监控已设置')
+    logger.debug('[主进程] 电源监控已设置')
   } catch (error) {
     logger.error('[主进程] 设置电源监控失败:', error)
   }
@@ -644,44 +647,53 @@ function setupPowerMonitor(): void {
  */
 async function initializeBackgroundServices(): Promise<void> {
   try {
-    logger.info('[主进程] 开始异步初始化后台服务')
+    logger.debug('[主进程] 开始异步初始化后台服务')
 
-    // 1. 初始化 IPC 管理器（快速，同步）
+    // 1. 初始化数据库（优先初始化，确保数据存储可用）
+    try {
+      clipboardDatabase.initialize()
+      logger.debug('[主进程] 数据库初始化完成')
+    } catch (error) {
+      logger.error('[主进程] 数据库初始化失败:', error)
+      throw new Error('数据库初始化失败')
+    }
+
+    // 2. 初始化 IPC 管理器（快速，同步）
     ipcManager.initialize()
-    logger.info('[主进程] IPC 管理器初始化完成')
+    logger.debug('[主进程] IPC 管理器初始化完成')
 
-    // 2. 初始化剪贴板管理器（可能耗时）
+    // 3. 初始化剪贴板管理器（可能耗时）
     await clipboardManager.initialize({
       checkInterval: 200,
       enableAutoSave: true
     })
-    logger.info('[主进程] 剪贴板管理器初始化完成')
+    logger.debug('[主进程] 剪贴板管理器初始化完成')
 
-    // 3. 启动剪贴板监听
+    // 4. 启动剪贴板监听
     await clipboardManager.startListening()
-    logger.info('[主进程] 剪贴板监听启动完成')
+    logger.debug('[主进程] 剪贴板监听启动完成')
 
-    // 4. 设置系统休眠和唤醒事件监听
+    // 5. 设置系统休眠和唤醒事件监听
     setupPowerMonitor()
-    logger.info('[主进程] 电源监控设置完成')
+    logger.debug('[主进程] 电源监控设置完成')
 
-    // 5. 创建示例标签数据（仅在开发环境或首次运行时）
+    // 6. 创建示例标签数据（仅在开发环境或首次运行时）
     await createSampleTagsIfNeeded()
-    logger.info('[主进程] 示例标签数据创建完成')
+    logger.debug('[主进程] 示例标签数据创建完成')
 
-    // 6. 检查并同步自启状态
+    // 7. 检查并同步自启状态
     await syncAutoStartStatus()
-    logger.info('[主进程] 自启状态同步完成')
+    logger.debug('[主进程] 自启状态同步完成')
 
-    // 7. 预先创建 overlay 窗口（初始化状态，保持隐藏）
+    // 8. 预先创建 overlay 窗口（初始化状态，保持隐藏）
     createOverlayWindow()
-    logger.info('[主进程] Overlay 窗口创建完成')
+    logger.debug('[主进程] Overlay 窗口创建完成')
 
-    // 8. 最后初始化全局快捷键（确保所有依赖都已就绪）
+    // 9. 最后初始化全局快捷键（确保所有依赖都已就绪）
     // 注意：全局快捷键会在 overlay 窗口的 ready-to-show 事件中初始化
     // 这里不需要额外调用，因为 createOverlayWindow() 已经处理了
 
-    logger.info('[主进程] 后台服务初始化全部完成')
+    logger.debug('[主进程] 后台服务初始化全部完成')
   } catch (error) {
     logger.error('[主进程] 后台服务初始化失败:', error)
     // 即使部分初始化失败，也要确保应用能够正常运行
@@ -722,21 +734,21 @@ if (!gotTheLock) {
   // initialization and is ready to create browser windows.
   // Some APIs can only be used after this event occurs.
   app.whenReady().then(async () => {
-    logger.info('[主进程] Electron 准备就绪，开始应用初始化')
+    logger.debug('[主进程] Electron 准备就绪，开始应用初始化')
 
     // Set app user model id for windows
     electronApp.setAppUserModelId('com.v2dawn.sp')
 
     // 立即创建主窗口以提升启动速度
-    logger.info('[主进程] 优先创建主窗口以提升启动速度')
+    logger.debug('[主进程] 优先创建主窗口以提升启动速度')
     createWindow()
 
     // 创建任务栏图标（同步，快速）
-    logger.info('[主进程] 创建任务栏图标')
+    logger.debug('[主进程] 创建任务栏图标')
     createTray()
 
     // 异步初始化其他组件，不阻塞主窗口显示
-    logger.info('[主进程] 开始异步初始化后台服务')
+    logger.debug('[主进程] 开始异步初始化后台服务')
     initializeBackgroundServices()
 
     // Default open or close DevTools by F12 in development

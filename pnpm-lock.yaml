@@ -72,6 +72,9 @@ importers:
       eslint-plugin-vue:
         specifier: ^10.0.0
         version: 10.3.0(@typescript-eslint/parser@8.35.1(eslint@9.30.1)(typescript@5.8.3))(eslint@9.30.1)(vue-eslint-parser@10.2.0(eslint@9.30.1))
+      heapdump-prebuild:
+        specifier: ^0.0.6
+        version: 0.0.6
       pinia:
         specifier: ^3.0.3
         version: 3.0.3(typescript@5.8.3)(vue@3.5.17(typescript@5.8.3))
@@ -1946,6 +1949,10 @@ packages:
   he@1.2.0:
     resolution: {integrity: sha512-F/1DnUGPopORZi0ni+CvrCgHQ5FyEAHRLSApuYWMmrbSwoN2Mn/7k+Gl38gJnR7yyDZk6WLXwiGod1JOWNDKGw==}
     hasBin: true
+
+  heapdump-prebuild@0.0.6:
+    resolution: {integrity: sha512-3um2dkq2acMHVflSQ22R8k6Tu7J+b8Mdsjxgt8Dcbi9mgxtthWX+LkLHdtVjhlqKZ9PqLppk+BYp5e/X5JuWlw==}
+    engines: {node: '>=0.10.0'}
 
   hookable@5.5.3:
     resolution: {integrity: sha512-Yc+BQe8SvoXH1643Qez1zqLRmbA5rCL+sSmk6TVos0LWVfNIB7PGncdlId77WzLGSIB5KaWgTaNTs2lNVEI6VQ==}
@@ -5494,6 +5501,10 @@ snapshots:
       function-bind: 1.1.2
 
   he@1.2.0: {}
+
+  heapdump-prebuild@0.0.6:
+    dependencies:
+      prebuild-install: 7.1.3
 
   hookable@5.5.3: {}
 

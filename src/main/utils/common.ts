@@ -63,7 +63,7 @@ export class HashUtils {
 
   /**
    * 生成快速哈希（用于剪贴板变化检测）
-   * 不包含图片具体内容，只检查基本格式
+   * 不包含图片具体内容，只检查基本格式和图片基本信息
    */
   static generateQuickHash(content: {
     text?: string
@@ -71,13 +71,15 @@ export class HashUtils {
     rtf?: string
     bookmark?: string
     hasImage?: boolean
+    imageInfo?: { width: number; height: number; quickId: string }
   }): string {
     const quickContent = {
       text: content.text || undefined,
       html: content.html || undefined,
       rtf: content.rtf || undefined,
       bookmark: content.bookmark || undefined,
-      hasImage: content.hasImage
+      hasImage: content.hasImage,
+      imageInfo: content.imageInfo || undefined
     }
     return this.generateContentHash(quickContent)
   }

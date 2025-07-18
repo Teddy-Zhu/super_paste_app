@@ -907,12 +907,12 @@ const handleRichContentClick = (event: Event) => {
   /* border-radius: 12px;
   box-shadow:
     0 4px 8px rgba(0, 0, 0, 0.08),
-    0 2px 4px rgba(0, 0, 0, 0.06); */
-  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    0 2px 4px rgba(0, 0, 0, 0.06); 
+  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);*/
 }
 
 .card-image img:hover {
-  transform: scale(1.02);
+  /* transform: scale(1.02); */
 }
 
 .card-file {

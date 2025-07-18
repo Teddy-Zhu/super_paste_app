@@ -38,18 +38,15 @@ export type WorkerMessage = WorkerRequest | WorkerResponse | WorkerEvent
 // 历史记录清理器 Worker 方法
 export interface ClipboardHistoryCleanerWorkerMethods {
   // 配置管理
-  'updateConfig': (config: { maxKeepTime: number }) => void
+  'updateConfig': (config: { maxKeepTime: number; maxHistorySize?: number; enableCountBasedCleanup?: boolean }) => void
   'getConfig': () => any
-  
+
   // 清理操作
   'startAutoCleanup': () => void
   'stopAutoCleanup': () => void
   'performCleanup': () => Promise<any>
-  
-  // 内存数据同步
-  'setMemoryDataSyncCallback': () => void
-  'syncDeletedRecords': (deletedIds: string[]) => void
-  
+  'checkCountBasedCleanup': (maxHistorySize: number) => Promise<void>
+
   // 生命周期
   'initialize': () => void
   'destroy': () => void
@@ -106,12 +103,11 @@ export interface WorkerEvents {
   // 历史记录清理器事件
   'cleanup-completed': { stats: any }
   'cleanup-error': { error: string }
-  
+
   // 剪贴板管理器事件
   'clipboard-changed': { timestamp: number }
   'history-updated': { timestamp: number, source?: string }
-  'memory-sync-required': { deletedIds: string[] }
-  
+
   // 通用事件
   'worker-ready': {}
   'worker-error': { error: string }

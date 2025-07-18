@@ -130,6 +130,25 @@ export abstract class BaseWorkerManager extends EventEmitter implements WorkerMa
   }
 
   /**
+   * 导出 Worker 的内存快照
+   */
+  public async exportWorkerHeapdump(desktopPath: string): Promise<string | null> {
+    if (!this.isRunning()) {
+      logger.warn(`[${this.config.name}] Worker 未运行，跳过 heapdump 导出`)
+      return null
+    }
+
+    try {
+      const result = await this.call('exportHeapdump', desktopPath)
+      logger.info(`[${this.config.name}] Worker heapdump 导出成功:`, result)
+      return result
+    } catch (error) {
+      logger.error(`[${this.config.name}] Worker heapdump 导出失败:`, error)
+      return null
+    }
+  }
+
+  /**
    * 处理 Worker 消息
    */
   private handleWorkerMessage(message: WorkerMessage): void {

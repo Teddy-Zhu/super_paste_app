@@ -669,6 +669,36 @@ const syncClipboardListeningStatus = async () => {
   }
 }
 
+// 导出 heapdump
+const exportHeapdump = async () => {
+  try {
+    const result = await window.electron.ipcRenderer.invoke('export-heapdump')
+    if (result.success) {
+      // 构建详细的成功消息
+      let message = result.message
+      if (result.files && result.files.length > 1) {
+        message += '\n\n导出的文件：'
+        result.files.forEach((file: string, index: number) => {
+          const filename = file.split(/[/\\]/).pop() || file
+          message += `\n${index + 1}. ${filename}`
+        })
+      } else if (result.mainFile) {
+        const filename = result.mainFile.split(/[/\\]/).pop() || result.mainFile
+        message += `\n文件名: ${filename}`
+      }
+
+      alert(message)
+      console.log('heapdump 导出成功:', result)
+    } else {
+      alert(`导出失败: ${result.error}`)
+      console.error('heapdump 导出失败:', result.error)
+    }
+  } catch (error) {
+    console.error('导出 heapdump 失败:', error)
+    alert('导出失败: ' + (error as Error).message)
+  }
+}
+
 // 组件挂载时加载标签和同步剪贴板状态
 onMounted(() => {
   loadAllTags()
@@ -961,6 +991,19 @@ onUnmounted(() => {
             <div class="setting-control">
               <button class="test-button" @click="openOverlayWindow">
                 打开测试
+              </button>
+            </div>
+          </div>
+
+          <!-- 导出内存快照 -->
+          <div class="setting-card">
+            <div class="setting-info">
+              <h4 class="setting-title">导出内存快照</h4>
+              <p class="setting-description">导出当前应用的内存快照文件到桌面，用于内存分析和调试</p>
+            </div>
+            <div class="setting-control">
+              <button class="test-button" @click="exportHeapdump">
+                导出 Heapdump
               </button>
             </div>
           </div>
