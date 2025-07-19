@@ -39,11 +39,12 @@ export class MainWindowManager {
         minHeight: height,
         maxWidth: width,
         maxHeight: height,
-        show: false,
+        show: false, // 确保窗口创建时不显示
         center: true, // 窗口居中显示
         hasShadow: false,
         autoHideMenuBar: true,
         resizable: false, // 禁止调整大小
+        skipTaskbar: true, // 在 Windows 和 Linux 上不显示在任务栏
         ...(process.platform === 'linux' ? { icon: IconSelector.getWindowIcon() } : {}),
         webPreferences: {
           preload: join(__dirname, '../preload/index.js'),
@@ -55,6 +56,11 @@ export class MainWindowManager {
 
       this.setupEventHandlers()
       this.loadContent()
+
+      // 在 macOS 上创建窗口后立即隐藏 dock
+      if (process.platform === 'darwin') {
+        app.dock?.hide()
+      }
 
       logger.debug('[主进程] 主窗口创建完成')
     } catch (error) {

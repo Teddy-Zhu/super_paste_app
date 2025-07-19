@@ -475,47 +475,6 @@ const shortcutLabel = computed(() => {
   }
   return ''
 })
-
-// 禁用富文本内容中的所有跳转事件
-const handleRichContentClick = (event: Event) => {
-  const target = event.target as HTMLElement
-
-  // 检查所有可能触发跳转的元素
-  const interactiveElements = [
-    'A',           // 链接
-    'BUTTON',      // 按钮
-    'INPUT',       // 输入框
-    'SELECT',      // 下拉选择
-    'TEXTAREA',    // 文本域
-    'FORM',        // 表单
-    'AREA',        // 图像映射区域
-    'OBJECT',      // 嵌入对象
-    'EMBED',       // 嵌入内容
-    'IFRAME',      // 内嵌框架
-    'VIDEO',       // 视频
-    'AUDIO'        // 音频
-  ]
-
-  // 检查当前元素或其父元素是否为交互元素
-  const isInteractiveElement = interactiveElements.includes(target.tagName) ||
-    interactiveElements.some(tag => target.closest(tag.toLowerCase()))
-
-  // 检查是否有可能触发跳转的属性
-  const hasNavigationAttributes = target.hasAttribute('onclick') ||
-    target.hasAttribute('href') ||
-    target.hasAttribute('src') ||
-    target.hasAttribute('action') ||
-    target.hasAttribute('formaction') ||
-    target.style.cursor === 'pointer'
-
-  // 如果是交互元素或有导航属性，阻止默认行为
-  if (isInteractiveElement || hasNavigationAttributes) {
-    event.preventDefault()
-    return false
-  }
-
-  return
-}
 </script>
 
 <template>
@@ -549,8 +508,8 @@ const handleRichContentClick = (event: Event) => {
         <div
           class="rich-content"
           v-html="htmlContent"
-          @click="handleRichContentClick"
         ></div>
+        <div class="rich-content-overlay"></div>
       </div>
 
       <!-- RTF 内容预览 - 仅当没有 HTML 时使用 RTF 转换 -->
@@ -558,8 +517,8 @@ const handleRichContentClick = (event: Event) => {
         <div
           class="rich-content"
           v-html="rtfToHtml"
-          @click="handleRichContentClick"
         ></div>
+        <div class="rich-content-overlay"></div>
       </div>
 
       <!-- HTML 内容预览 -->
@@ -567,8 +526,8 @@ const handleRichContentClick = (event: Event) => {
         <div
           class="rich-content"
           v-html="htmlContent"
-          @click="handleRichContentClick"
         ></div>
+        <div class="rich-content-overlay"></div>
       </div>
 
       <!-- 颜色预览 -->
@@ -831,6 +790,7 @@ const handleRichContentClick = (event: Event) => {
 .card-rich-preview {
   flex: 1;
   overflow: hidden;
+  position: relative; /* 为遮罩层提供定位参考 */
   /* border-radius: 12px; */
   /* background: linear-gradient(135deg, rgba(248, 250, 252, 0.8) 0%, rgba(241, 245, 249, 0.8) 100%);
   border: 1px solid rgba(226, 232, 240, 0.6);
@@ -847,6 +807,20 @@ const handleRichContentClick = (event: Event) => {
   word-wrap: break-word;
   word-break: break-word;
   font-weight: 500;
+}
+
+/* 透明遮罩层，阻止所有交互 */
+.rich-content-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: transparent;
+  z-index: 10;
+  cursor: default;
+  /* 阻止所有鼠标和触摸事件 */
+  pointer-events: auto;
 }
 
 :global(.rich-content>*:first-child) {

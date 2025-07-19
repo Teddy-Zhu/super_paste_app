@@ -23,7 +23,6 @@ import { windowStateManager } from './ui/windows/window-state'
 import { SystemIntegrationService } from './system/initialization-services'
 import { IPCHandlerManager } from './communication/ipc-handlers'
 import { CLIPBOARD_CONFIG } from './config/constants'
-import { clipboard } from 'electron'
 // if (process.platform === 'darwin' && is.dev) {
 //   app.disableHardwareAcceleration()
 // }
@@ -32,6 +31,7 @@ import { clipboard } from 'electron'
  * 应用程序主类
  */
 class SuperPasteApp {
+  private isInitialized = false // 标记应用是否已完成初始化
 
   /**
    * 应用启动入口
@@ -49,6 +49,14 @@ class SuperPasteApp {
 
       // 初始化应用
       await this.initialize()
+
+      // 标记应用初始化完成
+      this.isInitialized = true
+
+      // 最后再次确保在 macOS 上 dock 是隐藏的
+      if (process.platform === 'darwin') {
+        app.dock?.hide()
+      }
 
       logger.info('[主进程] Super Paste 应用启动完成')
     } catch (error) {
@@ -108,7 +116,12 @@ class SuperPasteApp {
     // 设置应用用户模型 ID
     electronApp.setAppUserModelId('com.v2dawn.sp')
 
-    // 1. 立即创建主窗口以提升启动速度
+    // 在 macOS 上确保应用启动时 dock 是隐藏的
+    if (process.platform === 'darwin') {
+      app.dock?.hide()
+    }
+
+    // 1. 立即创建主窗口以提升启动速度（但不显示）
     this.createMainWindow()
 
     // 2. 创建系统托盘（同步，快速）
@@ -251,6 +264,12 @@ class SuperPasteApp {
   private setupAppEventListeners(): void {
     // macOS 特有的激活事件
     app.on('activate', () => {
+      // 只有在应用完全初始化后，且用户主动激活应用时才显示主窗口
+      // 这样可以避免在应用启动时自动显示窗口
+      if (!this.isInitialized) {
+        return
+      }
+      
       if (BrowserWindow.getAllWindows().length === 0) {
         mainWindowManager.createWindow()
       } else if (mainWindowManager.isValid()) {
