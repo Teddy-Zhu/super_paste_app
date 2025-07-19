@@ -24,7 +24,7 @@ let mainWindow: BrowserWindow | null = null
 let tray: Tray | null = null
 
 if (process.platform === 'darwin' && is.dev) {
-  app.disableHardwareAcceleration()
+  // app.disableHardwareAcceleration()
 }
 // Overlay窗口状态枚举
 enum OverlayState {

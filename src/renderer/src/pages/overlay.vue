@@ -2,7 +2,7 @@
 import { ref, nextTick, watch, onMounted, onUnmounted } from 'vue'
 import { send, onSimple } from '@renderer/api'
 import { clipboard } from '@renderer/api/renderer-api'
-import type { ClipboardItem, ClipboardHistoryQueryOptions } from '@renderer/api/types'
+import type { ClipboardItem, ClipboardHistoryQueryOptions, AppInfo } from '@renderer/api/types'
 import {
   OverlayError,
   OverlayErrorCode,
@@ -31,6 +31,7 @@ const tabsContainerRef = ref<HTMLElement>()
 
 // ==================== 核心状态 ====================
 const clipboardHistory = ref<ClipboardItem[]>([])
+const clipboardApps = ref<Record<string, AppInfo>>({})
 const selectedIndex = ref(0)
 
 // ==================== 快捷选择状态 ====================
@@ -69,18 +70,19 @@ const loadClipboardHistory = async (options?: ClipboardHistoryQueryOptions): Pro
     }
 
     const queryOptions = { ...defaultOptions, ...options }
-    const history = await clipboard.searchHistory(queryOptions)
+    const result = await clipboard.searchHistory(queryOptions)
 
-    if (!Array.isArray(history)) {
+    if (!Array.isArray(result.items)) {
       throw new OverlayError(
         '剪贴板历史数据格式无效：不是数组',
         OverlayErrorCode.CLIPBOARD_LOAD_FAILED,
-        { receivedType: typeof history, queryOptions }
+        { receivedType: typeof result.items, queryOptions }
       )
     }
 
-    const validHistory = history.filter(isClipboardItem)
+    const validHistory = result.items.filter(isClipboardItem)
     clipboardHistory.value = validHistory
+    clipboardApps.value = result.apps
 
     if (selectedIndex.value >= validHistory.length) {
       selectedIndex.value = Math.max(0, validHistory.length - 1)
@@ -94,6 +96,7 @@ const loadClipboardHistory = async (options?: ClipboardHistoryQueryOptions): Pro
   } catch (error) {
     console.error('获取剪贴板历史失败:', error)
     clipboardHistory.value = []
+    clipboardApps.value = {}
     selectedIndex.value = 0
   }
 }
@@ -740,6 +743,7 @@ onUnmounted(() => {
               :is-selected="index === selectedIndex" :is-quick-select-mode="isQuickSelectMode"
               :all-tags="scrollAndTagsManager.allTags.value"
               :active-tag-id="scrollAndTagsManager.activeTagId.value"
+              :apps="clipboardApps"
               @click="() => restoreClipboardContent(item.id)"
               @restore-as-text="() => restoreClipboardContentAsText(item.id)"
               @delete="() => deleteClipboardItem(item.id)" />

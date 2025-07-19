@@ -9,8 +9,8 @@ import type {
   ClipboardManagerConfig
 } from './types/clipboard-types'
 import type { WorkerConfig, WorkerRequest } from './types/worker-types'
-import ActiveWindow from '@paymoapp/active-window'
-import { clipboard, nativeImage } from 'electron'
+
+import { ClipboardManager as TeddyClipboardManager } from '@teddyzhu/clipboard'
 import logger from './utils/logger'
 import clipboardManagerWorkerPath from './workers/clipboard-manager.worker?modulePath'
 
@@ -20,6 +20,7 @@ import clipboardManagerWorkerPath from './workers/clipboard-manager.worker?modul
  */
 class ClipboardManager extends BaseWorkerManager {
   private static instance: ClipboardManager
+  private clipboard: TeddyClipboardManager
 
   private constructor() {
     const config: WorkerConfig = {
@@ -28,22 +29,8 @@ class ClipboardManager extends BaseWorkerManager {
     }
     super(config)
 
-
-
-    // 初始化 ActiveWindow
-    try {
-      ActiveWindow.initialize()
-      // 在 macOS 上请求屏幕录制权限
-      if (process.platform === 'darwin') {
-        const hasPermission = ActiveWindow.requestPermissions()
-        if (!hasPermission) {
-          logger.warn('[剪贴板管理器] macOS 需要屏幕录制权限才能获取窗口标题')
-        }
-      }
-
-    } catch (error) {
-      logger.error('[剪贴板管理器] ActiveWindow 初始化失败:', error)
-    }
+    // 初始化剪贴板管理器
+    this.clipboard = new TeddyClipboardManager()
 
     // 设置事件监听器
     this.setupEventListeners()
@@ -130,24 +117,11 @@ class ClipboardManager extends BaseWorkerManager {
       } else {
         switch (request.method) {
           // 剪贴板操作
-          case 'clipboard-readAll':
-            // console.log('read clipboard from main thread', new Date().toDateString())
-            result = this.readAllClipboard()
-            // console.log('read clipboard from main thread done', new Date().toDateString())
-            break
-          case 'clipboard-readContent':
-            result = this.readClipboardContent()
-            break
           case 'clipboard-restore':
             result = this.restoreClipboardContent(request.params)
             break
           case 'clipboard-restore-as-text':
             result = this.restoreClipboardContentAsText(request.params)
-            break
-
-          // 活动窗口操作
-          case 'activeWindow-getActiveWindow':
-            result = this.getActiveWindow()
             break
 
           default:
@@ -190,93 +164,7 @@ class ClipboardManager extends BaseWorkerManager {
 
   // ==================== 剪贴板操作方法 ====================
 
-  private readAllClipboard(): any {
-    try {
-      // 检查文本内容
-      const text = clipboard.readText()
-      const html = clipboard.readHTML()
-      const rtf = clipboard.readRTF()
-      const bookmark = clipboard.readBookmark()
 
-      // 检查图片
-      const image = clipboard.readImage()
-      const hasImage = !image.isEmpty()
-
-      const result: any = {
-        text: text || undefined,
-        html: html || undefined,
-        rtf: rtf || undefined,
-        bookmark: bookmark?.title ? bookmark : undefined,
-        hasImage: hasImage
-      }
-
-      // 如果有图片，添加图片的基本信息用于快速变化检测
-      if (hasImage) {
-        const size = image.getSize()
-        result.imageInfo = {
-          width: size.width,
-          height: size.height,
-          // 使用图片的简单标识符：尺寸 + 数据长度
-          quickId: `${size.width}x${size.height}_${image.toDataURL().length}`
-        }
-      }
-
-      // 如果需要包含图片内容且有图片，则读取图片数据
-      if(hasImage) {
-        result.image = image.toDataURL()
-      }
-
-      return result
-    } catch (error) {
-      logger.error('[剪贴板管理器] 读取剪贴板失败:', error)
-
-      // 如果是系统刚从休眠恢复，剪贴板API可能暂时不可用
-      if (error instanceof Error) {
-        logger.warn('[剪贴板管理器] 剪贴板API调用失败，可能系统刚从休眠恢复:', error.message)
-      }
-
-      return {}
-    }
-  }
-
-  private readClipboardContent(): ClipboardContent {
-    const content: ClipboardContent = {}
-
-    try {
-      // 获取文本内容
-      const text = clipboard.readText()
-      if (text) content.text = text
-
-      // 获取HTML内容
-      const html = clipboard.readHTML()
-      if (html) content.html = html
-
-      // 获取RTF内容
-      const rtf = clipboard.readRTF()
-      if (rtf) content.rtf = rtf
-
-      // 获取书签内容
-      const bookmark = clipboard.readBookmark()
-      if (bookmark && bookmark.title) {
-        content.bookmark = JSON.stringify(bookmark)
-      }
-
-      // 获取图片内容（转为base64）
-      const image = clipboard.readImage()
-      if (!image.isEmpty()) {
-        content.image = image.toDataURL()
-      }
-    } catch (error) {
-      logger.error('[剪贴板管理器] 读取剪贴板内容失败:', error)
-
-      // 如果是系统刚从休眠恢复，剪贴板API可能暂时不可用
-      if (error instanceof Error) {
-        logger.warn('[剪贴板管理器] 剪贴板内容读取失败，可能系统刚从休眠恢复:', error.message)
-      }
-    }
-
-    return content
-  }
 
   public restoreClipboardContent(params: { content: ClipboardContent }): boolean {
     try {
@@ -287,50 +175,38 @@ class ClipboardManager extends BaseWorkerManager {
       }
 
       const content = params.content
+      let hasContent = false
 
-      // 使用 Electron 的 clipboard.write 方法一次性设置所有格式
-      const clipboardData: any = {}
-
+      // 使用 @teddyzhu/clipboard 分别设置各种格式
       if (content.text) {
-        clipboardData.text = content.text
+        this.clipboard.setText(content.text)
+        hasContent = true
       }
 
       if (content.html) {
-        clipboardData.html = content.html
+        this.clipboard.setHtml(content.html)
+        hasContent = true
       }
 
       if (content.rtf) {
-        clipboardData.rtf = content.rtf
+        this.clipboard.setRichText(content.rtf)
+        hasContent = true
       }
 
       if (content.image) {
         try {
-          const image = nativeImage.createFromDataURL(content.image)
-          if (!image.isEmpty()) {
-            clipboardData.image = image
-          }
+          this.clipboard.setImageBase64(content.image)
+          hasContent = true
         } catch (e) {
           logger.warn('[剪贴板管理器] 处理图片数据失败: %s', e)
         }
       }
 
-      // 一次性写入所有格式
-      if (Object.keys(clipboardData).length > 0) {
-        clipboard.write(clipboardData)
-      }
-
-      // 单独处理书签（因为 write 方法不支持书签）
+      // @teddyzhu/clipboard 不支持书签，跳过书签处理
       if (content.bookmark) {
-        try {
-          const bookmark = JSON.parse(content.bookmark)
-          clipboard.writeBookmark(bookmark.title, bookmark.url)
-        } catch (e) {
-          logger.warn('[剪贴板管理器] 设置书签失败:', e)
-        }
+        logger.warn('[剪贴板管理器] @teddyzhu/clipboard 不支持书签格式，跳过书签设置')
       }
 
-      // 检查是否有任何内容被设置
-      const hasContent = Object.keys(clipboardData).length > 0 || content.bookmark
       if (!hasContent) {
         logger.warn('[剪贴板管理器] 警告: 没有有效的剪贴板内容可以还原')
       }
@@ -354,7 +230,7 @@ class ClipboardManager extends BaseWorkerManager {
 
       // 只设置纯文本格式，去除所有其他格式
       if (content.text && content.text.trim()) {
-        clipboard.writeText(content.text)
+        this.clipboard.setText(content.text)
         return true
       } else {
         logger.warn('[剪贴板管理器] 内容中没有有效的文本数据，无法设置为纯文本')
@@ -363,17 +239,6 @@ class ClipboardManager extends BaseWorkerManager {
     } catch (error) {
       logger.error('[剪贴板管理器] 还原剪贴板为纯文本失败:', error)
       return false
-    }
-  }
-
-  // ==================== 活动窗口操作方法 ====================
-
-  private getActiveWindow(): any {
-    try {
-      return ActiveWindow.getActiveWindow()
-    } catch (error) {
-      logger.error('[剪贴板管理器] 获取活动窗口失败:', error)
-      return {}
     }
   }
 
@@ -424,52 +289,6 @@ class ClipboardManager extends BaseWorkerManager {
     }
   }
 
-
-
-
-
-
-
-  /**
-   * 手动设置剪贴板内容（不触发监控）
-   */
-  public async setClipboardContent(_: ClipboardContent, updateHash: boolean = true): Promise<boolean> {
-    try {
-      // 这个方法需要在主线程中实现，因为涉及到剪贴板 API
-      // 暂停监听以避免触发变更检测
-      const wasListening = await this.isListeningActive()
-      if (wasListening) {
-        await this.stopListening()
-      }
-
-      try {
-        // 实现剪贴板设置逻辑（从原文件复制）
-        // 这里需要实现具体的剪贴板设置逻辑
-
-        // 更新内部哈希值以保持同步
-        if (updateHash) {
-          await this.call('syncClipboardHash')
-        }
-
-        return true
-      } finally {
-        // 恢复监听状态
-        if (wasListening) {
-          setTimeout(async () => {
-            await this.startListening()
-          }, 150)
-        }
-      }
-    } catch (error) {
-      logger.error('[剪贴板管理器] 设置剪贴板内容失败:', error)
-      return false
-    }
-  }
-
-
-
-
-
   /**
    * 同步删除记录状态到 Worker
    */
@@ -482,8 +301,6 @@ class ClipboardManager extends BaseWorkerManager {
       logger.error('[剪贴板管理器] 同步删除记录状态失败:', error)
     }
   }
-
-
 
   /**
    * 获取配置
@@ -616,30 +433,7 @@ class ClipboardManager extends BaseWorkerManager {
     }
   }
 
-  /**
-   * 测试剪贴板功能
-   */
-  public testClipboard(): void {
-    // 这个方法需要在主线程中实现，因为涉及到剪贴板 API
-    try {
-      // 实现测试逻辑
-    } catch (error) {
-      logger.error('[剪贴板管理器] 测试剪贴板功能失败:', error)
-    }
-  }
 
-  /**
-   * 验证剪贴板内容是否可用
-   */
-  public verifyClipboardContent(): { isValid: boolean; details: any } {
-    // 这个方法需要在主线程中实现，因为涉及到剪贴板 API
-    try {
-      return { isValid: true, details: {} }
-    } catch (error) {
-      logger.error('[剪贴板管理器] 验证剪贴板内容失败:', error)
-      return { isValid: false, details: { error: error instanceof Error ? error.message : String(error) } }
-    }
-  }
 
   // ==================== 标签管理方法 ====================
 

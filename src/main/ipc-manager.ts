@@ -101,20 +101,12 @@ class IpcManager {
       orderDirection?: 'ASC' | 'DESC'
     }) => {
       try {
-        // 如果没有传入筛选选项，使用原有的简单获取方法
-        if (!options || (Object.keys(options).length === 1 && 'limit' in options)) {
-          const history = await clipboardHistoryService.getHistory(options?.limit)
-          return {
-            success: true,
-            data: history
-          }
-        }
-
-        // 使用新的搜索方法
-        const history = await clipboardHistoryService.searchHistory(options)
+        // 统一使用搜索方法
+        const result = await clipboardHistoryService.searchHistory(options || {})
         return {
           success: true,
-          data: history
+          data: result.items,
+          apps: result.apps
         }
       } catch (error) {
         logger.error('[IPC管理器] 获取剪贴板历史失败:', error)
@@ -220,8 +212,8 @@ class IpcManager {
       try {
         const isListening = await clipboardManager.isListeningActive()
         const config = await clipboardManager.getConfig()
-        const history = await clipboardHistoryService.getHistory()
-        const historyCount = history.length
+        const historyResult = await clipboardHistoryService.searchHistory({ limit: 1 })
+        const historyCount = historyResult.items.length
 
         return {
           success: true,

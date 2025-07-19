@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { ClipboardItem, TagGroup } from '@renderer/api/types'
+import type { ClipboardItem, TagGroup, AppInfo } from '@renderer/api/types'
 import { computed, ref } from 'vue'
 import { convertRtfToHtml } from 'rtf-to-html-converter'
 import DOMPurify from 'dompurify'
@@ -21,6 +21,7 @@ interface Props {
   isQuickSelectMode: boolean
   allTags?: TagGroup[]
   activeTagId?: string
+  apps?: Record<string, AppInfo>
 }
 
 const props = defineProps<Props>()
@@ -30,6 +31,14 @@ const emit = defineEmits<{
   restoreAsText: [itemId: string]
   delete: [itemId: string]
 }>()
+
+// 计算当前项目的应用信息
+const sourceAppInfo = computed(() => {
+  if (!props.item.source_app || !props.apps) {
+    return null
+  }
+  return props.apps[props.item.source_app] || null
+})
 
 // 计算 RTF 内容的 HTML 表示（使用 rtf-to-html-converter 和 DOMPurify）
 const rtfToHtml = computed(() => {
@@ -531,8 +540,8 @@ const handleRichContentClick = (event: Event) => {
         <span class="time-label">{{ formatTime(item.timestamp) }}</span>
       </div>
       <!-- 应用图标独占右上角 -->
-      <div v-if="item.sourceAppInfo?.icon" class="app-icon">
-        <img :src="item.sourceAppInfo.icon" :alt="item.sourceAppInfo.application" />
+      <div v-if="sourceAppInfo?.icon" class="app-icon">
+        <img :src="sourceAppInfo.icon" :alt="sourceAppInfo.application" />
       </div>
     </div>
 
@@ -576,7 +585,7 @@ const handleRichContentClick = (event: Event) => {
 
       <!-- 图片预览 -->
       <div class="card-image" v-else-if="item.parseType === 'image' && item.content.image">
-        <img :src="item.content.image" alt="Image preview" @load="handleImageLoad" />
+        <img :src="'data:image/png;base64,' +item.content.image" alt="Image preview" @load="handleImageLoad" />
       </div>
 
       <!-- 文件路径预览 -->

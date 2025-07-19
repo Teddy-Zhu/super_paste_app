@@ -1,7 +1,8 @@
 import databaseService from './database-service'
 import type {
   ClipboardItem,
-  ClipboardContent
+  ClipboardContent,
+  AppInfo
 } from '../types/clipboard-types'
 import { ClipboardDataConverter } from '../types/clipboard-types'
 import log from 'electron-log'
@@ -11,23 +12,7 @@ import log from 'electron-log'
  * 负责历史记录的查询、管理和标签操作
  */
 class ClipboardHistoryService {
-  /**
-   * 获取历史记录
-   */
-  public async getHistory(limit?: number): Promise<ClipboardItem[]> {
-    try {
-      const recordsWithTags = await databaseService.queryRecordsWithTags({
-        limit: limit || 100,
-        orderBy: 'last_used',
-        orderDirection: 'DESC'
-      })
 
-      return ClipboardDataConverter.batchRecordsToItems(recordsWithTags)
-    } catch (error) {
-      log.error('[剪贴板历史服务] 获取历史记录失败:', error)
-      return []
-    }
-  }
 
   /**
    * 还原指定的剪贴板内容到当前剪贴板
@@ -161,44 +146,11 @@ class ClipboardHistoryService {
     }
   }
 
-  /**
-   * 按标签筛选历史记录
-   */
-  public async getRecordsByTags(tagIds: string[]): Promise<ClipboardItem[]> {
-    try {
-      const recordsWithTags = await databaseService.queryRecordsWithTags({
-        tagIds,
-        orderBy: 'last_used',
-        orderDirection: 'DESC'
-      })
 
-      return ClipboardDataConverter.batchRecordsToItems(recordsWithTags)
-    } catch (error) {
-      log.error('[剪贴板历史服务] 按标签筛选记录失败:', error)
-      return []
-    }
-  }
-
-  /**
-   * 按解析类型筛选历史记录
-   */
-  public async getRecordsByParseType(parseType: string): Promise<ClipboardItem[]> {
-    try {
-      const recordsWithTags = await databaseService.queryRecordsWithTags({
-        parseType,
-        orderBy: 'last_used',
-        orderDirection: 'DESC'
-      })
-
-      return ClipboardDataConverter.batchRecordsToItems(recordsWithTags)
-    } catch (error) {
-      log.error('[剪贴板历史服务] 按解析类型筛选记录失败:', error)
-      return []
-    }
-  }
 
   /**
    * 搜索历史记录（支持标签和内容筛选）
+   * 返回包含历史记录和所有应用信息的结构
    */
   public async searchHistory(options: {
     limit?: number
@@ -208,7 +160,10 @@ class ClipboardHistoryService {
     searchText?: string
     orderBy?: 'timestamp' | 'last_used'
     orderDirection?: 'ASC' | 'DESC'
-  } = {}): Promise<ClipboardItem[]> {
+  } = {}): Promise<{
+    items: ClipboardItem[]
+    apps: Record<string, AppInfo>
+  }> {
     try {
       const recordsWithTags = await databaseService.queryRecordsWithTags({
         limit: options.limit,
@@ -220,10 +175,21 @@ class ClipboardHistoryService {
         orderDirection: options.orderDirection || 'DESC'
       })
 
-      return ClipboardDataConverter.batchRecordsToItems(recordsWithTags)
+      const items = ClipboardDataConverter.batchRecordsToItems(recordsWithTags)
+
+      // 收集所有应用信息
+      const apps: Record<string, AppInfo> = {}
+      for (const record of recordsWithTags) {
+        if (record.appInfo) {
+          const appInfo = ClipboardDataConverter.appRecordToAppInfo(record.appInfo)
+          apps[appInfo.id] = appInfo
+        }
+      }
+
+      return { items, apps }
     } catch (error) {
       log.error('[剪贴板历史服务] 搜索历史记录失败:', error)
-      return []
+      return { items: [], apps: {} }
     }
   }
 

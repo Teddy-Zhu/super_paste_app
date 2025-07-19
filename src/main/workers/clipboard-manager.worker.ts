@@ -1,6 +1,7 @@
 import { parentPort } from 'node:worker_threads'
 import { HashUtils } from '../utils/common'
 import { BaseWorker } from './base-worker'
+import { ClipboardManager as TeddyClipboardManager, ClipboardListener, ClipboardData } from '@teddyzhu/clipboard'
 import type {
   WorkerMessage,
   WorkerRequest,
@@ -13,15 +14,19 @@ import type {
   AppInfo
 } from '../types/clipboard-types'
 import { ClipboardDataConverter } from '../types/clipboard-types'
+import ActiveWindow from '@paymoapp/active-window'
 
 class ClipboardManagerWorker extends BaseWorker {
   private config: ClipboardManagerConfig
+  private clipboard: TeddyClipboardManager
+  private clipboardListener: ClipboardListener
   private isListening: boolean = false
   private checkTimer: NodeJS.Timeout | null = null
   private lastClipboardHash: string = ''
   private lastQuickHash: string = ''
   private lastItemId: string = ''
   private lastItemHash: string = ''
+  private activeWindowInitialized: boolean = false
 
   // 历史记录缓存：hash -> { id, hash }
   private historyCache: Map<string, { id: string, hash: string }> = new Map()
@@ -36,10 +41,98 @@ class ClipboardManagerWorker extends BaseWorker {
       checkInterval: 200,
       enableAutoSave: false
     }
+
+    // 初始化剪贴板管理器
+    this.clipboard = new TeddyClipboardManager()
+
+    // 初始化剪贴板监听器
+    this.clipboardListener = new ClipboardListener()
+
+    // 初始化 ActiveWindow
+    this.initializeActiveWindow()
   }
 
   protected getWorkerName(): string {
     return '剪贴板变化检测 Worker'
+  }
+
+  /**
+   * 直接读取剪贴板内容（使用 @teddyzhu/clipboard）
+   * 现在使用新的 getImageData API 获取完整的图片信息
+   */
+  private readClipboardDirect(): any {
+    try {
+      const text = this.clipboard.getText()
+      const html = this.clipboard.getHtml()
+      const rtf = this.clipboard.getRichText()
+
+      // 使用新的 getImageData API 获取完整图片信息
+      let imageData: any = null
+      let hasImage = false
+
+      try {
+        imageData = this.clipboard.getImageData()
+        hasImage = !!(imageData && imageData.base64Data)
+      } catch (e) {
+        // 如果没有图片或获取失败，使用旧的 API
+        const imageBase64 = this.clipboard.getImageBase64()
+        hasImage = !!imageBase64
+        if (hasImage) {
+          imageData = {
+            width: 0,
+            height: 0,
+            size: imageBase64.length,
+            base64Data: imageBase64
+          }
+        }
+      }
+
+      const result: any = {
+        text: text || undefined,
+        html: html || undefined,
+        rtf: rtf || undefined,
+        hasImage: hasImage
+      }
+
+      // @teddyzhu/clipboard 不支持书签
+      result.bookmark = undefined
+
+      // 如果有图片，添加图片的基本信息用于快速变化检测
+      if (hasImage && imageData) {
+        result.imageInfo = {
+          width: imageData.width || 0,
+          height: imageData.height || 0,
+          quickId: `${imageData.width || 0}x${imageData.height || 0}_${imageData.size || 0}`
+        }
+        result.image = imageData.base64Data
+      }
+
+      return result
+    } catch (error) {
+      console.error('[剪贴板管理器 Worker] 直接读取剪贴板失败:', error)
+      return {}
+    }
+  }
+
+  /**
+   * 初始化 ActiveWindow
+   */
+  private initializeActiveWindow(): void {
+    try {
+      ActiveWindow.initialize()
+      // 在 macOS 上请求屏幕录制权限
+      if (process.platform === 'darwin') {
+        const hasPermission = ActiveWindow.requestPermissions()
+        if (!hasPermission) {
+          console.warn('[剪贴板管理器 Worker] macOS 需要屏幕录制权限才能获取窗口标题')
+        }
+      }
+      this.activeWindowInitialized = true
+      console.log('[剪贴板管理器 Worker] ActiveWindow 初始化成功')
+    } catch (error) {
+      console.error('[剪贴板管理器 Worker] ActiveWindow 初始化失败:', error)
+      this.activeWindowInitialized = false
+    }
   }
 
   public async initialize(config?: Partial<ClipboardManagerConfig>): Promise<void> {
@@ -53,8 +146,8 @@ class ClipboardManagerWorker extends BaseWorker {
 
       // 数据库已在主进程中初始化，直接加载最后一项信息
       await this.loadLastItemInfo()
-      // 一次性获取剪贴板数据进行初始化
-      const clipboardData = await this.callMainThread('clipboard-readAll')
+      // 直接获取剪贴板数据进行初始化
+      const clipboardData = this.readClipboardDirect()
       this.lastClipboardHash = await this.generateClipboardHashFromData(clipboardData)
       this.checkQuickClipboardChange(clipboardData)
     } catch (error) {
@@ -66,15 +159,22 @@ class ClipboardManagerWorker extends BaseWorker {
     if (this.isListening) return
 
     this.isListening = true
-    this.checkTimer = setInterval(async () => {
-      await this.checkClipboardChange()
-    }, this.config.checkInterval)
+
+    // 使用 ClipboardListener 监听剪贴板变化
+    this.clipboardListener.watch((data: ClipboardData) => {
+      this.handleClipboardChange(data)
+    })
   }
 
   public stopListening(): void {
     if (!this.isListening) return
 
     this.isListening = false
+
+    // 停止 ClipboardListener
+    this.clipboardListener.stop()
+
+    // 清理定时器（如果有的话）
     if (this.checkTimer) {
       clearInterval(this.checkTimer)
       this.checkTimer = null
@@ -82,17 +182,17 @@ class ClipboardManagerWorker extends BaseWorker {
   }
 
   /**
-   * 检查剪贴板变化 - 优化版本
-   * 每次检查只获取一次剪贴板内容，避免重复读取
+   * 处理剪贴板变化（使用 ClipboardListener 回调）
    */
-  private async checkClipboardChange(): Promise<void> {
+  private async handleClipboardChange(data: ClipboardData): Promise<void> {
     try {
       if (this.isInErrorBackoff()) return
 
-      // 一次性获取所有剪贴板内容（不包含图片数据，仅检查是否有图片）
-      console.log('read clipboard from main thread', new Date().toDateString())
-      const clipboardData = await this.callMainThread('clipboard-readAll')
-      console.log('check quick hash', new Date().toDateString())
+      console.log('clipboard changed via listener', new Date().toDateString())
+
+      // 将 ClipboardData 转换为内部格式
+      const clipboardData = this.convertClipboardData(data)
+
       // 检查快速变化（基于文本、HTML、RTF、书签和图片存在性）
       const hasQuickChange = this.checkQuickClipboardChange(clipboardData)
       if (!hasQuickChange) {
@@ -101,14 +201,14 @@ class ClipboardManagerWorker extends BaseWorker {
       }
       console.log('quick failed , check full hash', new Date().toDateString())
 
-      // 生成完整内容哈希（如果有图片会额外获取图片数据）
+      // 生成完整内容哈希
       const currentHash = await this.generateClipboardHashFromData(clipboardData)
       console.log('full hash', currentHash)
       if (currentHash && currentHash !== this.lastClipboardHash) {
         this.lastClipboardHash = currentHash
 
         if (this.config.enableAutoSave) {
-          // 从已获取的数据构建完整内容（复用已获取的数据）
+          // 从已获取的数据构建完整内容
           console.log('build content from data', new Date().toDateString())
           const clipboardContent = await this.buildClipboardContentFromData(clipboardData)
           console.log('save clipboard item', new Date().toDateString())
@@ -123,6 +223,34 @@ class ClipboardManagerWorker extends BaseWorker {
     } catch (error) {
       this.handleCheckError(error, '剪贴板检查')
     }
+  }
+
+  /**
+   * 将 ClipboardData 转换为内部使用的格式
+   */
+  private convertClipboardData(data: ClipboardData): any {
+    const result: any = {
+      text: data.text || undefined,
+      html: data.html || undefined,
+      rtf: data.rtf || undefined,
+      hasImage: !!data.image
+    }
+
+    // 处理书签 - @teddyzhu/clipboard 不支持书签
+    result.bookmark = undefined
+
+    // 处理图片数据
+    if (data.image) {
+      const imageData = data.image as any // 类型断言，因为 ImageData 接口包含这些属性
+      result.imageInfo = {
+        width: imageData.width || 0,
+        height: imageData.height || 0,
+        quickId: `${imageData.width || 0}x${imageData.height || 0}_${imageData.size || 0}`
+      }
+      result.image = imageData.base64Data || imageData
+    }
+
+    return result
   }
 
   /**
@@ -502,9 +630,9 @@ class ClipboardManagerWorker extends BaseWorker {
 
   public async syncClipboardHash(): Promise<void> {
     try {
-      // 优先使用一次性获取方式
+      // 直接获取剪贴板数据
       try {
-        const clipboardData = await this.callMainThread('clipboard-readAll')
+        const clipboardData = this.readClipboardDirect()
         this.lastClipboardHash = await this.generateClipboardHashFromData(clipboardData)
         this.checkQuickClipboardChange(clipboardData)
       } catch (error) {
@@ -518,8 +646,8 @@ class ClipboardManagerWorker extends BaseWorker {
 
   public async getCurrentClipboard(): Promise<ClipboardContent> {
     try {
-      // 优先使用一次性获取方式
-      const clipboardData = await this.callMainThread('clipboard-readAll')
+      // 直接获取剪贴板数据
+      const clipboardData = this.readClipboardDirect()
       return await this.buildClipboardContentFromData(clipboardData)
     } catch (error) {
       console.error('[剪贴板管理器] 获取当前剪贴板内容失败:', error)
@@ -529,7 +657,12 @@ class ClipboardManagerWorker extends BaseWorker {
 
   private async getCurrentAppInfo(): Promise<AppInfo | undefined> {
     try {
-      const activeWindow = await this.callMainThread('activeWindow-getActiveWindow')
+      // 检查 ActiveWindow 是否已初始化
+      if (!this.activeWindowInitialized) {
+        return undefined
+      }
+
+      const activeWindow = ActiveWindow.getActiveWindow()
 
       if (!activeWindow.application || !activeWindow.path) {
         return undefined

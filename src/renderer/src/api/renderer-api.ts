@@ -24,6 +24,7 @@ import type {
   ClipboardManagerConfig,
   ClipboardIpcResponse,
   ClipboardHistoryQueryOptions,
+  ClipboardHistoryResult,
   TagGroup,
   TagStats,
   AppInfo,
@@ -55,23 +56,23 @@ export const store: StoreOperations = {
  * 剪贴板操作封装
  */
 export const clipboard: ClipboardOperations = {
-  async getHistory(options?: ClipboardHistoryQueryOptions | number): Promise<ClipboardItem[]> {
+  async getHistory(options?: ClipboardHistoryQueryOptions | number): Promise<ClipboardHistoryResult> {
     // 向后兼容：如果传入的是数字，转换为 limit 参数
     const queryOptions = typeof options === 'number' ? { limit: options } : options
 
     const result: ClipboardIpcResponse<ClipboardItem[]> = await invoke('clipboard-get-history', queryOptions)
     if (result.success) {
-      return result.data || []
+      return {
+        items: result.data || [],
+        apps: result.apps || {}
+      }
     }
     throw new Error(result.error || '获取剪贴板历史失败')
   },
 
-  async searchHistory(options: ClipboardHistoryQueryOptions): Promise<ClipboardItem[]> {
-    const result: ClipboardIpcResponse<ClipboardItem[]> = await invoke('clipboard-get-history', options)
-    if (result.success) {
-      return result.data || []
-    }
-    throw new Error(result.error || '搜索剪贴板历史失败')
+  // searchHistory 现在是 getHistory 的别名
+  searchHistory(options: ClipboardHistoryQueryOptions): Promise<ClipboardHistoryResult> {
+    return this.getHistory(options)
   },
 
   async restore(itemId: string): Promise<boolean> {

@@ -47,7 +47,7 @@ export interface ClipboardItem {
   lastUsed: number
   parseType: string // 解析类型字段（必填）
   tags?: TagGroup[] // 绑定的标签列表
-  sourceAppInfo?: AppInfo // 来源应用信息
+  source_app?: string // 原始的来源应用ID字段
 }
 
 /**
@@ -174,7 +174,7 @@ export class ClipboardDataConverter {
   /**
    * 将数据库记录转换为内存中的剪贴板项
    */
-  static recordToItem(record: ClipboardHistoryRecord, tags?: TagGroup[], sourceAppInfo?: AppInfo): ClipboardItem {
+  static recordToItem(record: ClipboardHistoryRecord, tags?: TagGroup[]): ClipboardItem {
     const content: ClipboardContent = {}
     if (record.content_text) content.text = record.content_text
     if (record.content_html) content.html = record.content_html
@@ -191,7 +191,7 @@ export class ClipboardDataConverter {
       lastUsed: record.last_used,
       parseType: record.parse_type,
       tags: tags || [],
-      sourceAppInfo: sourceAppInfo
+      source_app: record.source_app // 包含原始的来源应用ID字段
     }
   }
 
@@ -224,7 +224,7 @@ export class ClipboardDataConverter {
       timestamp: item.timestamp,
       last_used: item.lastUsed,
       parse_type: item.parseType,
-      source_app: item.sourceAppInfo?.id
+      source_app: item.source_app
     }
   }
 
@@ -476,13 +476,12 @@ export class ClipboardDataConverter {
 
   /**
    * 批量转换数据库记录到剪贴板项
-   * 统一处理标签和应用信息的转换逻辑
+   * 统一处理标签转换逻辑
    */
   static batchRecordsToItems(records: Array<ClipboardHistoryRecord & { tags?: TagGroupRecord[], appInfo?: AppInfoRecord }>): ClipboardItem[] {
     return records.map(record => {
       const tags = record.tags?.map(tag => this.tagRecordToTag(tag)) || []
-      const appInfo = record.appInfo ? this.appRecordToAppInfo(record.appInfo) : undefined
-      return this.recordToItem(record, tags, appInfo)
+      return this.recordToItem(record, tags)
     })
   }
 

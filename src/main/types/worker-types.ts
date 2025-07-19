@@ -66,14 +66,10 @@ export interface ClipboardManagerWorkerMethods {
   
   // 剪贴板操作
   'getCurrentClipboard': () => any
-  'setClipboardContent': (content: any, updateHash?: boolean) => boolean
-  'restoreClipboard': (itemId: string) => boolean
-  'restoreClipboardAsText': (itemId: string) => boolean
   'syncClipboardHash': () => void
   'resetErrorState': () => void
 
   // 历史记录管理
-  'getHistory': (limit?: number) => any[]
   'deleteHistoryItem': (itemId: string) => boolean
   'clearHistory': () => void
   'searchHistory': (options: any) => any[]
@@ -93,9 +89,7 @@ export interface ClipboardManagerWorkerMethods {
   'updateMaxHistorySizeFromStore': () => void
   'updateMaxKeepTimeFromStore': () => void
   
-  // 测试和验证
-  'testClipboard': () => void
-  'verifyClipboardContent': () => any
+
 }
 
 // Worker 事件类型

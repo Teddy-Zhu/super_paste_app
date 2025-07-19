@@ -182,7 +182,7 @@ export interface ClipboardItem {
   lastUsed: number
   parseType: string // 解析类型字段（必填）
   tags?: TagGroup[] // 绑定的标签列表
-  sourceAppInfo?: AppInfo // 来源应用信息
+  source_app?: string // 原始的来源应用ID字段
 }
 
 // 剪贴板历史查询选项
@@ -214,16 +214,23 @@ export interface ClipboardStatus {
 export interface ClipboardIpcResponse<T = any> {
   success: boolean
   data?: T
+  apps?: Record<string, AppInfo> // 应用信息映射
   message?: string
   error?: string
 }
 
 
 
+// 剪贴板历史查询结果类型
+export interface ClipboardHistoryResult {
+  items: ClipboardItem[]
+  apps: Record<string, AppInfo>
+}
+
 // 剪贴板操作类型
 export interface ClipboardOperations {
-  getHistory(options?: ClipboardHistoryQueryOptions | number): Promise<ClipboardItem[]>
-  searchHistory(options: ClipboardHistoryQueryOptions): Promise<ClipboardItem[]>
+  getHistory(options?: ClipboardHistoryQueryOptions | number): Promise<ClipboardHistoryResult>
+  searchHistory(options: ClipboardHistoryQueryOptions): Promise<ClipboardHistoryResult>
   restore(itemId: string): Promise<boolean>
   restoreAsText(itemId: string): Promise<boolean>
   deleteItem(itemId: string): Promise<boolean>
