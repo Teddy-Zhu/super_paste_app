@@ -23,9 +23,9 @@ import { windowStateManager } from './ui/windows/window-state'
 import { SystemIntegrationService } from './system/initialization-services'
 import { IPCHandlerManager } from './communication/ipc-handlers'
 import { CLIPBOARD_CONFIG } from './config/constants'
-// if (process.platform === 'darwin' && is.dev) {
-//   app.disableHardwareAcceleration()
-// }
+if (process.platform === 'darwin' && is.dev) {
+  app.disableHardwareAcceleration()
+}
 
 /**
  * 应用程序主类

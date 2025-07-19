@@ -818,7 +818,7 @@ const shortcutLabel = computed(() => {
   bottom: 0;
   background: transparent;
   z-index: 10;
-  cursor: default;
+  cursor: inherit; /* 继承父元素的cursor样式 */
   /* 阻止所有鼠标和触摸事件 */
   pointer-events: auto;
 }

@@ -19,19 +19,14 @@ class ClipboardHistoryService {
    */
   public async restoreClipboard(itemId: string): Promise<{ success: boolean; content?: ClipboardContent }> {
     try {
-      // 从数据库获取指定项目
-      const recordsWithTags = await databaseService.queryRecordsWithTags({
-        limit: 10,
-        searchText: itemId
-      })
-
-      let targetRecord: any = null
-      for (const record of recordsWithTags) {
-        if (record.content_id === itemId) {
-          targetRecord = record
-          break
-        }
+      // 参数验证
+      if (!itemId || typeof itemId !== 'string') {
+        log.error('[剪贴板历史服务] 还原剪贴板失败: 无效的项目ID:', itemId)
+        return { success: false }
       }
+
+      // 从数据库根据 content_id 获取指定项目
+      const targetRecord = await databaseService.getRecordByContentId({ contentId: itemId })
 
       if (!targetRecord) {
         log.error('[剪贴板历史服务] 未找到指定的剪贴板项:', itemId)
@@ -70,19 +65,8 @@ class ClipboardHistoryService {
         return { success: false }
       }
 
-      // 从数据库获取指定项目
-      const recordsWithTags = await databaseService.queryRecordsWithTags({
-        limit: 10,
-        searchText: itemId
-      })
-
-      let targetRecord: any = null
-      for (const record of recordsWithTags) {
-        if (record.content_id === itemId) {
-          targetRecord = record
-          break
-        }
-      }
+      // 从数据库根据 content_id 获取指定项目
+      const targetRecord = await databaseService.getRecordByContentId({ contentId: itemId })
 
       if (!targetRecord) {
         log.error('[剪贴板历史服务] 未找到指定的剪贴板项:', itemId)

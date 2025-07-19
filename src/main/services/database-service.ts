@@ -124,6 +124,13 @@ export class DatabaseService {
   }
 
   /**
+   * 根据内容ID查询记录
+   */
+  public getRecordByContentId(params: { contentId: string }): ClipboardHistoryRecord | null {
+    return clipboardDatabase.getRecordByContentId(params.contentId)
+  }
+
+  /**
    * 轻量级查询：只获取记录的 content_id 和 hash
    */
   public queryRecordIdsAndHashes(options: QueryOptions = {}): Array<{ content_id: string, hash: string }> {
@@ -292,6 +299,8 @@ export class DatabaseService {
           return this.getExpiredRecordIds(params)
         case 'getRecordByHash':
           return this.getRecordByHash(params)
+        case 'getRecordByContentId':
+          return this.getRecordByContentId(params)
         case 'queryRecordIdsAndHashes':
           return this.queryRecordIdsAndHashes(params)
         case 'getLastRecordInfo':
