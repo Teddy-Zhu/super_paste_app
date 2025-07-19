@@ -58,13 +58,50 @@ class ClipboardManagerWorker extends BaseWorker {
 
   /**
    * 直接读取剪贴板内容（使用 @teddyzhu/clipboard）
-   * 现在使用新的 getImageData API 获取完整的图片信息
+   * 现在使用新的 getImageData API 获取完整的图片信息，并支持文件
    */
   private readClipboardDirect(): any {
     try {
-      const text = this.clipboard.getText()
-      const html = this.clipboard.getHtml()
-      const rtf = this.clipboard.getRichText()
+      // 安全地获取文本内容
+      let text: string | undefined = undefined
+      try {
+        text = this.clipboard.getText()
+      } catch (e) {
+        // 文本获取失败时静默处理
+      }
+
+      // 安全地获取 HTML 内容
+      let html: string | undefined = undefined
+      try {
+        html = this.clipboard.getHtml()
+      } catch (e) {
+        // HTML 获取失败时静默处理
+      }
+
+      // 安全地获取 RTF 内容
+      let rtf: string | undefined = undefined
+      try {
+        rtf = this.clipboard.getRichText()
+      } catch (e) {
+        // RTF 获取失败时静默处理
+      }
+
+      // 安全地获取文件列表
+      let files: string[] | undefined = undefined
+      let hasFiles = false
+      let filesInfo: { count: number; totalSize: number } | undefined = undefined
+      try {
+        files = this.clipboard.getFiles()
+        hasFiles = !!(files && files.length > 0)
+        if (hasFiles) {
+          filesInfo = {
+            count: files!.length,
+            totalSize: files!.reduce((total, file) => total + file.length, 0)
+          }
+        }
+      } catch (e) {
+        // 文件获取失败时静默处理
+      }
 
       // 使用新的 getImageData API 获取完整图片信息
       let imageData: any = null
@@ -75,15 +112,20 @@ class ClipboardManagerWorker extends BaseWorker {
         hasImage = !!(imageData && imageData.base64Data)
       } catch (e) {
         // 如果没有图片或获取失败，使用旧的 API
-        const imageBase64 = this.clipboard.getImageBase64()
-        hasImage = !!imageBase64
-        if (hasImage) {
-          imageData = {
-            width: 0,
-            height: 0,
-            size: imageBase64.length,
-            base64Data: imageBase64
+        try {
+          const imageBase64 = this.clipboard.getImageBase64()
+          hasImage = !!imageBase64
+          if (hasImage) {
+            imageData = {
+              width: 0,
+              height: 0,
+              size: imageBase64.length,
+              base64Data: imageBase64
+            }
           }
+        } catch (e2) {
+          // 图片获取完全失败时静默处理
+          hasImage = false
         }
       }
 
@@ -91,11 +133,10 @@ class ClipboardManagerWorker extends BaseWorker {
         text: text || undefined,
         html: html || undefined,
         rtf: rtf || undefined,
-        hasImage: hasImage
+        files: files || undefined,
+        hasImage: hasImage,
+        hasFiles: hasFiles
       }
-
-      // @teddyzhu/clipboard 不支持书签
-      result.bookmark = undefined
 
       // 如果有图片，添加图片的基本信息用于快速变化检测
       if (hasImage && imageData) {
@@ -105,6 +146,11 @@ class ClipboardManagerWorker extends BaseWorker {
           quickId: `${imageData.width || 0}x${imageData.height || 0}_${imageData.size || 0}`
         }
         result.image = imageData.base64Data
+      }
+
+      // 如果有文件，添加文件基本信息
+      if (hasFiles && filesInfo) {
+        result.filesInfo = filesInfo
       }
 
       return result
@@ -209,9 +255,9 @@ class ClipboardManagerWorker extends BaseWorker {
 
         if (this.config.enableAutoSave) {
           // 从已获取的数据构建完整内容
-          console.log('build content from data', new Date().toDateString())
+          // console.log('build content from data', new Date().toDateString())
           const clipboardContent = await this.buildClipboardContentFromData(clipboardData)
-          console.log('save clipboard item', new Date().toDateString())
+          // console.log('save clipboard item', new Date().toDateString())
           await this.saveClipboardItem(clipboardContent)
           console.log('save clipboard item done', new Date().toDateString())
         }
@@ -233,11 +279,18 @@ class ClipboardManagerWorker extends BaseWorker {
       text: data.text || undefined,
       html: data.html || undefined,
       rtf: data.rtf || undefined,
-      hasImage: !!data.image
+      hasImage: !!data.image,
+      hasFiles: !!(data.files && data.files.length > 0)
     }
 
-    // 处理书签 - @teddyzhu/clipboard 不支持书签
-    result.bookmark = undefined
+    // 处理文件数据
+    if (data.files && data.files.length > 0) {
+      result.files = data.files
+      result.filesInfo = {
+        count: data.files.length,
+        totalSize: data.files.reduce((total, file) => total + file.length, 0)
+      }
+    }
 
     // 处理图片数据
     if (data.image) {
@@ -264,10 +317,12 @@ class ClipboardManagerWorker extends BaseWorker {
         text: clipboardData.text || undefined,
         html: clipboardData.html || undefined,
         rtf: clipboardData.rtf || undefined,
-        bookmark: clipboardData.bookmark ? JSON.stringify(clipboardData.bookmark) : undefined,
         hasImage: clipboardData.hasImage,
+        hasFiles: clipboardData.hasFiles,
         // 包含图片的基本信息用于区分不同的图片
-        imageInfo: clipboardData.imageInfo || undefined
+        imageInfo: clipboardData.imageInfo || undefined,
+        // 包含文件的基本信息用于区分不同的文件列表
+        filesInfo: clipboardData.filesInfo || undefined
       }
       if(quickContent.hasImage) {
         console.log('has image', quickContent.imageInfo)
@@ -324,7 +379,7 @@ class ClipboardManagerWorker extends BaseWorker {
           text: clipboardData.text || undefined,
           html: clipboardData.html || undefined,
           rtf: clipboardData.rtf || undefined,
-          bookmark: clipboardData.bookmark ? JSON.stringify(clipboardData.bookmark) : undefined,
+          files: clipboardData.files || undefined,
           image: clipboardData.image
         }
       }
@@ -334,7 +389,7 @@ class ClipboardManagerWorker extends BaseWorker {
         text: clipboardData.text || undefined,
         html: clipboardData.html || undefined,
         rtf: clipboardData.rtf || undefined,
-        bookmark: clipboardData.bookmark ? JSON.stringify(clipboardData.bookmark) : undefined
+        files: clipboardData.files || undefined
       }
     } catch (error) {
       return {}
@@ -369,6 +424,7 @@ class ClipboardManagerWorker extends BaseWorker {
         this.lastItemHash = contentHash
       } else {
         const sourceAppInfo = await this.getCurrentAppInfo()
+        // console.log('apps ',sourceAppInfo)
         const availableFormats = ClipboardDataConverter.getAvailableFormats(content)
         const newItemId = ClipboardDataConverter.generateId()
 
@@ -388,8 +444,7 @@ class ClipboardManagerWorker extends BaseWorker {
           availableFormats: availableFormats,
           timestamp: now,
           lastUsed: now,
-          parseType: ClipboardDataConverter.detectParseType(content, availableFormats),
-          sourceAppId,
+          sourceApp: sourceAppId,
           hash: contentHash
         })
 

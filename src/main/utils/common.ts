@@ -69,17 +69,19 @@ export class HashUtils {
     text?: string
     html?: string
     rtf?: string
-    bookmark?: string
     hasImage?: boolean
+    hasFiles?: boolean
     imageInfo?: { width: number; height: number; quickId: string }
+    filesInfo?: { count: number; totalSize: number }
   }): string {
     const quickContent = {
       text: content.text || undefined,
       html: content.html || undefined,
       rtf: content.rtf || undefined,
-      bookmark: content.bookmark || undefined,
       hasImage: content.hasImage,
-      imageInfo: content.imageInfo || undefined
+      hasFiles: content.hasFiles,
+      imageInfo: content.imageInfo || undefined,
+      filesInfo: content.filesInfo || undefined
     }
     return this.generateContentHash(quickContent)
   }

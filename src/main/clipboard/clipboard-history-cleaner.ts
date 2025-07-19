@@ -1,12 +1,12 @@
-import { BaseWorkerManager } from './workers/base-worker-manager'
-import { NotificationService } from './services/notification-service'
-import databaseService from './services/database-service'
-import store from './store'
-import { STORE_KEY } from './common'
-import type { CleanupConfig, CleanupStats } from './types/clipboard-types'
-import type { WorkerConfig, WorkerRequest } from './types/worker-types'
-import clipboardHistoryCleanerWorkerPath from './workers/clipboard-history-cleaner.worker?modulePath'
-import logger from './utils/logger'
+import { BaseWorkerManager } from '../workers/base-worker-manager'
+import { NotificationService } from '../services/notification-service'
+import databaseService from '../services/database-service'
+import store from '../config/store'
+import { STORE_KEY } from '../config/common'
+import type { CleanupConfig, CleanupStats } from '../types/clipboard-types'
+import type { WorkerConfig, WorkerRequest } from '../types/worker-types'
+import clipboardHistoryCleanerWorkerPath from '../workers/clipboard-history-cleaner.worker?modulePath'
+import logger from '../utils/logger'
 
 /**
  * 剪贴板历史记录清理器（主线程接口）

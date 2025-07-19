@@ -44,7 +44,6 @@ class ClipboardHistoryService {
       if (targetRecord.content_html) content.html = targetRecord.content_html
       if (targetRecord.content_image) content.image = targetRecord.content_image
       if (targetRecord.content_rtf) content.rtf = targetRecord.content_rtf
-      if (targetRecord.content_bookmark) content.bookmark = targetRecord.content_bookmark
 
       // 更新最后使用时间
       const now = Date.now()
@@ -156,7 +155,7 @@ class ClipboardHistoryService {
     limit?: number
     offset?: number
     tagIds?: string[]
-    parseType?: string
+    primaryType?: string
     searchText?: string
     orderBy?: 'timestamp' | 'last_used'
     orderDirection?: 'ASC' | 'DESC'
@@ -169,7 +168,7 @@ class ClipboardHistoryService {
         limit: options.limit,
         offset: options.offset,
         tagIds: options.tagIds,
-        parseType: options.parseType,
+        primaryType: options.primaryType,
         searchText: options.searchText,
         orderBy: options.orderBy || 'last_used',
         orderDirection: options.orderDirection || 'DESC'

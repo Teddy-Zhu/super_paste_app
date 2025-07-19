@@ -71,7 +71,6 @@ const loadClipboardHistory = async (options?: ClipboardHistoryQueryOptions): Pro
 
     const queryOptions = { ...defaultOptions, ...options }
     const result = await clipboard.searchHistory(queryOptions)
-
     if (!Array.isArray(result.items)) {
       throw new OverlayError(
         '剪贴板历史数据格式无效：不是数组',
@@ -103,6 +102,7 @@ const loadClipboardHistory = async (options?: ClipboardHistoryQueryOptions): Pro
 
 const throttledLoadClipboardHistory = useThrottle(
   () => {
+    console.log('history')
     const currentTagIds = scrollAndTagsManager.activeTagId.value === 'all'
       ? []
       : [scrollAndTagsManager.activeTagId.value]

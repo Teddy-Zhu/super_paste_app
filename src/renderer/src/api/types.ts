@@ -136,7 +136,7 @@ export interface ClipboardContent {
   html?: string
   image?: string // base64 编码的图片数据
   rtf?: string
-  bookmark?: string // JSON 字符串
+  files?: string[] // 文件路径列表
 }
 
 // 应用信息类型
@@ -176,11 +176,10 @@ export interface TagStats {
 export interface ClipboardItem {
   id: string
   content: ClipboardContent
-  primaryType: 'text' | 'html' | 'image' | 'rtf' | 'bookmark' | 'empty'
+  primaryType: 'text' | 'html' | 'image' | 'rtf' | 'files' | 'url' | 'email' | 'phone' | 'code' | 'color' | 'empty'
   availableFormats: string[]
   timestamp: number
   lastUsed: number
-  parseType: string // 解析类型字段（必填）
   tags?: TagGroup[] // 绑定的标签列表
   source_app?: string // 原始的来源应用ID字段
 }
@@ -190,7 +189,7 @@ export interface ClipboardHistoryQueryOptions {
   limit?: number
   offset?: number
   tagIds?: string[]
-  parseType?: string
+  primaryType?: string
   searchText?: string
   orderBy?: 'timestamp' | 'last_used'
   orderDirection?: 'ASC' | 'DESC'

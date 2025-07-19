@@ -3,7 +3,7 @@ import __Store from 'electron-store'
 //@ts-ignore
 export const Store = __Store.default || __Store
 import { BrowserWindow } from 'electron'
-import logger from './utils/logger'
+import logger from '../utils/logger'
 
 /**
  * 加密的 Electron Store 单例类

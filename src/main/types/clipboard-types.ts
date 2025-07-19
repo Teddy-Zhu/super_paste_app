@@ -8,7 +8,7 @@ export interface ClipboardContent {
   html?: string
   image?: string // base64 编码的图片数据
   rtf?: string
-  bookmark?: string
+  files?: string[] // 文件路径列表
 }
 
 /**
@@ -41,11 +41,10 @@ export interface AppInfoRecord {
 export interface ClipboardItem {
   id: string
   content: ClipboardContent
-  primaryType: 'text' | 'html' | 'image' | 'rtf' | 'bookmark' | 'empty'
+  primaryType: 'text' | 'html' | 'image' | 'rtf' | 'files' | 'url' | 'email' | 'phone' | 'code' | 'color' | 'empty'
   availableFormats: string[]
   timestamp: number
   lastUsed: number
-  parseType: string // 解析类型字段（必填）
   tags?: TagGroup[] // 绑定的标签列表
   source_app?: string // 原始的来源应用ID字段
 }
@@ -61,12 +60,11 @@ export interface ClipboardHistoryRecord {
   content_html?: string
   content_image?: string
   content_rtf?: string
-  content_bookmark?: string
+  content_files?: string // JSON 字符串，存储文件路径数组
   primary_type: string
   available_formats: string
   timestamp: number
   last_used: number
-  parse_type: string // 解析类型字段（必填）
   source_app?: string // 来源应用ID
 }
 
@@ -109,7 +107,7 @@ export interface QueryOptions {
   orderBy?: 'timestamp' | 'last_used'
   orderDirection?: 'ASC' | 'DESC'
   tagIds?: string[] // 按标签ID筛选
-  parseType?: string // 按解析类型筛选
+  primaryType?: string // 按主要类型筛选
   searchText?: string // 内容模糊搜索
 }
 
@@ -180,7 +178,13 @@ export class ClipboardDataConverter {
     if (record.content_html) content.html = record.content_html
     if (record.content_image) content.image = record.content_image
     if (record.content_rtf) content.rtf = record.content_rtf
-    if (record.content_bookmark) content.bookmark = record.content_bookmark
+    if (record.content_files) {
+      try {
+        content.files = JSON.parse(record.content_files)
+      } catch {
+        content.files = []
+      }
+    }
 
     return {
       id: record.content_id,
@@ -189,7 +193,6 @@ export class ClipboardDataConverter {
       availableFormats: JSON.parse(record.available_formats),
       timestamp: record.timestamp,
       lastUsed: record.last_used,
-      parseType: record.parse_type,
       tags: tags || [],
       source_app: record.source_app // 包含原始的来源应用ID字段
     }
@@ -204,12 +207,11 @@ export class ClipboardDataConverter {
     content_html?: string
     content_image?: string
     content_rtf?: string
-    content_bookmark?: string
+    content_files?: string
     primary_type: string
     available_formats: string
     timestamp: number
     last_used: number
-    parse_type: string
     source_app?: string
   } {
     return {
@@ -218,30 +220,73 @@ export class ClipboardDataConverter {
       content_html: item.content.html,
       content_image: item.content.image,
       content_rtf: item.content.rtf,
-      content_bookmark: item.content.bookmark,
+      content_files: item.content.files ? JSON.stringify(item.content.files) : undefined,
       primary_type: item.primaryType,
       available_formats: JSON.stringify(item.availableFormats),
       timestamp: item.timestamp,
       last_used: item.lastUsed,
-      parse_type: item.parseType,
       source_app: item.source_app
     }
   }
 
   /**
-   * 检测主要内容类型
+   * 检测主要内容类型（合并了原来的 parseType 逻辑）
    */
   static detectPrimaryType(content: ClipboardContent, availableFormats?: string[]): ClipboardItem['primaryType'] {
     const formats = availableFormats || ClipboardDataConverter.getAvailableFormats(content)
 
+    // 文件类型优先级最高
+    if (content.files && content.files.length > 0) return 'files'
+    
+    // 图片类型
     if (content.image) return 'image'
 
     // 当 availableFormats 中存在 rtf 时，RTF 优先级高于 html
     if (formats.includes('rtf') && content.rtf) return 'rtf'
 
+    // HTML 类型处理
     if (content.html) return 'html'
-    if (content.bookmark) return 'bookmark'
-    if (content.text) return 'text'
+
+    // 高优先级文本类型检测
+    if (content.text) {
+      const text = content.text.trim()
+      
+      // 检测颜色值 (#xxxxxx 或 #xxxxxxxx)
+      const colorRegex = /^#[0-9a-fA-F]{6}$|^#[0-9a-fA-F]{8}$/
+      if (colorRegex.test(text)) {
+        return 'color'
+      }
+      
+      // 检测URL
+      const urlRegex = /^https?:\/\/[^\s]+$/i
+      if (urlRegex.test(text)) {
+        return 'url'
+      }
+      
+      // 检测邮箱
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+      if (emailRegex.test(text)) {
+        return 'email'
+      }
+      
+      // 检测电话号码
+      const phoneRegex = /^1[3-9]\d{9}$/
+      if (phoneRegex.test(text.replace(/\s/g, ''))) {
+        return 'phone'
+      }
+      
+      // 检测代码（简单检测）
+      if (text.includes('{') && text.includes('}') ||
+          text.includes('function') ||
+          text.includes('class ') ||
+          text.includes('import ') ||
+          text.includes('export ')) {
+        return 'code'
+      }
+      
+      return 'text'
+    }
+
     return 'empty'
   }
 
@@ -254,7 +299,7 @@ export class ClipboardDataConverter {
     if (content.html) formats.push('html')
     if (content.image) formats.push('image')
     if (content.rtf) formats.push('rtf')
-    if (content.bookmark) formats.push('bookmark')
+    if (content.files && content.files.length > 0) formats.push('files')
     return formats
   }
 
@@ -262,7 +307,7 @@ export class ClipboardDataConverter {
    * 检查内容是否为空
    */
   static isEmptyContent(content: ClipboardContent): boolean {
-    return !content.text && !content.html && !content.image && !content.rtf && !content.bookmark
+    return !content.text && !content.html && !content.image && !content.rtf && (!content.files || content.files.length === 0)
   }
 
   /**
@@ -277,7 +322,7 @@ export class ClipboardDataConverter {
     if (content.text) optimizedContent.text = content.text
     if (content.html) optimizedContent.html = content.html
     if (content.rtf) optimizedContent.rtf = content.rtf
-    if (content.bookmark) optimizedContent.bookmark = content.bookmark
+    if (content.files) optimizedContent.files = content.files
 
     // 对图片内容进行优化处理
     if (content.image) {
@@ -333,82 +378,6 @@ export class ClipboardDataConverter {
    */
   static generateTagId(): string {
     return `tag_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`
-  }
-
-  /**
-   * 检测解析类型
-   */
-  static detectParseType(content: ClipboardContent, availableFormats?: string[]): string {
-    const formats = availableFormats || ClipboardDataConverter.getAvailableFormats(content)
-    const primaryType = ClipboardDataConverter.detectPrimaryType(content, formats)
-
-    // 图片类型优先级最高
-    if (content.image) {
-      return 'image'
-    }
-
-    // 当 availableFormats 中存在 rtf 时，RTF 优先级高于 html 和 text
-    if (formats.includes('rtf') && content.rtf) {
-      return 'rtf'
-    }
-
-    // 高优先级文本类型检测（在 HTML 和 bookmark 之前）
-    if (content.text) {
-      const text = content.text.trim()
-      // 检测颜色值 (#xxxxxx 或 #xxxxxxxx)
-      const colorRegex = /^#[0-9a-fA-F]{6}$|^#[0-9a-fA-F]{8}$/
-      if (colorRegex.test(text)) {
-        return 'color'
-      }
-      // 检测URL
-      const urlRegex = /^https?:\/\/[^\s]+$/i
-      if (urlRegex.test(text)) {
-        return 'url'
-      }
-      // 检测文件路径（只检测 file:// 开头的内容，支持多个文件换行分隔）
-      const lines = text.split('\n').map(line => line.trim()).filter(line => line.length > 0)
-      const allLinesAreFiles = lines.length > 0 && lines.every(line => line.startsWith('file://'))
-      if (allLinesAreFiles) {
-        return 'file_path'
-      }
-      // 检测邮箱
-      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
-      if (emailRegex.test(text)) {
-        return 'email'
-      }
-    }
-
-    // HTML 类型处理
-    if (content.html) {
-      return 'html'
-    }
-
-    // 书签类型
-    if (content.bookmark) {
-      return 'bookmark'
-    }
-
-    // 其他文本类型检测
-    if (content.text) {
-      const text = content.text.trim()
-      // 检测电话号码
-      const phoneRegex = /^1[3-9]\d{9}$/
-      if (phoneRegex.test(text.replace(/\s/g, ''))) {
-        return 'phone'
-      }
-      // 检测代码（简单检测）
-      if (text.includes('{') && text.includes('}') ||
-          text.includes('function') ||
-          text.includes('class ') ||
-          text.includes('import ') ||
-          text.includes('export ')) {
-        return 'code'
-      }
-      return 'text'
-    }
-
-    // 如果检测结果为空，返回 primaryType
-    return primaryType
   }
 
   /**
@@ -494,12 +463,11 @@ export class ClipboardDataConverter {
     content_html?: string
     content_image?: string
     content_rtf?: string
-    content_bookmark?: string
+    content_files?: string
     primary_type: string
     available_formats: string
     timestamp: number
     last_used: number
-    parse_type: string
     source_app?: string
   }> {
     return items.map(item => this.itemToRecordData(item))

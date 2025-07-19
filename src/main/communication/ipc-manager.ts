@@ -1,11 +1,11 @@
 import { ipcMain, BrowserWindow } from 'electron'
-import clipboardManager from './clipboard-manager'
-import clipboardHistoryService from './services/clipboard-history-service'
-import clipboardTagService from './services/clipboard-tag-service'
-import clipboardHistoryCleaner from './clipboard-history-cleaner'
-import type { ClipboardItem, ClipboardManagerConfig } from './types/clipboard-types'
-import type { BaseWorkerManager } from './workers/base-worker-manager'
-import logger from './utils/logger'
+import clipboardManager from '../clipboard/clipboard-manager'
+import clipboardHistoryService from '../services/clipboard-history-service'
+import clipboardTagService from '../services/clipboard-tag-service'
+import clipboardHistoryCleaner from '../clipboard/clipboard-history-cleaner'
+import type { ClipboardItem, ClipboardManagerConfig } from '../types/clipboard-types'
+import type { BaseWorkerManager } from '../workers/base-worker-manager'
+import logger from '../utils/logger'
 import { writeHeapSnapshot } from 'v8'
 import { join } from 'path'
 import { app } from 'electron'
@@ -76,14 +76,17 @@ class IpcManager {
    */
   public initialize(): void {
     if (this.isInitialized) {
-
+      logger.debug('[IPC管理器] 已初始化，跳过重复初始化')
       return
     }
+
+    // 在初始化前先清理可能存在的旧处理器
+    this.cleanup()
 
     this.registerClipboardHandlers()
     this.isInitialized = true
 
-
+    logger.debug('[IPC管理器] 初始化完成')
   }
 
   /**
@@ -168,11 +171,17 @@ class IpcManager {
     // 删除剪贴板历史项
     ipcMain.handle('clipboard-delete-item', async (_, itemId: string) => {
       try {
+        // 1. 先删除绑定的标签
+        await clipboardTagService.unbindAllTagsFromRecord(itemId)
+        
+        // 2. 删除剪贴板历史项
         const success = await clipboardHistoryService.deleteHistoryItem(itemId)
         if (success) {
           // 通知 clipboard-manager 同步删除状态
           await clipboardManager.syncDeletedRecords([itemId])
+          // 通知前端更新（包括标签和历史）
           this.notifyClipboardHistoryUpdated()
+          this.notifyTagsUpdated()
         }
         return {
           success,
@@ -190,10 +199,16 @@ class IpcManager {
     // 清空剪贴板历史
     ipcMain.handle('clipboard-clear-history', async () => {
       try {
+        // 清空剪贴板历史（数据库中的clearAllRecords已经包含了标签绑定的清理）
         await clipboardHistoryService.clearHistory()
+        
         // 通知 clipboard-manager 同步清空状态
         await clipboardManager.syncDeletedRecords(['*'])
+        
+        // 通知前端更新（包括标签和历史）
         this.notifyClipboardHistoryUpdated()
+        this.notifyTagsUpdated()
+        
         return {
           success: true,
           message: '剪贴板历史已清空'

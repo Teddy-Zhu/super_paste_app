@@ -82,12 +82,13 @@ const getContentPreview = (item: ClipboardItem): string => {
     return 'Rich text content'
   }
 
-  if (content.bookmark) {
-    try {
-      const bookmark = JSON.parse(content.bookmark)
-      return bookmark.title || bookmark.url || 'Bookmark'
-    } catch {
-      return 'Bookmark'
+  if (content.files && content.files.length > 0) {
+    const fileCount = content.files.length
+    const fileName = content.files[0].split('/').pop() || 'Unknown file'
+    if (fileCount === 1) {
+      return `File: ${fileName}`
+    } else {
+      return `${fileCount} files (${fileName}...)`
     }
   }
 
@@ -167,23 +168,22 @@ const handleImageLoad = (event: Event) => {
 
 // 解析文件路径
 const parseFilePaths = computed(() => {
-  if (props.item.parseType !== 'file_path' || !props.item.content.text) {
+  if (props.item.primaryType !== 'files' || !props.item.content.text) {
     return []
   }
 
-  const text = props.item.content.text.trim()
-  // 按行分割，过滤空行
-  const paths = text.split('\n').filter(path => path.trim().length > 0)
+  const text = props.item.content.text
+  const lines = text.split('\n')
+  const filePaths: string[] = []
 
-  return paths.map(path => {
-    const trimmedPath = path.trim()
-    // 获取文件名（路径的最后一部分）
-    const fileName = trimmedPath.split(/[/\\]/).pop() || trimmedPath
-    return {
-      fullPath: trimmedPath,
-      fileName: fileName
+  for (const line of lines) {
+    const trimmedLine = line.trim()
+    if (trimmedLine) {
+      filePaths.push(trimmedLine)
     }
-  })
+  }
+
+  return filePaths
 })
 
 // 获取文件显示名称
@@ -192,9 +192,11 @@ const getFileDisplayName = computed(() => {
   if (files.length === 0) return ''
 
   if (files.length === 1) {
-    return files[0].fileName
+    const fileName = files[0].split('/').pop() || 'Unknown file'
+    return fileName
   } else {
-    return `${files[0].fileName} 等${files.length}个文件`
+    const fileName = files[0].split('/').pop() || 'Unknown file'
+    return `${fileName} 等${files.length}个文件`
   }
 })
 
@@ -202,13 +204,14 @@ const getFileDisplayName = computed(() => {
 const getCharacterCount = (item: ClipboardItem): string => {
   const content = item.content
 
-  if (item.parseType === 'file_path') {
+  if (item.primaryType === 'files') {
     const fileCount = parseFilePaths.value.length
     if (fileCount > 0) {
       return `${fileCount} 个文件`
     }
     return 'File Path'
   }
+  
   if (content.text) {
     return `${content.text.length} character${content.text.length !== 1 ? 's' : ''}`
   }
@@ -225,16 +228,11 @@ const getCharacterCount = (item: ClipboardItem): string => {
     return 'Image'
   }
 
-
   if (content.rtf) {
     return 'Rich Text'
   }
 
-  if (content.bookmark) {
-    return 'Link'
-  }
-
-  return ''
+  return 'Unknown content'
 }
 
 // 获取类型标签
@@ -245,11 +243,11 @@ const getTypeLabel = (type: string): string => {
     case 'image':
       return 'Image'
     case 'html':
-      return 'Text'
+      return 'HTML'
     case 'url':
       return 'URL'
-    case 'file_path':
-      return 'File'
+    case 'files':
+      return 'Files'
     case 'email':
       return 'Email'
     case 'phone':
@@ -258,8 +256,6 @@ const getTypeLabel = (type: string): string => {
       return 'Code'
     case 'rtf':
       return 'RTF'
-    case 'bookmark':
-      return 'Link'
     case 'color':
       return 'Color'
     case 'empty':
@@ -271,7 +267,7 @@ const getTypeLabel = (type: string): string => {
 
 // 检测是否为颜色类型并获取颜色值
 const colorValue = computed(() => {
-  if (props.item.parseType === 'color' && props.item.content.text) {
+  if (props.item.primaryType === 'color' && props.item.content.text) {
     const text = props.item.content.text.trim()
     const colorRegex = /^#[0-9a-fA-F]{6}$|^#[0-9a-fA-F]{8}$/
     if (colorRegex.test(text)) {
@@ -301,24 +297,23 @@ const getContrastColor = computed(() => {
 })
 
 // 获取卡片主题色
-const getCardTheme = (parseType: string): string => {
-  // 根据 parseType 分配主题色
+const getCardTheme = (primaryType: string): string => {
+  // 根据 primaryType 分配主题色
   const themeMap: Record<string, string> = {
     'text': 'blue',
     'image': 'green',
     'html': 'purple',
     'url': 'orange',
-    'file_path': 'teal',
+    'files': 'teal',
     'email': 'red',
     'phone': 'red',
     'code': 'purple',
     'rtf': 'blue',
-    'bookmark': 'orange',
     'color': 'green',
     'empty': 'gray'
   }
 
-  return themeMap[parseType] || 'blue'
+  return themeMap[primaryType] || 'blue'
 }
 
 // 使用全局上下文菜单管理器
@@ -527,7 +522,7 @@ const handleRichContentClick = (event: Event) => {
   <div
     class="clipboard-card"
     :class="[
-      `theme-${getCardTheme(item.parseType)}`,
+      `theme-${getCardTheme(item.primaryType)}`,
       { 'selected': isSelected }
     ]"
     @click="handleClick"
@@ -536,7 +531,7 @@ const handleRichContentClick = (event: Event) => {
     <!-- 卡片头部 -->
     <div class="card-header">
       <div class="header-left">
-        <span class="type-label">{{ getTypeLabel(item.parseType) }}</span>
+        <span class="type-label">{{ getTypeLabel(item.primaryType) }}</span>
         <span class="time-label">{{ formatTime(item.timestamp) }}</span>
       </div>
       <!-- 应用图标独占右上角 -->
@@ -550,7 +545,7 @@ const handleRichContentClick = (event: Event) => {
       <!-- <h3 class="card-title">{{ getContentTitle(item) }}</h3> -->
 
       <!-- RTF 内容预览 - 如果存在 HTML 则优先使用 HTML -->
-      <div class="card-rich-preview" v-if="item.parseType === 'rtf' && item.content.html">
+      <div class="card-rich-preview" v-if="item.primaryType === 'rtf' && item.content.html">
         <div
           class="rich-content"
           v-html="htmlContent"
@@ -559,7 +554,7 @@ const handleRichContentClick = (event: Event) => {
       </div>
 
       <!-- RTF 内容预览 - 仅当没有 HTML 时使用 RTF 转换 -->
-      <div class="card-rich-preview" v-else-if="item.parseType === 'rtf' && item.content.rtf">
+      <div class="card-rich-preview" v-else-if="item.primaryType === 'rtf' && item.content.rtf">
         <div
           class="rich-content"
           v-html="rtfToHtml"
@@ -568,7 +563,7 @@ const handleRichContentClick = (event: Event) => {
       </div>
 
       <!-- HTML 内容预览 -->
-      <div class="card-rich-preview" v-else-if="item.parseType === 'html' && item.content.html">
+      <div class="card-rich-preview" v-else-if="item.primaryType === 'html' && item.content.html">
         <div
           class="rich-content"
           v-html="htmlContent"
@@ -577,19 +572,19 @@ const handleRichContentClick = (event: Event) => {
       </div>
 
       <!-- 颜色预览 -->
-      <div class="card-color" v-else-if="item.parseType === 'color' && colorValue" :style="{ backgroundColor: colorValue }">
+      <div class="card-color" v-else-if="item.primaryType === 'color' && colorValue" :style="{ backgroundColor: colorValue || undefined }">
         <div class="color-display">
           <span class="color-text" :style="{ color: getContrastColor }">{{ colorValue }}</span>
         </div>
       </div>
 
       <!-- 图片预览 -->
-      <div class="card-image" v-else-if="item.parseType === 'image' && item.content.image">
+      <div class="card-image" v-else-if="item.primaryType === 'image' && item.content.image">
         <img :src="'data:image/png;base64,' +item.content.image" alt="Image preview" @load="handleImageLoad" />
       </div>
 
       <!-- 文件路径预览 -->
-      <div class="card-file" v-else-if="item.parseType === 'file_path' && parseFilePaths.length > 0">
+      <div class="card-file" v-else-if="item.primaryType === 'files' && parseFilePaths.length > 0">
         <div class="file-icons">
           <!-- 单个文件显示 -->
           <div v-if="parseFilePaths.length === 1" class="file-icon single">
@@ -604,7 +599,7 @@ const handleRichContentClick = (event: Event) => {
       </div>
 
       <!-- 其他类型内容预览 -->
-      <div class="card-preview" v-else-if="item.parseType !== 'image' && item.parseType !== 'color' && item.parseType !== 'file_path'">
+      <div class="card-preview" v-else-if="item.primaryType !== 'image' && item.primaryType !== 'color' && item.primaryType !== 'files'">
         {{ getContentPreview(item) }}
       </div>
     </div>
@@ -918,10 +913,6 @@ const handleRichContentClick = (event: Event) => {
     0 4px 8px rgba(0, 0, 0, 0.08),
     0 2px 4px rgba(0, 0, 0, 0.06); 
   transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);*/
-}
-
-.card-image img:hover {
-  /* transform: scale(1.02); */
 }
 
 .card-file {

@@ -112,6 +112,19 @@ class ClipboardTagService {
   }
 
   /**
+   * 解除历史记录的所有标签绑定
+   */
+  public async unbindAllTagsFromRecord(contentId: string): Promise<boolean> {
+    try {
+      const success = await databaseService.unbindAllTagsFromRecord({ contentId })
+      return success
+    } catch (error) {
+      log.error('[剪贴板标签服务] 解除所有标签绑定失败:', error)
+      return false
+    }
+  }
+
+  /**
    * 获取标签统计信息
    */
   public async getTagStats(): Promise<TagStats[]> {

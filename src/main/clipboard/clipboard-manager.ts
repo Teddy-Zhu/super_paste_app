@@ -1,18 +1,18 @@
-import { BaseWorkerManager } from './workers/base-worker-manager'
-import { NotificationService } from './services/notification-service'
-import databaseService from './services/database-service'
+import { BaseWorkerManager } from '../workers/base-worker-manager'
+import { NotificationService } from '../services/notification-service'
+import databaseService from '../services/database-service'
 import clipboardHistoryCleaner from './clipboard-history-cleaner'
-import store from './store'
-import { STORE_KEY } from './common'
+import store from '../config/store'
+import { STORE_KEY } from '../config/common'
 import type {
   ClipboardContent,
   ClipboardManagerConfig
-} from './types/clipboard-types'
-import type { WorkerConfig, WorkerRequest } from './types/worker-types'
+} from '../types/clipboard-types'
+import type { WorkerConfig, WorkerRequest } from '../types/worker-types'
 
 import { ClipboardManager as TeddyClipboardManager } from '@teddyzhu/clipboard'
-import logger from './utils/logger'
-import clipboardManagerWorkerPath from './workers/clipboard-manager.worker?modulePath'
+import logger from '../utils/logger'
+import clipboardManagerWorkerPath from '../workers/clipboard-manager.worker?modulePath'
 
 /**
  * 剪贴板管理器（主线程接口）
@@ -200,11 +200,6 @@ class ClipboardManager extends BaseWorkerManager {
         } catch (e) {
           logger.warn('[剪贴板管理器] 处理图片数据失败: %s', e)
         }
-      }
-
-      // @teddyzhu/clipboard 不支持书签，跳过书签处理
-      if (content.bookmark) {
-        logger.warn('[剪贴板管理器] @teddyzhu/clipboard 不支持书签格式，跳过书签设置')
       }
 
       if (!hasContent) {

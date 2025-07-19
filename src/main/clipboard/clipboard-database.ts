@@ -10,9 +10,9 @@ import type {
   TagQueryOptions,
   TagStats,
   AppInfoRecord
-} from './types/clipboard-types'
-import { ClipboardDataConverter } from './types/clipboard-types'
-import logger from './utils/logger'
+} from '../types/clipboard-types'
+import { ClipboardDataConverter } from '../types/clipboard-types'
+import logger from '../utils/logger'
 
 /**
  * 剪贴板数据库管理器
@@ -103,12 +103,11 @@ class ClipboardDatabase {
         content_html TEXT,
         content_image TEXT,
         content_rtf TEXT,
-        content_bookmark TEXT,
+        content_files TEXT,
         primary_type TEXT NOT NULL,
         available_formats TEXT NOT NULL,
         timestamp INTEGER NOT NULL,
         last_used INTEGER NOT NULL,
-        parse_type TEXT NOT NULL,
         source_app TEXT,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -168,11 +167,11 @@ class ClipboardDatabase {
       'CREATE INDEX IF NOT EXISTS idx_timestamp ON clipboard_history(timestamp DESC)',
       'CREATE INDEX IF NOT EXISTS idx_last_used ON clipboard_history(last_used DESC)',
       'CREATE INDEX IF NOT EXISTS idx_primary_type ON clipboard_history(primary_type)',
-      'CREATE INDEX IF NOT EXISTS idx_parse_type ON clipboard_history(parse_type)',
       'CREATE INDEX IF NOT EXISTS idx_source_app ON clipboard_history(source_app)',
       'CREATE INDEX IF NOT EXISTS idx_timestamp_type ON clipboard_history(timestamp DESC, primary_type)',
       'CREATE INDEX IF NOT EXISTS idx_content_text ON clipboard_history(content_text)',
       'CREATE INDEX IF NOT EXISTS idx_content_html ON clipboard_history(content_html)',
+      'CREATE INDEX IF NOT EXISTS idx_content_files ON clipboard_history(content_files)',
 
       // 标签组表索引
       'CREATE INDEX IF NOT EXISTS idx_tag_groups_name ON tag_groups(name)',
@@ -199,7 +198,6 @@ class ClipboardDatabase {
     availableFormats: string[],
     timestamp: number,
     lastUsed: number,
-    parseType: string,
     sourceApp?: string,
     hash?: string
   ): boolean {
@@ -212,9 +210,9 @@ class ClipboardDatabase {
       const insertSQL = `
         INSERT OR REPLACE INTO clipboard_history (
           content_id, hash, content_text, content_html, content_image,
-          content_rtf, content_bookmark, primary_type, available_formats,
-          timestamp, last_used, parse_type, source_app, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+          content_rtf, content_files, primary_type, available_formats,
+          timestamp, last_used, source_app, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
       `
 
       const stmt = this.db.prepare(insertSQL)
@@ -225,12 +223,11 @@ class ClipboardDatabase {
         content.html || null,
         content.image || null,
         content.rtf || null,
-        content.bookmark || null,
+        content.files ? JSON.stringify(content.files) : null,
         primaryType,
         JSON.stringify(availableFormats),
         timestamp,
         lastUsed,
-        parseType,
         sourceApp || null
       )
 
@@ -277,7 +274,7 @@ class ClipboardDatabase {
         orderBy = 'last_used',
         orderDirection = 'DESC',
         tagIds,
-        parseType,
+        primaryType,
         searchText
       } = options
 
@@ -293,10 +290,10 @@ class ClipboardDatabase {
         params.push(...tagIds)
       }
 
-      // 如果有解析类型过滤条件
-      if (parseType) {
-        whereConditions.push('ch.parse_type = ?')
-        params.push(parseType)
+      // 如果有主要类型过滤条件
+      if (primaryType) {
+        whereConditions.push('ch.primary_type = ?')
+        params.push(primaryType)
       }
 
       // 如果有内容搜索条件
@@ -438,13 +435,18 @@ class ClipboardDatabase {
     if (!this.db) throw new Error('数据库未初始化')
 
     try {
+      // 首先清空所有标签绑定
+      const deleteTagsSQL = 'DELETE FROM clipboard_history_tags'
+      const deleteTagsStmt = this.db.prepare(deleteTagsSQL)
+      deleteTagsStmt.run()
+
+      // 然后清空历史记录
       const deleteSQL = 'DELETE FROM clipboard_history'
       const stmt = this.db.prepare(deleteSQL)
       stmt.run()
 
       // 重置自增ID
       this.db.exec('DELETE FROM sqlite_sequence WHERE name = "clipboard_history"')
-
 
       return true
     } catch (error) {

@@ -188,6 +188,10 @@ class ClipboardHistoryCleanerWorker extends BaseWorker {
 
           // 删除这些记录
           for (const record of recordsToDelete) {
+            // 1. 先删除该记录的所有标签绑定
+            await this.callMainThread('database-unbindAllTagsFromRecord', { contentId: record.content_id })
+            
+            // 2. 然后删除记录本身
             await this.callMainThread('database-deleteRecord', { contentId: record.content_id })
             deletedRecordIds.push(record.content_id)
             deletedCount++

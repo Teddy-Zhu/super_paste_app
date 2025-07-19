@@ -1,4 +1,4 @@
-import clipboardDatabase from '../clipboard-database'
+import clipboardDatabase from '../clipboard/clipboard-database'
 import type {
   ClipboardContent,
   TagGroup,
@@ -58,11 +58,10 @@ export class DatabaseService {
     availableFormats: string[]
     timestamp: number
     lastUsed: number
-    parseType: string
-    sourceAppId?: string
+    sourceApp?: string
     hash?: string
   }): boolean {
-    const { contentId, content, primaryType, availableFormats, timestamp, lastUsed, parseType, sourceAppId, hash } = params
+    const { contentId, content, primaryType, availableFormats, timestamp, lastUsed, sourceApp, hash } = params
     return clipboardDatabase.insertRecord(
       contentId,
       content,
@@ -70,8 +69,7 @@ export class DatabaseService {
       availableFormats,
       timestamp,
       lastUsed,
-      parseType,
-      sourceAppId,
+      sourceApp,
       hash
     )
   }
@@ -231,6 +229,13 @@ export class DatabaseService {
   }
 
   /**
+   * 解除记录的所有标签绑定
+   */
+  public unbindAllTagsFromRecord(params: { contentId: string }): boolean {
+    return clipboardDatabase.unbindAllTagsFromRecord(params.contentId)
+  }
+
+  /**
    * 获取标签统计信息
    */
   public getTagStats(): Array<{ tagId: string, tagName: string, recordCount: number }> {
@@ -307,6 +312,8 @@ export class DatabaseService {
           return this.bindTagToRecord(params)
         case 'unbindTagFromRecord':
           return this.unbindTagFromRecord(params)
+        case 'unbindAllTagsFromRecord':
+          return this.unbindAllTagsFromRecord(params)
         case 'getTagStats':
           return this.getTagStats()
         case 'getTagGroupStats':

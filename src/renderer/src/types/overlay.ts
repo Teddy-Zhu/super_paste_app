@@ -216,7 +216,6 @@ export function isClipboardItem(value: any): value is ClipboardItem {
     typeof value.primaryType === 'string' &&
     Array.isArray(value.availableFormats) &&
     typeof value.timestamp === 'number' &&
-    typeof value.lastUsed === 'number' &&
-    typeof value.parseType === 'string'
+    typeof value.lastUsed === 'number'
   )
 }
