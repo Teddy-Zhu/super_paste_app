@@ -10,7 +10,7 @@ import type {
 } from '../types/clipboard-types'
 import type { WorkerConfig, WorkerRequest } from '../types/worker-types'
 
-import { ClipboardManager as TeddyClipboardManager } from '@teddyzhu/clipboard'
+
 import logger from '../utils/logger'
 import clipboardManagerWorkerPath from '../workers/clipboard-manager.worker?modulePath'
 
@@ -20,7 +20,6 @@ import clipboardManagerWorkerPath from '../workers/clipboard-manager.worker?modu
  */
 class ClipboardManager extends BaseWorkerManager {
   private static instance: ClipboardManager
-  private clipboard: TeddyClipboardManager
 
   private constructor() {
     const config: WorkerConfig = {
@@ -28,9 +27,6 @@ class ClipboardManager extends BaseWorkerManager {
       workerPath: clipboardManagerWorkerPath
     }
     super(config)
-
-    // 初始化剪贴板管理器
-    this.clipboard = new TeddyClipboardManager()
 
     // 设置事件监听器
     this.setupEventListeners()
@@ -115,18 +111,7 @@ class ClipboardManager extends BaseWorkerManager {
         const operation = request.method.replace('database-', '')
         result = await databaseService.executeOperation(operation, request.params)
       } else {
-        switch (request.method) {
-          // 剪贴板操作
-          case 'clipboard-restore':
-            result = this.restoreClipboardContent(request.params)
-            break
-          case 'clipboard-restore-as-text':
-            result = this.restoreClipboardContentAsText(request.params)
-            break
-
-          default:
-            throw new Error(`未知的调用方法: ${request.method}`)
-        }
+        throw new Error(`未知的调用方法: ${request.method}`)
       }
 
       // 发送成功响应
@@ -166,71 +151,22 @@ class ClipboardManager extends BaseWorkerManager {
 
 
 
-  public restoreClipboardContent(params: { content: ClipboardContent }): boolean {
+  public async restoreClipboardContent(params: { content: ClipboardContent }): Promise<boolean> {
     try {
-      // 参数验证
-      if (!params || !params.content) {
-        logger.error('[剪贴板管理器] 还原失败: 无效的参数')
-        return false
-      }
-
-      const content = params.content
-      let hasContent = false
-
-      // 使用 @teddyzhu/clipboard 分别设置各种格式
-      if (content.text) {
-        this.clipboard.setText(content.text)
-        hasContent = true
-      }
-
-      if (content.html) {
-        this.clipboard.setHtml(content.html)
-        hasContent = true
-      }
-
-      if (content.rtf) {
-        this.clipboard.setRichText(content.rtf)
-        hasContent = true
-      }
-
-      if (content.image) {
-        try {
-          this.clipboard.setImageBase64(content.image)
-          hasContent = true
-        } catch (e) {
-          logger.warn('[剪贴板管理器] 处理图片数据失败: %s', e)
-        }
-      }
-
-      if (!hasContent) {
-        logger.warn('[剪贴板管理器] 警告: 没有有效的剪贴板内容可以还原')
-      }
-
-      return true
+      await this.ensureWorkerInitialized()
+      return await this.call('restoreClipboardContent', params)
     } catch (error) {
-      logger.error('[剪贴板管理器] 还原剪贴板时发生异常:', error)
+      logger.error('[剪贴板管理器] 还原剪贴板失败:', error)
       return false
     }
   }
 
-  public restoreClipboardContentAsText(params: { content: ClipboardContent }): boolean {
+
+
+  public async restoreClipboardContentAsText(params: { content: ClipboardContent }): Promise<boolean> {
     try {
-      // 参数验证
-      if (!params || !params.content) {
-        logger.error('[剪贴板管理器] 还原为纯文本失败: 无效的参数')
-        return false
-      }
-
-      const content = params.content
-
-      // 只设置纯文本格式，去除所有其他格式
-      if (content.text && content.text.trim()) {
-        this.clipboard.setText(content.text)
-        return true
-      } else {
-        logger.warn('[剪贴板管理器] 内容中没有有效的文本数据，无法设置为纯文本')
-        return false
-      }
+      await this.ensureWorkerInitialized()
+      return await this.call('restoreClipboardContentAsText', params)
     } catch (error) {
       logger.error('[剪贴板管理器] 还原剪贴板为纯文本失败:', error)
       return false
@@ -425,6 +361,32 @@ class ClipboardManager extends BaseWorkerManager {
     } catch (error) {
       logger.error('[剪贴板管理器] 获取当前剪贴板内容失败:', error)
       return {}
+    }
+  }
+
+  /**
+   * 从数据库还原剪贴板内容（完整还原）
+   */
+  public async restoreClipboardFromDatabase(itemId: string): Promise<{ success: boolean; message?: string }> {
+    try {
+      await this.ensureWorkerInitialized()
+      return await this.call('restoreClipboardFromDatabase', itemId)
+    } catch (error) {
+      logger.error('[剪贴板管理器] 从数据库还原剪贴板失败:', error)
+      return { success: false, message: '还原剪贴板失败' }
+    }
+  }
+
+  /**
+   * 从数据库还原剪贴板内容为纯文本
+   */
+  public async restoreClipboardFromDatabaseAsText(itemId: string): Promise<{ success: boolean; message?: string }> {
+    try {
+      await this.ensureWorkerInitialized()
+      return await this.call('restoreClipboardFromDatabaseAsText', itemId)
+    } catch (error) {
+      logger.error('[剪贴板管理器] 从数据库还原剪贴板为纯文本失败:', error)
+      return { success: false, message: '还原剪贴板为纯文本失败' }
     }
   }
 

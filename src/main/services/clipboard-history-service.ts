@@ -1,7 +1,6 @@
 import databaseService from './database-service'
 import type {
   ClipboardItem,
-  ClipboardContent,
   AppInfo
 } from '../types/clipboard-types'
 import { ClipboardDataConverter } from '../types/clipboard-types'
@@ -14,88 +13,7 @@ import log from 'electron-log'
 class ClipboardHistoryService {
 
 
-  /**
-   * 还原指定的剪贴板内容到当前剪贴板
-   */
-  public async restoreClipboard(itemId: string): Promise<{ success: boolean; content?: ClipboardContent }> {
-    try {
-      // 参数验证
-      if (!itemId || typeof itemId !== 'string') {
-        log.error('[剪贴板历史服务] 还原剪贴板失败: 无效的项目ID:', itemId)
-        return { success: false }
-      }
 
-      // 从数据库根据 content_id 获取指定项目
-      const targetRecord = await databaseService.getRecordByContentId({ contentId: itemId })
-
-      if (!targetRecord) {
-        log.error('[剪贴板历史服务] 未找到指定的剪贴板项:', itemId)
-        return { success: false }
-      }
-
-      // 重建内容对象
-      const content: ClipboardContent = {}
-      if (targetRecord.content_text) content.text = targetRecord.content_text
-      if (targetRecord.content_html) content.html = targetRecord.content_html
-      if (targetRecord.content_image) content.image = targetRecord.content_image
-      if (targetRecord.content_rtf) content.rtf = targetRecord.content_rtf
-
-      // 更新最后使用时间
-      const now = Date.now()
-      await databaseService.updateLastUsed({
-        contentId: itemId,
-        lastUsed: now
-      })
-
-      return { success: true, content }
-    } catch (error) {
-      log.error('[剪贴板历史服务] 还原剪贴板失败:', error)
-      return { success: false }
-    }
-  }
-
-  /**
-   * 还原剪贴板内容为纯文本
-   */
-  public async restoreClipboardAsText(itemId: string): Promise<{ success: boolean; content?: ClipboardContent }> {
-    try {
-      // 参数验证
-      if (!itemId || typeof itemId !== 'string') {
-        log.error('[剪贴板历史服务] 还原为纯文本失败: 无效的项目ID:', itemId)
-        return { success: false }
-      }
-
-      // 从数据库根据 content_id 获取指定项目
-      const targetRecord = await databaseService.getRecordByContentId({ contentId: itemId })
-
-      if (!targetRecord) {
-        log.error('[剪贴板历史服务] 未找到指定的剪贴板项:', itemId)
-        return { success: false }
-      }
-
-      // 检查是否有文本内容
-      if (!targetRecord.content_text || !targetRecord.content_text.trim()) {
-        return { success: false }
-      }
-
-      // 重建内容对象（仅包含文本）
-      const content: ClipboardContent = {
-        text: targetRecord.content_text
-      }
-
-      // 更新最后使用时间
-      const now = Date.now()
-      await databaseService.updateLastUsed({
-        contentId: itemId,
-        lastUsed: now
-      })
-
-      return { success: true, content }
-    } catch (error) {
-      log.error('[剪贴板历史服务] 还原剪贴板为纯文本时发生异常:', error, '项目ID:', itemId)
-      return { success: false }
-    }
-  }
 
   /**
    * 删除指定的历史记录项

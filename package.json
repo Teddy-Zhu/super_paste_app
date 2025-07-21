@@ -24,7 +24,7 @@
     "@electron-toolkit/preload": "^3.0.1",
     "@electron-toolkit/utils": "^4.0.0",
     "@paymoapp/active-window": "^2.1.2",
-    "@teddyzhu/clipboard": "^0.0.3",
+    "@teddyzhu/clipboard": "^0.0.4",
     "auto-launch": "^5.0.6",
     "better-sqlite3": "^12.2.0",
     "electron-log": "^5.4.1",

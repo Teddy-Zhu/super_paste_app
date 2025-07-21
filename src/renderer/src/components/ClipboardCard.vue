@@ -326,13 +326,38 @@ const handleClick = () => {
 
 // 处理右键菜单
 const handleContextMenu = (event: MouseEvent) => {
+  // 检查是否有可转换为文本的内容
+  const hasConvertibleContent = (content: any): boolean => {
+    // 检查是否有直接的文本内容
+    if (content.text && content.text.trim()) {
+      return true
+    }
+
+    // 检查是否有可转换的其他格式
+    if (content.html && content.html.trim()) {
+      return true
+    }
+
+    if (content.rtf && content.rtf.trim()) {
+      return true
+    }
+
+    if (content.files && content.files.length > 0) {
+      return true
+    }
+
+    // 图片不支持转换为文本
+
+    return false
+  }
+
   // 创建基础菜单项
   const menuItems = [
     {
       label: '粘贴为纯文本',
       icon: IconTextBox,
       action: () => handleRestoreAsText(),
-      disabled: !props.item.content.text || !props.item.content.text.trim() // 如果没有有效文本内容则禁用
+      disabled: !hasConvertibleContent(props.item.content) // 如果没有可转换为文本的内容则禁用
     }
   ]
 

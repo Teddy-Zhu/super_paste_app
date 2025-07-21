@@ -123,18 +123,9 @@ class IpcManager {
     // 还原剪贴板内容
     ipcMain.handle('clipboard-restore', async (_, itemId: string) => {
       try {
-        const result = await clipboardHistoryService.restoreClipboard(itemId)
-        if (result.success && result.content) {
-          const success = clipboardManager.restoreClipboardContent({ content: result.content })
-          return {
-            success,
-            message: success ? '剪贴板内容已还原' : '还原失败'
-          }
-        }
-        return {
-          success: false,
-          message: '还原失败，未找到指定项目'
-        }
+        // 直接调用worker中的还原方法，包含数据库查询和剪贴板操作
+        const result = await clipboardManager.call('restoreClipboardFromDatabase', itemId)
+        return result
       } catch (error) {
         logger.error('[IPC管理器] 还原剪贴板失败:', error)
         return {
@@ -147,18 +138,9 @@ class IpcManager {
     // 还原剪贴板内容为纯文本
     ipcMain.handle('clipboard-restore-as-text', async (_, itemId: string) => {
       try {
-        const result = await clipboardHistoryService.restoreClipboardAsText(itemId)
-        if (result.success && result.content) {
-          const success = clipboardManager.restoreClipboardContentAsText({ content: result.content })
-          return {
-            success,
-            message: success ? '剪贴板内容已还原为纯文本' : '还原失败'
-          }
-        }
-        return {
-          success: false,
-          message: '还原失败，未找到指定项目或无文本内容'
-        }
+        // 直接调用worker中的还原方法，包含数据库查询和剪贴板操作
+        const result = await clipboardManager.call('restoreClipboardFromDatabaseAsText', itemId)
+        return result
       } catch (error) {
         logger.error('[IPC管理器] 还原剪贴板为纯文本失败:', error)
         return {

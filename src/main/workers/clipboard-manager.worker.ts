@@ -235,6 +235,7 @@ class ClipboardManagerWorker extends BaseWorker {
       if (this.isInErrorBackoff()) return
 
       console.log('clipboard changed via listener', new Date().toDateString())
+      console.log('clipboard available formats', data.availableFormats)
 
       // 将 ClipboardData 转换为内部格式
       const clipboardData = this.convertClipboardData(data)
@@ -710,6 +711,319 @@ class ClipboardManagerWorker extends BaseWorker {
     }
   }
 
+  // ==================== 剪贴板还原方法 ====================
+
+  /**
+   * 还原剪贴板内容（所有格式）
+   * 直接使用 setContents API 一次性设置所有格式
+   */
+  public restoreClipboardContent(params: { content: ClipboardContent }): boolean {
+    try {
+      // 参数验证
+      if (!params || !params.content) {
+        console.error('[剪贴板管理器 Worker] 还原失败: 无效的参数')
+        return false
+      }
+
+      const content = params.content
+
+      // 构建 ClipboardData 对象，根据 available formats 设置所有数据
+      const clipboardData: any = {
+        availableFormats: [] as string[]
+      }
+
+      // 添加文本内容
+      if (content.text) {
+        clipboardData.text = content.text
+        clipboardData.availableFormats.push('text')
+        console.log('[剪贴板管理器 Worker] 添加文本内容')
+      }
+
+      // 添加 HTML 内容
+      if (content.html) {
+        clipboardData.html = content.html
+        clipboardData.availableFormats.push('html')
+        console.log('[剪贴板管理器 Worker] 添加 HTML 内容')
+      }
+
+      // 添加 RTF 内容
+      if (content.rtf) {
+        clipboardData.rtf = content.rtf
+        clipboardData.availableFormats.push('rtf')
+        console.log('[剪贴板管理器 Worker] 添加 RTF 内容')
+      }
+
+      // 添加图片内容
+      if (content.image) {
+        try {
+          // 构建 ImageData 对象
+          clipboardData.image = {
+            width: 0,  // 宽度信息可能不可用，设为0
+            height: 0, // 高度信息可能不可用，设为0
+            size: content.image.length,
+            base64Data: content.image
+          }
+          clipboardData.availableFormats.push('image')
+          console.log('[剪贴板管理器 Worker] 添加图片内容')
+        } catch (e) {
+          console.warn('[剪贴板管理器 Worker] 处理图片数据失败:', e)
+        }
+      }
+
+      // 添加文件内容
+      if (content.files && content.files.length > 0) {
+        try {
+          clipboardData.files = content.files
+          clipboardData.availableFormats.push('files')
+          console.log('[剪贴板管理器 Worker] 添加文件内容:', content.files.length, '个文件')
+        } catch (e) {
+          console.warn('[剪贴板管理器 Worker] 处理文件数据失败:', e)
+        }
+      }
+
+      // 检查是否有内容可以设置
+      if (clipboardData.availableFormats.length === 0) {
+        console.warn('[剪贴板管理器 Worker] 警告: 没有有效的剪贴板内容可以还原')
+        return false
+      }
+
+      // 直接使用 setContents API 设置剪贴板内容
+      this.clipboard.setContents(clipboardData)
+      console.log('[剪贴板管理器 Worker] 已使用 setContents 设置剪贴板内容，格式:', clipboardData.availableFormats)
+
+      return true
+    } catch (error) {
+      console.error('[剪贴板管理器 Worker] 还原剪贴板时发生异常:', error)
+      return false
+    }
+  }
+
+
+
+  /**
+   * 还原剪贴板内容为纯文本
+   * 直接使用 setContents API 确保只设置文本格式
+   * 当不存在 text 时，将其他可转换的类型转为 text
+   */
+  public restoreClipboardContentAsText(params: { content: ClipboardContent }): boolean {
+    try {
+      // 参数验证
+      if (!params || !params.content) {
+        console.error('[剪贴板管理器 Worker] 还原为纯文本失败: 无效的参数')
+        return false
+      }
+
+      const content = params.content
+      let textContent = ''
+
+      // 优先使用原有的文本内容
+      if (content.text && content.text.trim()) {
+        textContent = content.text
+      }
+      // 如果没有文本内容，尝试从其他格式转换
+      else {
+        textContent = this.convertToText(content)
+
+        if (!textContent || !textContent.trim()) {
+          console.warn('[剪贴板管理器 Worker] 内容中没有可转换为文本的数据')
+          return false
+        }
+      }
+
+      // 直接使用 setContents API 只设置文本格式
+      const clipboardData = {
+        availableFormats: ['text'],
+        text: textContent
+      }
+
+      this.clipboard.setContents(clipboardData)
+      console.log('[剪贴板管理器 Worker] 已使用 setContents 设置纯文本内容')
+
+      return true
+    } catch (error) {
+      console.error('[剪贴板管理器 Worker] 还原剪贴板为纯文本失败:', error)
+      return false
+    }
+  }
+
+  /**
+   * 将其他格式的内容转换为纯文本
+   * 按优先级顺序尝试转换：HTML -> RTF -> Files
+   * 注意：不支持图片转文本
+   */
+  private convertToText(content: ClipboardContent): string {
+    // 1. 尝试从 HTML 转换
+    if (content.html && content.html.trim()) {
+      try {
+        // 移除 HTML 标签，保留文本内容
+        const textFromHtml = content.html
+          .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '') // 移除 script 标签及内容
+          .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')   // 移除 style 标签及内容
+          .replace(/<[^>]*>/g, '')                          // 移除所有 HTML 标签
+          .replace(/&nbsp;/g, ' ')                          // 替换 HTML 空格实体
+          .replace(/&lt;/g, '<')                            // 替换 HTML 实体
+          .replace(/&gt;/g, '>')
+          .replace(/&amp;/g, '&')
+          .replace(/&quot;/g, '"')
+          .replace(/&#39;/g, "'")
+          .replace(/\s+/g, ' ')                             // 合并多个空白字符
+          .trim()
+
+        if (textFromHtml) {
+          console.log('[剪贴板管理器 Worker] 从 HTML 内容转换为纯文本')
+          return textFromHtml
+        }
+      } catch (error) {
+        console.warn('[剪贴板管理器 Worker] HTML 转文本失败:', error)
+      }
+    }
+
+    // 2. 尝试从 RTF 转换
+    if (content.rtf && content.rtf.trim()) {
+      try {
+        // 简单的 RTF 转文本：移除 RTF 控制字符和格式代码
+        const textFromRtf = content.rtf
+          .replace(/\\[a-z]+\d*\s?/g, '')                   // 移除 RTF 控制字符
+          .replace(/[{}]/g, '')                             // 移除大括号
+          .replace(/\\\\/g, '\\')                           // 处理转义的反斜杠
+          .replace(/\\'/g, "'")                             // 处理转义的单引号
+          .replace(/\s+/g, ' ')                             // 合并多个空白字符
+          .trim()
+
+        if (textFromRtf) {
+          console.log('[剪贴板管理器 Worker] 从 RTF 内容转换为纯文本')
+          return textFromRtf
+        }
+      } catch (error) {
+        console.warn('[剪贴板管理器 Worker] RTF 转文本失败:', error)
+      }
+    }
+
+    // 3. 尝试从文件列表转换
+    if (content.files && content.files.length > 0) {
+      try {
+        const fileList = content.files.join('\n')
+        if (fileList) {
+          console.log('[剪贴板管理器 Worker] 从文件列表转换为纯文本')
+          return fileList
+        }
+      } catch (error) {
+        console.warn('[剪贴板管理器 Worker] 文件列表转文本失败:', error)
+      }
+    }
+
+    // 图片不支持转换为文本
+    return ''
+  }
+
+  /**
+   * 从数据库获取内容并还原剪贴板（完整还原）
+   */
+  public async restoreClipboardFromDatabase(itemId: string): Promise<{ success: boolean; message?: string }> {
+    try {
+      // 参数验证
+      if (!itemId || typeof itemId !== 'string') {
+        return { success: false, message: '无效的项目ID' }
+      }
+
+      // 从数据库获取记录
+      const targetRecord = await this.callMainThread('database-getRecordByContentId', { contentId: itemId })
+
+      if (!targetRecord) {
+        return { success: false, message: '未找到指定的剪贴板项' }
+      }
+
+      // 重建内容对象
+      const content: ClipboardContent = {}
+      if (targetRecord.content_text) content.text = targetRecord.content_text
+      if (targetRecord.content_html) content.html = targetRecord.content_html
+      if (targetRecord.content_image) content.image = targetRecord.content_image
+      if (targetRecord.content_rtf) content.rtf = targetRecord.content_rtf
+      if (targetRecord.content_files) {
+        try {
+          content.files = JSON.parse(targetRecord.content_files)
+        } catch {
+          content.files = []
+        }
+      }
+
+      // 使用 restoreClipboardContent 方法还原所有格式
+      const success = this.restoreClipboardContent({ content })
+
+      if (success) {
+        // 更新最后使用时间
+        const now = Date.now()
+        await this.callMainThread('database-updateLastUsed', {
+          contentId: itemId,
+          lastUsed: now
+        })
+      }
+
+      return {
+        success,
+        message: success ? '剪贴板内容已还原' : '还原失败'
+      }
+    } catch (error) {
+      console.error('[剪贴板管理器 Worker] 从数据库还原剪贴板失败:', error)
+      return { success: false, message: '还原剪贴板失败' }
+    }
+  }
+
+  /**
+   * 从数据库获取内容并还原剪贴板为纯文本
+   * 支持从其他格式转换为文本
+   */
+  public async restoreClipboardFromDatabaseAsText(itemId: string): Promise<{ success: boolean; message?: string }> {
+    try {
+      // 参数验证
+      if (!itemId || typeof itemId !== 'string') {
+        return { success: false, message: '无效的项目ID' }
+      }
+
+      // 从数据库获取记录
+      const targetRecord = await this.callMainThread('database-getRecordByContentId', { contentId: itemId })
+
+      if (!targetRecord) {
+        return { success: false, message: '未找到指定的剪贴板项' }
+      }
+
+      // 重建完整的内容对象，包含所有可用格式
+      const content: ClipboardContent = {}
+      if (targetRecord.content_text) content.text = targetRecord.content_text
+      if (targetRecord.content_html) content.html = targetRecord.content_html
+      if (targetRecord.content_rtf) content.rtf = targetRecord.content_rtf
+      if (targetRecord.content_image) content.image = targetRecord.content_image
+      if (targetRecord.content_files) {
+        try {
+          content.files = JSON.parse(targetRecord.content_files)
+        } catch {
+          content.files = []
+        }
+      }
+
+      // 使用优化后的 restoreClipboardContentAsText 方法
+      // 它会自动尝试从其他格式转换为文本
+      const success = this.restoreClipboardContentAsText({ content })
+
+      if (success) {
+        // 更新最后使用时间
+        const now = Date.now()
+        await this.callMainThread('database-updateLastUsed', {
+          contentId: itemId,
+          lastUsed: now
+        })
+      }
+
+      return {
+        success,
+        message: success ? '剪贴板内容已还原为纯文本' : '还原失败'
+      }
+    } catch (error) {
+      console.error('[剪贴板管理器 Worker] 从数据库还原剪贴板为纯文本失败:', error)
+      return { success: false, message: '还原剪贴板为纯文本失败' }
+    }
+  }
+
   private async getCurrentAppInfo(): Promise<AppInfo | undefined> {
     try {
       // 检查 ActiveWindow 是否已初始化
@@ -782,6 +1096,21 @@ class ClipboardManagerWorker extends BaseWorker {
           break
         case 'exportHeapdump':
           result = this.exportHeapdump(request.params)
+          break
+        case 'restoreClipboardContent':
+          result = this.restoreClipboardContent(request.params)
+          break
+        case 'restoreClipboardContentAsText':
+          result = this.restoreClipboardContentAsText(request.params)
+          break
+        case 'restoreClipboardFromDatabase':
+          result = await this.restoreClipboardFromDatabase(request.params)
+          break
+        case 'restoreClipboardFromDatabaseAsText':
+          result = await this.restoreClipboardFromDatabaseAsText(request.params)
+          break
+        case 'getCurrentClipboard':
+          result = await this.getCurrentClipboard()
           break
         default:
           throw new Error(`未知方法: ${request.method}`)
