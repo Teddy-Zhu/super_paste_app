@@ -13,14 +13,14 @@ export default defineConfig({
   main: {
     plugins: [externalizeDepsPlugin(), bytecodePlugin(),
       commonjsExternals({
-        externals: ['@paymoapp/active-window']
+        externals: ['@paymoapp/active-window', '@teddyzhu/auto-launch']
       })
     ]
   },
   preload: {
     plugins: [externalizeDepsPlugin(), bytecodePlugin(),
       commonjsExternals({
-        externals: ['@paymoapp/active-window']
+        externals: ['@paymoapp/active-window', '@teddyzhu/auto-launch']
       })
     ]
   },

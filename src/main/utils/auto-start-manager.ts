@@ -1,5 +1,5 @@
 import { app } from 'electron'
-import AutoLaunch from 'auto-launch'
+import AutoLaunch from '@teddyzhu/auto-launch'
 import logger from './logger'
 
 /**
@@ -10,6 +10,7 @@ import logger from './logger'
 class AutoStartManager {
   private autoLauncher: AutoLaunch | null = null
   private readonly appName: string = 'Super Paste'
+  private readonly packageName: string = 'super_paste_app'
 
   private readonly isUnix: boolean =
     process.platform === 'linux' || process.platform === 'freebsd' || process.platform === 'openbsd' || process.platform === 'darwin'
@@ -17,17 +18,25 @@ class AutoStartManager {
   constructor() {
     // 仅在 Linux 平台初始化 auto-launch
     if (this.isUnix) {
+      console.log('AutoLaunch', AutoLaunch)
       console.log('appName', this.appName)
       this.autoLauncher = new AutoLaunch({
-        mac: {
-          useLaunchAgent: true
+        options: {
+
+          launchInBackground: true,
+          mac: {
+            useLaunchAgent: true
+          },
+          linux: {
+            icon: this.packageName
+          },
         },
+
         name: this.appName,
         path: process.execPath,
-        isHidden: true // Linux 下隐藏启动
-        
+
       })
-      this.autoLauncher.opts.appName = this.appName
+      // this.autoLauncher.opts.appName = this.appName
     }
   }
 
@@ -79,7 +88,7 @@ class AutoStartManager {
             name: this.appName,
             path: process.execPath
           })
-        }else {
+        } else {
           app.setLoginItemSettings({
             openAtLogin: false,
           })
@@ -104,7 +113,7 @@ class AutoStartManager {
       const currentState = await this.isEnabled()
       const newState = !currentState
       const success = await this.setEnabled(newState)
-      
+
       if (success) {
         return newState
       } else {

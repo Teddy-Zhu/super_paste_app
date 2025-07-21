@@ -853,9 +853,10 @@ const shortcutLabel = computed(() => {
   padding: 0!important;
   margin: 0!important;
   border: none!important;
-
 }
-
+:global(.rich-content *) {
+  overflow: hidden!important;
+}
 
 /* 禁用所有可能的交互元素 */
 .rich-content a,

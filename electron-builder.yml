@@ -46,7 +46,7 @@ linux:
         - x64
   maintainer: electronjs.org
   category: Utility
-  icon: build/icon/icons/
+  icon: build/icon/icons
   desktop:
     StartupWMClass: Super Paste
     Name: Super Paste
