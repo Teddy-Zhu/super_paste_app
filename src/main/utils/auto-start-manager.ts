@@ -17,6 +17,7 @@ class AutoStartManager {
   constructor() {
     // 仅在 Linux 平台初始化 auto-launch
     if (this.isUnix) {
+      console.log('appName', this.appName)
       this.autoLauncher = new AutoLaunch({
         mac: {
           useLaunchAgent: true
@@ -26,6 +27,7 @@ class AutoStartManager {
         isHidden: true // Linux 下隐藏启动
         
       })
+      this.autoLauncher.opts.appName = this.appName
     }
   }
 
