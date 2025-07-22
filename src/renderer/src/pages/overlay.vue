@@ -279,12 +279,20 @@ const closeWindow = async () => {
 
 /**
  * 切换搜索框显示状态
+ * @param withBuffer 是否应用输入缓冲区内容
+ * @param force 是否强制执行（忽略动画状态检查）
  */
-const toggleSearch = async (withBuffer = false): Promise<void> => {
+const toggleSearch = async (withBuffer = false, force = false): Promise<void> => {
   try {
-    if (animationManager.isSearchAnimating.value) return
+    // 如果正在动画中且不是强制执行，则忽略
+    if (!force && animationManager.isSearchAnimating.value) {
+      console.log('[搜索框] 动画进行中，忽略切换请求')
+      return
+    }
 
     const isCurrentlyVisible = animationManager.isSearchVisible.value
+    console.log(`[搜索框] 当前状态: ${getSearchBoxStateDescription()}`)
+    console.log(`[搜索框] 切换操作: ${isCurrentlyVisible ? '隐藏' : '显示'}${withBuffer ? ' (带缓冲区)' : ''}`)
 
     if (isCurrentlyVisible) {
       await hideSearchBox()
@@ -292,26 +300,36 @@ const toggleSearch = async (withBuffer = false): Promise<void> => {
       await showSearchBox(withBuffer)
     }
   } catch (error) {
-    console.error('[前端] 搜索框切换失败:', error)
+    console.error('[搜索框] 切换失败:', error)
+    // 重置动画状态，防止卡死
     animationManager.setSearchAnimating(false)
     animationManager.setOpeningSearch(false)
     throw new OverlayError(
       '搜索框切换动画失败',
       OverlayErrorCode.ANIMATION_FAILED,
-      { withBuffer, originalError: error }
+      { withBuffer, force, originalError: error }
     )
   }
 }
 
 /**
  * 隐藏搜索框
+ * @param clearText 是否清空搜索文本
  */
-const hideSearchBox = async (): Promise<void> => {
+const hideSearchBox = async (clearText = false): Promise<void> => {
+  console.log(`[搜索框] 开始隐藏搜索框${clearText ? ' (清空文本)' : ''}`)
+
+  // 如果需要清空文本，先清空
+  if (clearText) {
+    searchAndNavManager.resetSearchState()
+  }
+
   animationManager.setSearchAnimating(true)
 
   const { play: playSearchCollapse, playState: searchCollapseState } = animationManager.createSearchCollapseAnimation()
   const { play: playTabsShow, playState: tabsShowState } = animationManager.createTabsShowAnimation()
 
+  // 并行执行动画
   playSearchCollapse()
   playTabsShow()
 
@@ -320,14 +338,21 @@ const hideSearchBox = async (): Promise<void> => {
     waitForAnimationFinish(tabsShowState)
   ])
 
+  // 更新状态
   animationManager.setSearchVisible(false)
   animationManager.setSearchAnimating(false)
+
+  console.log('[搜索框] 搜索框隐藏完成')
 }
 
 /**
  * 显示搜索框
+ * @param withBuffer 是否应用输入缓冲区内容
  */
 const showSearchBox = async (withBuffer: boolean): Promise<void> => {
+  console.log(`[搜索框] 开始显示搜索框${withBuffer ? ' (带缓冲区)' : ''}`)
+
+  // 设置动画状态
   animationManager.setOpeningSearch(true)
   animationManager.setSearchAnimating(true)
   animationManager.setSearchVisible(true)
@@ -337,6 +362,7 @@ const showSearchBox = async (withBuffer: boolean): Promise<void> => {
   const { play: playTabsHide, playState: tabsHideState } = animationManager.createTabsHideAnimation()
   const { play: playSearchExpand, playState: searchExpandState } = animationManager.createSearchExpandAnimation()
 
+  // 并行执行动画
   playTabsHide()
   playSearchExpand()
 
@@ -345,14 +371,19 @@ const showSearchBox = async (withBuffer: boolean): Promise<void> => {
     waitForAnimationFinish(searchExpandState)
   ])
 
+  // 动画完成，更新状态
   animationManager.setSearchAnimating(false)
   animationManager.setOpeningSearch(false)
 
+  // 应用缓冲区内容（如果有）
   if (withBuffer) {
     searchAndNavManager.applyInputBuffer()
   }
 
+  // 聚焦搜索输入框
   searchAndNavManager.focusSearchInput()
+
+  console.log('[搜索框] 搜索框显示完成')
 }
 
 // ==================== 搜索回调函数 ====================
@@ -402,6 +433,29 @@ scrollAndTagsManager = useScrollAndTags(
   () => searchAndNavManager.searchText.value || ''
 )
 
+// ==================== 搜索框状态管理辅助函数 ====================
+
+/**
+ * 获取搜索框当前状态描述
+ * @returns 状态描述字符串
+ */
+const getSearchBoxStateDescription = (): string => {
+  const isVisible = animationManager.isSearchVisible.value
+  const hasText = !!searchAndNavManager.searchText.value.trim()
+  const isAnimating = animationManager.isSearchAnimating.value
+  const isOpening = animationManager.isOpeningSearch.value
+
+  if (isAnimating) {
+    return isOpening ? '正在显示' : '正在隐藏'
+  }
+
+  if (isVisible) {
+    return hasText ? '可见(有文字)' : '可见(无文字)'
+  }
+
+  return '隐藏'
+}
+
 // ==================== 动画流程函数 ====================
 
 /**
@@ -409,14 +463,20 @@ scrollAndTagsManager = useScrollAndTags(
  */
 const triggerSlideInAnimation = async (): Promise<void> => {
   try {
-    if (animationManager.isAnimating()) return
+    if (animationManager.isAnimating()) {
+      console.log('[滑入动画] 动画进行中，忽略滑入请求')
+      return
+    }
 
-    // 重置搜索状态
+    console.log('[滑入动画] 开始滑入动画')
+
+    // 重置搜索状态和样式
     if (!searchAndNavManager.searchText.value.trim()) {
       animationManager.resetSearchStyles()
     }
-
     searchAndNavManager.resetSearchState()
+
+    // 设置动画状态
     animationManager.setAnimationState(AnimationState.SLIDING_IN)
 
     const { play: playSlideIn, playState } = animationManager.createSlideInAnimation()
@@ -429,12 +489,15 @@ const triggerSlideInAnimation = async (): Promise<void> => {
       '滑入动画超时'
     )
 
+    // 动画完成，设置为活动状态
     animationManager.setAnimationState(AnimationState.ACTIVE)
     setupCloseEventListeners()
     send('open-overlay-finished')
 
+    console.log('[滑入动画] 滑入动画完成')
+
   } catch (error) {
-    console.error('[前端] 滑入动画失败:', error)
+    console.error('[滑入动画] 滑入动画失败:', error)
     animationManager.resetOverlayState()
     throw new OverlayError(
       '滑入动画执行失败',
@@ -446,33 +509,76 @@ const triggerSlideInAnimation = async (): Promise<void> => {
 
 /**
  * 处理主进程发送的关闭窗口事件
+ * 实现智能关闭逻辑：
+ *
+ * 强制关闭模式 (force=true)：
+ * - 如果搜索框可见且无文字 -> 先隐藏搜索框，然后关闭窗口
+ * - 其他情况 -> 直接关闭窗口
+ *
+ * 普通关闭模式 (force=false)：
+ * 1. 如果搜索框可见且有文字 -> 清空文字并重新搜索
+ * 2. 如果搜索框可见但无文字 -> 隐藏搜索框
+ * 3. 如果搜索框不可见 -> 关闭窗口
  */
 const handleCloseWindow = async (force: boolean = false): Promise<void> => {
   try {
-    if (animationManager.currentAnimationState.value !== AnimationState.ACTIVE) return
+    // 如果窗口不在活动状态，直接返回
+    if (animationManager.currentAnimationState.value !== AnimationState.ACTIVE) {
+      console.log('[关闭窗口] 窗口不在活动状态，忽略关闭请求')
+      return
+    }
 
-    if (!force) {
+    // 强制关闭处理
+    if (force) {
+      console.log('[关闭窗口] 强制关闭窗口')
+
       const isSearchVisible = animationManager.isSearchVisible.value
       const hasSearchText = searchAndNavManager.searchText.value.trim()
 
-      if (isSearchVisible && hasSearchText) {
-        searchAndNavManager.resetSearchState()
-        await performSearchCallback('')
-        return
+      // 如果搜索框可见且无文字，先隐藏搜索框再关闭窗口
+      if (isSearchVisible && !hasSearchText) {
+        console.log('[关闭窗口] 强制关闭 - 先隐藏搜索框')
+        hideSearchBox()
       }
 
-      if (isSearchVisible && !hasSearchText) {
-        await toggleSearch()
-        return
-      }
+      await closeWindow()
+      return
     }
 
+    const isSearchVisible = animationManager.isSearchVisible.value
+    const hasSearchText = searchAndNavManager.searchText.value.trim()
+
+    console.log(`[关闭窗口] 当前搜索框状态: ${getSearchBoxStateDescription()}`)
+    console.log(`[关闭窗口] 详细状态 - 可见: ${isSearchVisible}, 有文字: ${!!hasSearchText}`)
+
+    // 情况1: 搜索框可见且有文字 -> 清空文字并重新搜索
+    if (isSearchVisible && hasSearchText) {
+      console.log('[关闭窗口] 清空搜索文字并重新搜索')
+      searchAndNavManager.resetSearchState()
+      await performSearchCallback('')
+      return
+    }
+
+    // 情况2: 搜索框可见但无文字 -> 隐藏搜索框
+    if (isSearchVisible && !hasSearchText) {
+      console.log('[关闭窗口] 隐藏搜索框')
+      await hideSearchBox()
+      return
+    }
+
+    // 情况3: 搜索框不可见 -> 关闭窗口
+    console.log('[关闭窗口] 执行窗口关闭')
     await closeWindow()
+
   } catch (error) {
-    console.error('[前端] 处理关闭窗口事件失败:', error)
+    console.error('[关闭窗口] 处理关闭窗口事件失败:', error)
+
+    // 错误恢复：尝试直接关闭窗口
     try {
+      console.log('[关闭窗口] 尝试错误恢复 - 直接关闭窗口')
       await closeWindow()
     } catch (closeError) {
+      console.error('[关闭窗口] 错误恢复失败，发送强制关闭信号:', closeError)
       send('close-overlay-window')
     }
   }
@@ -898,6 +1004,10 @@ onUnmounted(() => {
   transform: scaleX(0);
   padding-left: 0px;
   padding-right: 0px;
+  /* 添加硬件加速和平滑过渡 */
+  will-change: width, opacity, transform, padding;
+  backface-visibility: hidden;
+  perspective: 1000px;
 }
 
 .search-input {
@@ -933,6 +1043,10 @@ onUnmounted(() => {
   transform: scaleX(1);
   max-width: 100%;
   align-items: center;
+  /* 添加硬件加速和平滑过渡 */
+  will-change: opacity, transform, max-width;
+  backface-visibility: hidden;
+  perspective: 1000px;
 }
 
 .tabs-container::-webkit-scrollbar {

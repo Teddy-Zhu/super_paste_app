@@ -67,10 +67,10 @@ export interface AnimationManager {
 
 export const ANIMATION_CONFIG: AnimationConfig = {
   OVERLAY_DURATION: 200,
-  SEARCH_DURATION: 300,
+  SEARCH_DURATION: 250, // 减少搜索动画时长，让切换更快
   SLIDE_IN_EASING: 'cubic-bezier(0.25, 0.46, 0.45, 0.94)',
   SLIDE_OUT_EASING: 'cubic-bezier(0.55, 0.06, 0.68, 0.19)',
-  SEARCH_EASING: 'cubic-bezier(0.4, 0, 0.2, 1)',
+  SEARCH_EASING: 'cubic-bezier(0.25, 0.1, 0.25, 1)', // 使用更流畅的缓动函数
   SEARCH_WIDTH: '600px',
   COLLAPSE_WIDTH: '400px'
 } as const
@@ -162,6 +162,15 @@ export function useAnimation(
         paddingLeft: '0px',
         paddingRight: '0px'
       },
+      // 添加中间关键帧，让动画更自然
+      {
+        width: ANIMATION_CONFIG.SEARCH_WIDTH,
+        opacity: 0.8,
+        transform: 'scaleX(0.95)',
+        paddingLeft: '6px',
+        paddingRight: '6px',
+        offset: 0.7
+      },
       {
         width: ANIMATION_CONFIG.SEARCH_WIDTH,
         opacity: 1,
@@ -175,7 +184,7 @@ export function useAnimation(
       fill: 'forwards'
     })
   }
-  
+
   const createSearchCollapseAnimation = (): AnimationControls => {
     return useAnimate(searchContainerRef, [
       {
@@ -184,6 +193,15 @@ export function useAnimation(
         transform: 'scaleX(1)',
         paddingLeft: '8px',
         paddingRight: '8px'
+      },
+      // 添加中间关键帧，让收缩更平滑
+      {
+        width: '100px',
+        opacity: 0.3,
+        transform: 'scaleX(0.3)',
+        paddingLeft: '2px',
+        paddingRight: '2px',
+        offset: 0.6
       },
       {
         width: '0px',
@@ -206,9 +224,16 @@ export function useAnimation(
         transform: 'scaleX(1)',
         maxWidth: '100%'
       },
+      // 添加中间关键帧，让隐藏更自然
+      {
+        opacity: 0.4,
+        transform: 'scaleX(0.6)',
+        maxWidth: '30%',
+        offset: 0.5
+      },
       {
         opacity: 0,
-        transform: 'scaleX(0.8)',
+        transform: 'scaleX(0)',
         maxWidth: '0px'
       }
     ], {
@@ -217,13 +242,20 @@ export function useAnimation(
       fill: 'forwards'
     })
   }
-  
+
   const createTabsShowAnimation = (): AnimationControls => {
     return useAnimate(tabsContainerRef, [
       {
         opacity: 0,
-        transform: 'scaleX(0.8)',
+        transform: 'scaleX(0)',
         maxWidth: '0px'
+      },
+      // 添加中间关键帧，让显示更自然
+      {
+        opacity: 0.6,
+        transform: 'scaleX(0.7)',
+        maxWidth: '70%',
+        offset: 0.4
       },
       {
         opacity: 1,

@@ -240,6 +240,7 @@ export class OverlayWindowManager {
         minimizable: false,
         maximizable: false,
         closable: true,
+        roundedCorners:false,
         focusable: true,
         show: false,
         type: 'utility',
@@ -312,7 +313,7 @@ export class OverlayWindowManager {
     // 失去焦点时隐藏窗口
     this.overlayWindow.on('blur', () => {
       if (this.overlayWindow && !is.dev) {
-        this.hideWindowBackend()
+        this.hideWindowBackend(true)
       }
     })
 
