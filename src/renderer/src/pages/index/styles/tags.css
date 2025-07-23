@@ -1,0 +1,460 @@
+/* 关于页面 - 现代化设计 */
+.about-content {
+  display: flex;
+  flex-direction: column;
+  gap: 40px;
+}
+
+.app-info {
+  background: linear-gradient(135deg, #ffffff 0%, #f8f9fa 100%);
+  border: 1px solid rgba(0, 0, 0, 0.06);
+  border-radius: 20px;
+  padding: 48px;
+  text-align: center;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
+  position: relative;
+  overflow: hidden;
+}
+
+.app-info::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 4px;
+  background: linear-gradient(90deg, #007aff 0%, #5ac8fa 50%, #34c759 100%);
+}
+
+.app-logo {
+  width: 80px;
+  height: 80px;
+  margin-bottom: 24px;
+  border-radius: 16px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
+}
+
+.app-name {
+  font-size: 24px;
+  font-weight: 700;
+  color: #1d1d1f;
+  margin: 0 0 8px 0;
+  letter-spacing: -0.02em;
+}
+
+.app-version {
+  font-size: 16px;
+  color: #86868b;
+  margin: 0 0 16px 0;
+  font-weight: 600;
+}
+
+.app-description {
+  font-size: 15px;
+  color: #86868b;
+  margin: 0;
+  line-height: 1.5;
+}
+
+/* 版本信息样式覆盖 - 现代化设计 */
+:deep(.versions) {
+  background: linear-gradient(135deg, #ffffff 0%, #f8f9fa 100%);
+  border: 1px solid rgba(0, 0, 0, 0.06);
+  border-radius: 16px;
+  padding: 32px;
+  list-style: none;
+  margin: 0;
+  box-shadow: 0 2px 16px rgba(0, 0, 0, 0.06);
+}
+
+:deep(.versions li) {
+  padding: 12px 0;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+  font-size: 15px;
+  color: #86868b;
+  font-weight: 500;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+:deep(.versions li:last-child) {
+  border-bottom: none;
+}
+
+/* 标签管理样式 - 现代化设计 */
+.tag-actions {
+  margin-bottom: 32px;
+}
+
+.create-tag-button {
+  background: linear-gradient(135deg, #007aff 0%, #5ac8fa 100%);
+  color: white;
+  border: none;
+  border-radius: 12px;
+  padding: 14px 20px;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  box-shadow: 0 2px 8px rgba(0, 122, 255, 0.25);
+  letter-spacing: -0.01em;
+}
+
+.create-tag-button:hover:not(:disabled) {
+  background: linear-gradient(135deg, #0056cc 0%, #4aa3d9 100%);
+  box-shadow: 0 4px 12px rgba(0, 122, 255, 0.25);
+}
+
+.create-tag-button:disabled {
+  background: linear-gradient(135deg, #d1d1d6 0%, #e5e5ea 100%);
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+  color: #86868b;
+}
+
+/* 标签表单 - 现代化设计 */
+.tag-form-card {
+  background: linear-gradient(135deg, #ffffff 0%, #f8f9fa 100%);
+  border: 1px solid rgba(0, 0, 0, 0.06);
+  border-radius: 16px;
+  padding: 32px;
+  margin-bottom: 32px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
+}
+
+.tag-form-header {
+  margin-bottom: 28px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+}
+
+.tag-form-title {
+  font-size: 20px;
+  font-weight: 700;
+  color: #1d1d1f;
+  margin: 0;
+  letter-spacing: -0.02em;
+}
+
+.tag-form-content {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.form-label {
+  font-size: 15px;
+  font-weight: 600;
+  color: #1d1d1f;
+  letter-spacing: -0.01em;
+}
+
+.form-input,
+.form-textarea {
+  background: #ffffff;
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  border-radius: 10px;
+  padding: 14px 16px;
+  font-size: 15px;
+  color: #1d1d1f;
+  transition: all 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+  font-family: inherit;
+  font-weight: 500;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+}
+
+.form-input:focus,
+.form-textarea:focus {
+  outline: none;
+  border-color: #007aff;
+  box-shadow: 0 0 0 4px rgba(0, 122, 255, 0.1);
+}
+
+.form-textarea {
+  resize: vertical;
+  min-height: 100px;
+  line-height: 1.5;
+}
+
+/* 颜色选择器 - 现代化设计 */
+.color-picker {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+}
+
+.color-options {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.color-option {
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  cursor: pointer;
+  border: 3px solid transparent;
+  transition: all 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.color-option:hover {
+  transform: scale(1.1);
+  box-shadow: 0 3px 12px rgba(0, 0, 0, 0.15);
+}
+
+.color-option.active {
+  border-color: #1d1d1f;
+  transform: scale(1.1);
+  box-shadow: 0 3px 12px rgba(0, 0, 0, 0.2);
+}
+
+.color-input {
+  width: 44px;
+  height: 36px;
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  border-radius: 10px;
+  cursor: pointer;
+  background: none;
+  transition: all 0.3s ease;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.color-input:hover {
+  box-shadow: 0 3px 12px rgba(0, 0, 0, 0.12);
+}
+
+/* 表单按钮 - 现代化设计 */
+.form-actions {
+  display: flex;
+  gap: 16px;
+  margin-top: 12px;
+}
+
+.form-button {
+  border: none;
+  border-radius: 12px;
+  padding: 14px 24px;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+  letter-spacing: -0.01em;
+}
+
+.form-button.primary {
+  background: linear-gradient(135deg, #007aff 0%, #5ac8fa 100%);
+  color: white;
+  box-shadow: 0 2px 8px rgba(0, 122, 255, 0.25);
+}
+
+.form-button.primary:hover {
+  background: linear-gradient(135deg, #0056cc 0%, #4aa3d9 100%);
+  box-shadow: 0 4px 12px rgba(0, 122, 255, 0.25);
+}
+
+.form-button.secondary {
+  background: #f2f2f7;
+  color: #86868b;
+  border: 1px solid rgba(0, 0, 0, 0.06);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+}
+
+.form-button.secondary:hover {
+  background: #e5e5ea;
+  border-color: rgba(0, 0, 0, 0.1);
+  color: #1d1d1f;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+}
+
+/* 标签列表 - 现代化设计 */
+.tags-list {
+  margin-top: 32px;
+}
+
+.loading-state,
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 64px 32px;
+  text-align: center;
+}
+
+.loading-spinner {
+  width: 32px;
+  height: 32px;
+  border: 3px solid rgba(0, 122, 255, 0.1);
+  border-left-color: #007aff;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+  margin-bottom: 16px;
+}
+
+.empty-icon {
+  font-size: 64px;
+  margin-bottom: 20px;
+  opacity: 0.7;
+  filter: grayscale(0.3);
+}
+
+.empty-text {
+  font-size: 20px;
+  font-weight: 700;
+  color: #1d1d1f;
+  margin: 0 0 8px 0;
+  letter-spacing: -0.02em;
+}
+
+.empty-hint {
+  font-size: 15px;
+  color: #86868b;
+  margin: 0;
+  font-weight: 500;
+}
+
+/* 标签网格 - 现代化设计 */
+.tags-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 20px;
+}
+
+.tag-card {
+  background: linear-gradient(135deg, #ffffff 0%, #f8f9fa 100%);
+  border: 1px solid rgba(0, 0, 0, 0.06);
+  border-radius: 16px;
+  padding: 24px;
+  transition: all 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+  position: relative;
+  overflow: hidden;
+}
+
+.tag-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: linear-gradient(90deg, #007aff 0%, #5ac8fa 50%, #34c759 100%);
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+
+.tag-card:hover {
+  border-color: rgba(0, 122, 255, 0.2);
+  box-shadow: 0 4px 16px rgba(0, 122, 255, 0.08);
+}
+
+.tag-card:hover::before {
+  opacity: 1;
+}
+
+.tag-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 16px;
+}
+
+.tag-info {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex: 1;
+}
+
+.tag-color-dot {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
+}
+
+.tag-name {
+  font-size: 17px;
+  font-weight: 700;
+  color: #1d1d1f;
+  margin: 0;
+  word-break: break-word;
+  letter-spacing: -0.01em;
+}
+
+.tag-actions-menu {
+  display: flex;
+  gap: 6px;
+  opacity: 0;
+  transition: all 0.3s ease;
+}
+
+.tag-card:hover .tag-actions-menu {
+  opacity: 1;
+}
+
+.tag-action-button {
+  background: none;
+  border: none;
+  padding: 8px;
+  border-radius: 8px;
+  cursor: pointer;
+  color: #86868b;
+  transition: all 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.tag-action-button:hover {
+  background: rgba(0, 122, 255, 0.1);
+  color: #007aff;
+}
+
+.tag-action-button.danger:hover {
+  background: rgba(255, 59, 48, 0.1);
+  color: #ff3b30;
+}
+
+.tag-description {
+  font-size: 15px;
+  color: #86868b;
+  line-height: 1.5;
+  margin-bottom: 16px;
+  word-break: break-word;
+  font-weight: 500;
+}
+
+.tag-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(0, 0, 0, 0.06);
+}
+
+.tag-date {
+  font-size: 13px;
+  color: #86868b;
+  font-weight: 500;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}

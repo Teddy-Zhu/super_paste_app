@@ -1,0 +1,622 @@
+/* 设置页面样式 */
+.settings-container {
+  display: flex;
+  height: 100vh;
+  background: linear-gradient(135deg, #c2dfff 0%, #ffffff 100%);
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  padding: 20px;
+  gap: 20px;
+}
+
+/* 左侧边栏 - 模仿网络代理工具的侧边栏 */
+.sidebar {
+  width: 260px;
+  background: #ffffff;
+  border-radius: 12px;
+  box-shadow: 0 2px 16px rgba(0, 0, 0, 0.06);
+  display: flex;
+  flex-direction: column;
+  padding: 24px 0;
+  border: 1px solid rgba(0, 0, 0, 0.04);
+}
+
+.sidebar-header {
+  padding: 0 24px 20px 24px;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+  margin-bottom: 20px;
+}
+
+.app-title {
+  font-size: 20px;
+  font-weight: 700;
+  color: #1d1d1f;
+  margin: 0 0 4px 0;
+  letter-spacing: -0.02em;
+}
+
+.app-subtitle {
+  font-size: 13px;
+  color: #86868b;
+  margin: 0;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.sidebar-nav {
+  flex: 1;
+  padding: 0 12px;
+}
+
+.nav-item {
+  display: flex;
+  align-items: center;
+  padding: 12px 16px;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+  border-radius: 8px;
+  margin: 1px 0;
+  position: relative;
+}
+
+.nav-item:hover {
+  background: rgba(0, 122, 255, 0.08);
+}
+
+.nav-item.active {
+  background: linear-gradient(135deg, #007aff 0%, #5ac8fa 100%);
+  color: #ffffff;
+  box-shadow: 0 2px 8px rgba(0, 122, 255, 0.25);
+}
+
+.nav-item.active .nav-text {
+  color: #ffffff;
+  font-weight: 600;
+}
+
+.nav-icon {
+  width: 18px;
+  height: 18px;
+  margin-right: 12px;
+  color: #86868b;
+  flex-shrink: 0;
+  transition: color 0.2s ease;
+}
+
+.nav-item.active .nav-icon {
+  color: #ffffff;
+}
+
+.nav-item:hover .nav-icon {
+  color: #007aff;
+}
+
+.nav-item.active:hover .nav-icon {
+  color: #ffffff;
+}
+
+.nav-text {
+  font-size: 14px;
+  color: #1d1d1f;
+  font-weight: 500;
+  transition: color 0.2s ease;
+}
+
+.nav-item:hover .nav-text {
+  color: #007aff;
+}
+
+.nav-item.active:hover .nav-text {
+  color: #ffffff;
+}
+
+/* 主内容区域 - 现代化卡片设计 */
+.main-content {
+  flex: 1;
+  background: #ffffff;
+  border-radius: 12px;
+  box-shadow: 0 2px 16px rgba(0, 0, 0, 0.06);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid rgba(0, 0, 0, 0.04);
+}
+
+.content-section {
+  padding: 40px;
+  flex: 1;
+  overflow-y: auto;
+  background: linear-gradient(180deg, #ffffff 0%, #fafbfc 100%);
+}
+
+/* 现代化滚动条样式 */
+.content-section::-webkit-scrollbar {
+  width: 8px;
+}
+
+.content-section::-webkit-scrollbar-track {
+  background: transparent;
+  border-radius: 4px;
+}
+
+.content-section::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, rgba(0, 122, 255, 0.3) 0%, rgba(90, 200, 250, 0.3) 100%);
+  border-radius: 4px;
+  transition: all 0.3s ease;
+}
+
+.content-section::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(180deg, rgba(0, 122, 255, 0.5) 0%, rgba(90, 200, 250, 0.5) 100%);
+  width: 10px;
+}
+
+.content-section::-webkit-scrollbar-thumb:active {
+  background: linear-gradient(180deg, rgba(0, 122, 255, 0.7) 0%, rgba(90, 200, 250, 0.7) 100%);
+}
+
+/* Firefox 滚动条样式 */
+.content-section {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(0, 122, 255, 0.3) transparent;
+}
+
+/* 全局滚动条样式 - 应用到所有滚动容器 */
+.tags-list::-webkit-scrollbar,
+.form-textarea::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.tags-list::-webkit-scrollbar-track,
+.form-textarea::-webkit-scrollbar-track {
+  background: transparent;
+  border-radius: 3px;
+}
+
+.tags-list::-webkit-scrollbar-thumb,
+.form-textarea::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, rgba(0, 122, 255, 0.2) 0%, rgba(90, 200, 250, 0.2) 100%);
+  border-radius: 3px;
+  transition: all 0.3s ease;
+}
+
+.tags-list::-webkit-scrollbar-thumb:hover,
+.form-textarea::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(180deg, rgba(0, 122, 255, 0.4) 0%, rgba(90, 200, 250, 0.4) 100%);
+}
+
+.tags-list::-webkit-scrollbar-thumb:active,
+.form-textarea::-webkit-scrollbar-thumb:active {
+  background: linear-gradient(180deg, rgba(0, 122, 255, 0.6) 0%, rgba(90, 200, 250, 0.6) 100%);
+}
+
+/* Firefox 全局滚动条样式 */
+.tags-list,
+.form-textarea {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(0, 122, 255, 0.2) transparent;
+}
+
+/* 全局滚动条样式 - 覆盖默认样式 */
+* {
+  /* Webkit 浏览器滚动条样式 */
+  scrollbar-width: thin;
+  scrollbar-color: rgba(0, 122, 255, 0.2) transparent;
+}
+
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+*::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.02);
+  border-radius: 4px;
+}
+
+*::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, rgba(0, 122, 255, 0.25) 0%, rgba(90, 200, 250, 0.25) 100%);
+  border-radius: 4px;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  transition: all 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(180deg, rgba(0, 122, 255, 0.45) 0%, rgba(90, 200, 250, 0.45) 100%);
+  border-color: rgba(255, 255, 255, 0.5);
+}
+
+*::-webkit-scrollbar-thumb:active {
+  background: linear-gradient(180deg, rgba(0, 122, 255, 0.65) 0%, rgba(90, 200, 250, 0.65) 100%);
+  border-color: rgba(255, 255, 255, 0.7);
+}
+
+*::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+.section-header {
+  margin-bottom: 36px;
+  padding-bottom: 20px;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+}
+
+.section-title {
+  font-size: 28px;
+  font-weight: 700;
+  color: #1d1d1f;
+  margin: 0 0 8px 0;
+  letter-spacing: -0.02em;
+}
+
+.section-subtitle {
+  font-size: 15px;
+  color: #86868b;
+  margin: 0;
+  font-weight: 500;
+}
+
+/* 设置网格 */
+.settings-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.setting-card {
+  background: #ffffff;
+  border: 1px solid rgba(0, 0, 0, 0.06);
+  border-radius: 16px;
+  padding: 28px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  transition: all 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+  position: relative;
+  overflow: hidden;
+}
+
+.setting-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: linear-gradient(90deg, #007aff 0%, #5ac8fa 50%, #34c759 100%);
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+
+.setting-card:hover {
+  background: #ffffff;
+  border-color: rgba(0, 122, 255, 0.2);
+  box-shadow: 0 4px 16px rgba(0, 122, 255, 0.08);
+}
+
+.setting-card:hover::before {
+  opacity: 1;
+}
+
+.setting-info {
+  flex: 1;
+}
+
+.setting-title {
+  font-size: 17px;
+  font-weight: 600;
+  color: #1d1d1f;
+  margin: 0 0 6px 0;
+  letter-spacing: -0.01em;
+}
+
+.setting-description {
+  font-size: 14px;
+  color: #86868b;
+  margin: 0;
+  line-height: 1.4;
+}
+
+.setting-control {
+  margin-left: 24px;
+}
+
+/* 开关样式 - 现代化设计 */
+.toggle-switch {
+  position: relative;
+  display: inline-block;
+  width: 52px;
+  height: 28px;
+}
+
+.toggle-switch input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.toggle-slider {
+  position: absolute;
+  cursor: pointer;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: linear-gradient(135deg, #e5e5e7 0%, #d1d1d6 100%);
+  transition: all 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+  border-radius: 28px;
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.toggle-slider:before {
+  position: absolute;
+  content: "";
+  height: 24px;
+  width: 24px;
+  left: 2px;
+  bottom: 2px;
+  background: linear-gradient(135deg, #ffffff 0%, #f8f9fa 100%);
+  transition: all 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+  border-radius: 50%;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+}
+
+input:checked+.toggle-slider {
+  background: linear-gradient(135deg, #007aff 0%, #5ac8fa 100%);
+  box-shadow: inset 0 1px 3px rgba(0, 122, 255, 0.2);
+}
+
+input:checked+.toggle-slider:before {
+  transform: translateX(24px);
+  box-shadow: 0 2px 8px rgba(0, 122, 255, 0.3);
+}
+
+/* 测试按钮 - 现代化设计 */
+.test-button {
+  background: linear-gradient(135deg, #007aff 0%, #5ac8fa 100%);
+  color: white;
+  border: none;
+  border-radius: 12px;
+  padding: 12px 20px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+  box-shadow: 0 2px 8px rgba(0, 122, 255, 0.25);
+  letter-spacing: -0.01em;
+}
+
+.test-button:hover {
+  background: linear-gradient(135deg, #0056cc 0%, #4aa3d9 100%);
+  box-shadow: 0 4px 12px rgba(0, 122, 255, 0.25);
+}
+
+.test-button:active {
+  box-shadow: 0 2px 8px rgba(0, 122, 255, 0.25);
+}
+
+/* 清除历史记录按钮 - 现代化设计 */
+.clear-history-button {
+  background: linear-gradient(135deg, #ff3b30 0%, #ff6b6b 100%);
+  color: white;
+  border: none;
+  border-radius: 12px;
+  padding: 12px 20px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+  box-shadow: 0 2px 8px rgba(255, 59, 48, 0.25);
+  letter-spacing: -0.01em;
+}
+
+.clear-history-button:hover {
+  background: linear-gradient(135deg, #d70015 0%, #ff5252 100%);
+  box-shadow: 0 4px 12px rgba(255, 59, 48, 0.25);
+}
+
+.clear-history-button:active {
+  box-shadow: 0 2px 8px rgba(255, 59, 48, 0.25);
+}
+
+/* 数字输入框 - 现代化设计 */
+.number-input-container {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.number-input {
+  background: #ffffff;
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  border-radius: 10px;
+  padding: 12px 16px;
+  font-size: 15px;
+  color: #1d1d1f;
+  width: 90px;
+  text-align: center;
+  transition: all 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+  font-weight: 500;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+}
+
+.number-input.small {
+  width: 70px;
+  padding: 10px 12px;
+  font-size: 14px;
+}
+
+.number-input:focus {
+  outline: none;
+  border-color: #007aff;
+  box-shadow: 0 0 0 4px rgba(0, 122, 255, 0.1);
+}
+
+.number-input:hover {
+  border-color: rgba(0, 122, 255, 0.3);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+}
+
+.number-input:disabled {
+  background: #f2f2f7;
+  color: #86868b;
+  cursor: not-allowed;
+  border-color: rgba(0, 0, 0, 0.06);
+}
+
+.number-unit {
+  font-size: 14px;
+  color: #86868b;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+/* 开关样式 - 现代化设计 */
+.toggle-switch {
+  position: relative;
+  display: inline-block;
+  width: 52px;
+  height: 28px;
+}
+
+.toggle-switch input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.toggle-slider {
+  position: absolute;
+  cursor: pointer;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: linear-gradient(135deg, #e5e5e7 0%, #d1d1d6 100%);
+  transition: all 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+  border-radius: 28px;
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.toggle-slider:before {
+  position: absolute;
+  content: "";
+  height: 24px;
+  width: 24px;
+  left: 2px;
+  bottom: 2px;
+  background: linear-gradient(135deg, #ffffff 0%, #f8f9fa 100%);
+  transition: all 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+  border-radius: 50%;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+}
+
+input:checked+.toggle-slider {
+  background: linear-gradient(135deg, #007aff 0%, #5ac8fa 100%);
+  box-shadow: inset 0 1px 3px rgba(0, 122, 255, 0.2);
+}
+
+input:checked+.toggle-slider:before {
+  transform: translateX(24px);
+  box-shadow: 0 2px 8px rgba(0, 122, 255, 0.3);
+}
+
+/* 测试按钮 - 现代化设计 */
+.test-button {
+  background: linear-gradient(135deg, #007aff 0%, #5ac8fa 100%);
+  color: white;
+  border: none;
+  border-radius: 12px;
+  padding: 12px 20px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+  box-shadow: 0 2px 8px rgba(0, 122, 255, 0.25);
+  letter-spacing: -0.01em;
+}
+
+.test-button:hover {
+  background: linear-gradient(135deg, #0056cc 0%, #4aa3d9 100%);
+  box-shadow: 0 4px 12px rgba(0, 122, 255, 0.25);
+}
+
+.test-button:active {
+  box-shadow: 0 2px 8px rgba(0, 122, 255, 0.25);
+}
+
+/* 清除历史记录按钮 - 现代化设计 */
+.clear-history-button {
+  background: linear-gradient(135deg, #ff3b30 0%, #ff6b6b 100%);
+  color: white;
+  border: none;
+  border-radius: 12px;
+  padding: 12px 20px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+  box-shadow: 0 2px 8px rgba(255, 59, 48, 0.25);
+  letter-spacing: -0.01em;
+}
+
+.clear-history-button:hover {
+  background: linear-gradient(135deg, #d70015 0%, #ff5252 100%);
+  box-shadow: 0 4px 12px rgba(255, 59, 48, 0.25);
+}
+
+.clear-history-button:active {
+  box-shadow: 0 2px 8px rgba(255, 59, 48, 0.25);
+}
+
+/* 数字输入框 - 现代化设计 */
+.number-input-container {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.number-input {
+  background: #ffffff;
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  border-radius: 10px;
+  padding: 12px 16px;
+  font-size: 15px;
+  color: #1d1d1f;
+  width: 90px;
+  text-align: center;
+  transition: all 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+  font-weight: 500;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+}
+
+.number-input.small {
+  width: 70px;
+  padding: 10px 12px;
+  font-size: 14px;
+}
+
+.number-input:focus {
+  outline: none;
+  border-color: #007aff;
+  box-shadow: 0 0 0 4px rgba(0, 122, 255, 0.1);
+}
+
+.number-input:hover {
+  border-color: rgba(0, 122, 255, 0.3);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+}
+
+.number-input:disabled {
+  background: #f2f2f7;
+  color: #86868b;
+  cursor: not-allowed;
+  border-color: rgba(0, 0, 0, 0.06);
+}
+
+.number-unit {
+  font-size: 14px;
+  color: #86868b;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}

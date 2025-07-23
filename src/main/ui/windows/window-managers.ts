@@ -77,6 +77,9 @@ export class MainWindowManager {
 
     this.mainWindow.on('ready-to-show', () => {
       logger.debug('[主进程] 主窗口准备就绪')
+      if (is.dev) {
+        this.mainWindow?.webContents.openDevTools()
+      }
     })
 
     // 监听主窗口显示事件
