@@ -29,8 +29,26 @@ const sliderMarks = [
 
 // 计算滑块标记位置的函数
 const getMarkPosition = (value: number): number => {
-  // 滑块范围是 1-365，所以位置计算为 (value - 1) / (365 - 1) * 100
-  return (value - 1) / 364 * 100
+  // 滑块范围是 1-365
+  const min = 1
+  const max = 365
+
+  // 计算基础百分比
+  const percentage = (value - min) / (max - min)
+
+  // 尝试使用更精确的调整方法
+  // 基于实际观察，HTML range元素的thumb定位遵循特定的模式
+
+  // 对于不同的值，使用不同的调整策略
+  // 继续向左微调
+  if (percentage === 0) {
+    return 1.6 // 最小值时的位置
+  } else if (percentage === 1) {
+    return 98.6 // 最大值时的位置
+  } else {
+    // 中间值使用线性插值
+    return 1.6 + percentage * (98.6 - 1.6)
+  }
 }
 
 // 切换开机自启
@@ -126,70 +144,52 @@ const clearHistory = async () => {
           <p class="setting-description">设置历史记录的最大保存时间</p>
         </div>
         <div class="setting-control keep-time-control">
-          <!-- 当前值显示 -->
-          <div class="keep-time-display">
-            <span class="keep-time-value">{{ settingsStore.maxKeepTime === -1 ? '不限制' : `${settingsStore.maxKeepTime}天` }}</span>
-          </div>
-
-          <!-- 快速选择按钮 -->
-          <div class="keep-time-presets">
-            <button
-              v-for="preset in keepTimePresets"
-              :key="preset.value"
-              :class="['preset-button', { active: settingsStore.maxKeepTime === preset.value }]"
-              @click="updateMaxKeepTime(preset.value)"
-            >
-              {{ preset.label }}
-            </button>
-          </div>
-
-          <!-- 滑块控制 -->
-          <div class="keep-time-slider-container" v-if="settingsStore.maxKeepTime !== -1">
-            <div class="slider-header">
-              <span class="slider-title">拖动调整保存时间</span>
-              <span class="slider-current-value">{{ settingsStore.maxKeepTime }}天</span>
-            </div>
-
-            <div class="slider-wrapper">
-              <div class="slider-labels">
-                <span class="slider-label">1天</span>
-                <span class="slider-label">365天</span>
-              </div>
-
-              <input
-                type="range"
-                :value="settingsStore.maxKeepTime === -1 ? 30 : settingsStore.maxKeepTime"
-                @input="updateMaxKeepTime(parseInt(($event.target as HTMLInputElement).value))"
-                min="1"
-                max="365"
-                step="1"
-                class="keep-time-slider"
+          <!-- 快速选择按钮和输入框在同一行 -->
+          <div class="keep-time-inline-section">
+            <!-- 快速选择按钮 -->
+            <div class="keep-time-presets-compact">
+              <button
+                v-for="preset in keepTimePresets"
+                :key="preset.value"
+                :class="['preset-button-compact', { active: settingsStore.maxKeepTime === preset.value }]"
+                @click="updateMaxKeepTime(preset.value)"
               >
-
-              <div class="slider-marks">
-                <div class="slider-mark" v-for="mark in sliderMarks" :key="mark.value" :style="{ left: `${getMarkPosition(mark.value)}%` }">
-                  <span class="mark-label">{{ mark.label }}</span>
-                </div>
-              </div>
+                {{ preset.label }}
+              </button>
             </div>
-          </div>
 
-          <!-- 精确输入 -->
-          <div class="keep-time-input-container">
-            <label class="input-label">精确设置：</label>
+            <!-- 输入框在右边 -->
             <div class="number-input-container">
               <input
                 type="number"
                 :value="settingsStore.maxKeepTime === -1 ? '' : settingsStore.maxKeepTime"
                 @input="updateMaxKeepTime(parseInt(($event.target as HTMLInputElement).value) || -1)"
-                :placeholder="settingsStore.maxKeepTime === -1 ? '不限制' : ''"
+                :placeholder="settingsStore.maxKeepTime === -1 ? '不限制' : '输入天数'"
                 min="1"
                 max="365"
                 step="1"
-                class="number-input small"
+                class="number-input"
                 :disabled="settingsStore.maxKeepTime === -1"
               >
-              <span class="number-unit">天</span>
+              <span class="number-unit">{{ settingsStore.maxKeepTime === -1 ? '不限制' : '天' }}</span>
+            </div>
+          </div>
+
+          <!-- 紧凑的滑块控制 -->
+          <div class="keep-time-slider-compact" v-if="settingsStore.maxKeepTime !== -1">
+            <input
+              type="range"
+              :value="settingsStore.maxKeepTime"
+              @input="updateMaxKeepTime(parseInt(($event.target as HTMLInputElement).value))"
+              min="1"
+              max="365"
+              step="1"
+              class="keep-time-slider"
+            >
+            <div class="slider-marks">
+              <div class="slider-mark" v-for="mark in sliderMarks" :key="mark.value" :style="{ left: `${getMarkPosition(mark.value)}%` }">
+                <span class="mark-label">{{ mark.label }}</span>
+              </div>
             </div>
           </div>
         </div>

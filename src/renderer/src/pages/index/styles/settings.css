@@ -10,7 +10,7 @@
 
 /* 左侧边栏 - 模仿网络代理工具的侧边栏 */
 .sidebar {
-  width: 260px;
+  width: 200px;
   background: #ffffff;
   border-radius: 12px;
   box-shadow: 0 2px 16px rgba(0, 0, 0, 0.06);
@@ -267,7 +267,7 @@
   background: #ffffff;
   border: 1px solid rgba(0, 0, 0, 0.06);
   border-radius: 16px;
-  padding: 28px;
+  padding: 16px;
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -419,7 +419,7 @@ input:checked+.toggle-slider:before {
   box-shadow: 0 2px 8px rgba(255, 59, 48, 0.25);
 }
 
-/* 数字输入框 - 现代化设计 */
+/* 数字输入框 - 软件UI设计 */
 .number-input-container {
   display: flex;
   align-items: center;
@@ -427,41 +427,99 @@ input:checked+.toggle-slider:before {
 }
 
 .number-input {
+  /* 移除浏览器默认的number输入框样式 */
+  -webkit-appearance: none;
+  -moz-appearance: textfield;
+  appearance: none;
+
+  /* 基础样式 */
   background: #ffffff;
-  border: 1px solid rgba(0, 0, 0, 0.1);
-  border-radius: 10px;
-  padding: 12px 16px;
-  font-size: 15px;
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  border-radius: 8px;
+  padding: 10px 14px;
+  font-size: 14px;
   color: #1d1d1f;
   width: 90px;
   text-align: center;
-  transition: all 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+  transition: all 0.2s cubic-bezier(0.25, 0.46, 0.45, 0.94);
   font-weight: 500;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  letter-spacing: -0.01em;
+
+  /* 字体平滑 */
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* 移除WebKit浏览器的上下箭头按钮 */
+.number-input::-webkit-outer-spin-button,
+.number-input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+/* 移除Firefox的上下箭头按钮 */
+.number-input[type=number] {
+  -moz-appearance: textfield;
+  appearance: textfield;
 }
 
 .number-input.small {
   width: 70px;
-  padding: 10px 12px;
-  font-size: 14px;
+  padding: 8px 12px;
+  font-size: 13px;
 }
 
 .number-input:focus {
   outline: none;
   border-color: #007aff;
-  box-shadow: 0 0 0 4px rgba(0, 122, 255, 0.1);
+  box-shadow: 0 0 0 3px rgba(0, 122, 255, 0.12), 0 1px 3px rgba(0, 0, 0, 0.08);
+  background: #ffffff;
 }
 
-.number-input:hover {
-  border-color: rgba(0, 122, 255, 0.3);
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+.number-input:hover:not(:disabled) {
+  border-color: rgba(0, 122, 255, 0.4);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.06);
 }
 
 .number-input:disabled {
-  background: #f2f2f7;
+  background: #f8f9fa;
   color: #86868b;
   cursor: not-allowed;
-  border-color: rgba(0, 0, 0, 0.06);
+  border-color: rgba(0, 0, 0, 0.08);
+  box-shadow: none;
+}
+
+.number-input::placeholder {
+  color: #86868b;
+  font-weight: 400;
+}
+
+/* 选中状态样式 */
+.number-input::selection {
+  background: rgba(0, 122, 255, 0.2);
+  color: #1d1d1f;
+}
+
+/* 确保在所有状态下都没有上下箭头 */
+.number-input::-webkit-calendar-picker-indicator {
+  display: none;
+}
+
+/* 优化在不同操作系统下的显示 - 已在主样式中定义 */
+
+/* 响应式调整 */
+@media (max-width: 768px) {
+  .number-input {
+    padding: 8px 12px;
+    font-size: 16px; /* 防止iOS缩放 */
+  }
+
+  .number-input.small {
+    padding: 6px 10px;
+    font-size: 14px;
+  }
 }
 
 .number-unit {
