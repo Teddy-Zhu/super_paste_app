@@ -1,7 +1,15 @@
 import log from 'electron-log'
 import type { LogFunctions } from 'electron-log'
-import { app } from 'electron'
 import { join } from 'path'
+
+/**
+ * 日志配置选项
+ */
+export interface LoggerOptions {
+  userDataPath: string
+  fileName?: string
+  scope?: string
+}
 
 /**
  * 日志配置和管理
@@ -11,7 +19,7 @@ class Logger {
   private isInitialized = false
 
   private constructor() {
-    this.initializeLogger()
+    // 不在构造函数中初始化，等待外部配置
   }
 
   public static getInstance(): Logger {
@@ -24,15 +32,16 @@ class Logger {
   /**
    * 初始化日志配置
    */
-  private initializeLogger(): void {
+  public initialize(options: LoggerOptions): void {
     if (this.isInitialized) {
       return
     }
 
+
     try {
       // 设置日志文件路径
-      const userDataPath = app.getPath('userData')
-      log.transports.file.resolvePathFn = () => join(userDataPath, 'logs', 'main.log')
+      const fileName = options.fileName || 'main.log'
+      log.transports.file.resolvePathFn = () => join(options.userDataPath, 'logs', fileName)
 
       // 配置文件传输
       log.transports.file.level = 'info'
@@ -50,7 +59,9 @@ class Logger {
       }
 
       // 设置日志范围
-      log.scope('main')
+      if (options.scope) {
+        log.scope(options.scope)
+      }
 
       this.isInitialized = true
     } catch (error) {

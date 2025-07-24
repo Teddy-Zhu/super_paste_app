@@ -1,8 +1,8 @@
-// 首先初始化日志系统
-import logger from './utils/logger'
-
 // Electron 核心模块
 import { app, BrowserWindow } from 'electron'
+
+// 首先初始化日志系统
+import logger from './utils/logger'
 
 // 第三方工具
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
@@ -13,6 +13,7 @@ import clipboardManager from './clipboard/clipboard-manager'
 import clipboardDatabase from './clipboard/clipboard-database'
 import clipboardHistoryCleaner from './clipboard/clipboard-history-cleaner'
 import { clearAllDebounceTimers } from './utils/common'
+import { scheduledSyncManager } from './workers/scheduled-sync-manager'
 
 // 重构后的模块管理器
 import { mainWindowManager, overlayWindowManager } from './ui/windows/window-managers'
@@ -38,6 +39,13 @@ class SuperPasteApp {
    */
   async start(): Promise<void> {
     try {
+      // 初始化日志系统
+      logger.initialize({
+        userDataPath: app.getPath('userData'),
+        fileName: 'main.log',
+        scope: 'main'
+      })
+
       logger.info('[主进程] Super Paste 应用开始启动')
       // 单实例锁定检查
       if (!this.acquireSingleInstanceLock()) {
@@ -178,6 +186,9 @@ class SuperPasteApp {
       // 5. 创建 overlay 窗口（预先创建，保持隐藏）
       this.createOverlayWindow()
 
+      // 6. 初始化定时同步服务
+      await this.initializeScheduledSync()
+
       logger.debug('[主进程] 后台服务初始化全部完成')
     } catch (error) {
       logger.error('[主进程] 后台服务初始化失败:', error)
@@ -242,6 +253,21 @@ class SuperPasteApp {
   }
 
   /**
+   * 初始化定时同步服务
+   */
+  private async initializeScheduledSync(): Promise<void> {
+    try {
+      // 设置事件监听器
+      scheduledSyncManager.setupEventListeners()
+
+      logger.debug('[主进程] 定时同步服务初始化完成')
+    } catch (error) {
+      logger.error('[主进程] 定时同步服务初始化失败:', error)
+      // 同步服务初始化失败不影响应用主要功能
+    }
+  }
+
+  /**
    * 设置开发工具
    */
   private setupDevelopmentTools(): void {
@@ -286,15 +312,15 @@ class SuperPasteApp {
     })
 
     // 应用退出前清理资源
-    app.on('before-quit', () => {
-      this.cleanup()
+    app.on('before-quit', async () => {
+      await this.cleanup()
     })
   }
 
   /**
    * 清理应用资源
    */
-  private cleanup(): void {
+  private async cleanup(): Promise<void> {
     logger.debug('[主进程] 开始清理应用资源')
 
     try {
@@ -329,6 +355,9 @@ class SuperPasteApp {
 
       // 取消所有全局快捷键注册
       globalShortcutManager.unregisterAll()
+
+      // 销毁定时同步服务
+      await scheduledSyncManager.destroy()
 
       logger.debug('[主进程] 应用资源清理完成')
     } catch (error) {

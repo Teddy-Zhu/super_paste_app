@@ -108,7 +108,10 @@ class ClipboardHistoryCleaner extends BaseWorkerManager {
   private async ensureWorkerInitialized(): Promise<void> {
     if (!this.isInitialized) {
       await this.start()
-      await this.call('initialize')
+      // 需要导入 app 来获取 userDataPath
+      const { app } = require('electron')
+      const userDataPath = app.getPath('userData')
+      await this.call('initialize', userDataPath)
       this.updateConfigFromStore()
       this.isInitialized = true
     }

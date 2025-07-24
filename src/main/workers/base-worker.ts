@@ -7,16 +7,90 @@ import type {
   WorkerResponse,
   WorkerEvent
 } from '../types/worker-types'
-import log from 'electron-log'
+import logger from '../utils/logger'
+
+/**
+ * Worker 初始化配置接口
+ */
+export interface WorkerInitConfig {
+  /** 用户数据目录路径 */
+  userDataPath: string
+  /** 日志文件名（可选，默认使用 worker 名称） */
+  logFileName?: string
+  /** 日志作用域（可选，默认使用 worker 名称） */
+  logScope?: string
+  /** 其他配置参数 */
+  [key: string]: any
+}
 
 /**
  * Worker 基类
  * 提供 Worker 线程内部通信的基础功能，包括重试机制和错误处理
+ * 统一处理日志初始化和基础功能
  */
 export abstract class BaseWorker {
   protected consecutiveErrors: number = 0
   protected maxConsecutiveErrors: number = 5
   protected errorBackoffTime: number = 0
+  protected isLoggerInitialized: boolean = false
+
+  /**
+   * 统一初始化 Worker
+   * 子类应该调用此方法来初始化基础功能
+   */
+  protected initializeWorker(config: WorkerInitConfig): void {
+    // 初始化日志系统
+    this.initializeLogger(config)
+
+    // 发送 worker-ready 事件
+    this.sendWorkerReadyEvent()
+
+    // 子类可以重写此方法来添加额外的初始化逻辑
+    this.onWorkerInitialized(config)
+  }
+
+  /**
+   * 初始化 Worker 日志系统
+   */
+  private initializeLogger(config: WorkerInitConfig): void {
+    if (this.isLoggerInitialized) {
+      return
+    }
+
+    const workerName = this.getWorkerName()
+    const fileName = config.logFileName || `${workerName.toLowerCase().replace(/\s+/g, '-')}-worker.log`
+    const scope = config.logScope || workerName.toLowerCase().replace(/\s+/g, '-')
+
+    logger.initialize({
+      userDataPath: config.userDataPath,
+      fileName,
+      scope
+    })
+
+    this.isLoggerInitialized = true
+    logger.info(`[${workerName}] Worker 日志系统初始化完成`)
+  }
+
+  /**
+   * 发送 Worker 准备就绪事件
+   */
+  private sendWorkerReadyEvent(): void {
+    const readyEvent: WorkerEvent = {
+      id: `event-${Date.now()}-${Math.random()}`,
+      type: 'event',
+      event: 'worker-ready',
+      data: { workerName: this.getWorkerName() },
+      timestamp: Date.now()
+    }
+    parentPort?.postMessage(readyEvent)
+  }
+
+  /**
+   * Worker 初始化完成后的回调（子类可以重写）
+   */
+  protected onWorkerInitialized(_config: WorkerInitConfig): void {
+    // 子类可以重写此方法来添加额外的初始化逻辑
+  }
 
   /**
    * 调用主线程方法（带重试机制）
@@ -35,7 +109,7 @@ export abstract class BaseWorker {
         if (isTimeoutError && !isLastAttempt) {
           // 如果是超时错误且不是最后一次尝试，则等待后重试
           const delay = baseDelay * Math.pow(2, attempt) // 指数退避
-          log.warn(`[${this.getWorkerName()}] ${method} 调用超时，${delay}ms后进行第${attempt + 2}次尝试`)
+          logger.warn(`[${this.getWorkerName()}] ${method} 调用超时，${delay}ms后进行第${attempt + 2}次尝试`)
           await this.sleep(delay)
           continue
         }
@@ -122,17 +196,17 @@ export abstract class BaseWorker {
     const isTimeoutError = error instanceof Error && error.message.includes('超时')
     
     if (isTimeoutError) {
-      log.warn(`[${this.getWorkerName()}] ${operation}超时 (连续错误: ${this.consecutiveErrors}/${this.maxConsecutiveErrors})`)
-      
+      logger.warn(`[${this.getWorkerName()}] ${operation}超时 (连续错误: ${this.consecutiveErrors}/${this.maxConsecutiveErrors})`)
+
       // 如果连续超时错误过多，启用退避机制
       if (this.consecutiveErrors >= this.maxConsecutiveErrors) {
         const backoffDuration = Math.min(30000, 5000 * this.consecutiveErrors) // 最多30秒
         this.errorBackoffTime = Date.now() + backoffDuration
-        
-        log.warn(`[${this.getWorkerName()}] 连续超时错误过多，暂停${operation} ${backoffDuration}ms`)
+
+        logger.warn(`[${this.getWorkerName()}] 连续超时错误过多，暂停${operation} ${backoffDuration}ms`)
       }
     } else {
-      log.error(`[${this.getWorkerName()}] ${operation}失败:`, error)
+      logger.error(`[${this.getWorkerName()}] ${operation}失败:`, error)
     }
   }
 
@@ -142,7 +216,7 @@ export abstract class BaseWorker {
   public resetErrorState(): void {
     this.consecutiveErrors = 0
     this.errorBackoffTime = 0
-    log.info(`[${this.getWorkerName()}] 错误状态已重置`)
+    logger.info(`[${this.getWorkerName()}] 错误状态已重置`)
   }
 
   /**
@@ -158,11 +232,11 @@ export abstract class BaseWorker {
       // 使用 V8 内置的 writeHeapSnapshot 导出内存快照
       const actualFilepath = writeHeapSnapshot(filepath)
 
-      log.info(`[${this.getWorkerName()}] Worker heapdump 导出成功:`, actualFilepath)
+      logger.info(`[${this.getWorkerName()}] Worker heapdump 导出成功:`, actualFilepath)
 
       return actualFilepath
     } catch (error) {
-      log.error(`[${this.getWorkerName()}] 导出 Worker heapdump 失败:`, error)
+      logger.error(`[${this.getWorkerName()}] 导出 Worker heapdump 失败:`, error)
       throw error
     }
   }

@@ -1,4 +1,5 @@
 import { ipcMain } from 'electron'
+import { app } from 'electron'
 import { mainWindowManager, overlayWindowManager } from '../ui/windows/window-managers'
 import { windowStateManager, OverlayState } from '../ui/windows/window-state'
 import { globalShortcutManager } from '../system/global-shortcut-manager'
@@ -8,6 +9,8 @@ import { STORE_KEY } from '../config/common'
 import { debounceExecution } from '../utils/common'
 import { MAX_HISTORY_SIZE_DEBOUNCE_DELAY, MAX_KEEP_TIME_DEBOUNCE_DELAY } from '../config/constants'
 import clipboardManager from '../clipboard/clipboard-manager'
+import { scheduledSyncManager } from '../workers/scheduled-sync-manager'
+import { SyncProviderType } from '../sync/types'
 import logger from '../utils/logger'
 
 /**
@@ -25,6 +28,7 @@ export class IPCHandlerManager {
     this.setupMainWindowHandlers()
     this.setupStoreHandlers()
     this.setupAnimationHandlers()
+    this.setupScheduledSyncHandlers()
     
     logger.debug('[主进程] IPC 事件处理器注册完成')
   }
@@ -229,6 +233,101 @@ export class IPCHandlerManager {
     } catch (error) {
       logger.error(`[主进程] 处理特殊配置更新失败 [${key}]:`, error)
     }
+  }
+
+  /**
+   * 设置定时同步相关 IPC 处理器
+   */
+  private static setupScheduledSyncHandlers(): void {
+    // 初始化定时同步
+    ipcMain.handle('scheduled-sync:initialize', async (event, config) => {
+      try {
+        const syncConfig = {
+          ...config,
+          userDataPath: app.getPath('userData'),
+          configStore: {
+            get: (key: string, defaultValue?: any) => store.get(key, defaultValue),
+            set: (key: string, value: any) => store.set(key, value)
+          }
+        }
+        return await scheduledSyncManager.initialize(syncConfig)
+      } catch (error) {
+        logger.error('[主进程] 初始化定时同步失败:', error)
+        return false
+      }
+    })
+
+    // 启动定时同步
+    ipcMain.handle('scheduled-sync:start', async () => {
+      try {
+        return await scheduledSyncManager.startScheduledSync()
+      } catch (error) {
+        logger.error('[主进程] 启动定时同步失败:', error)
+        return false
+      }
+    })
+
+    // 停止定时同步
+    ipcMain.handle('scheduled-sync:stop', async () => {
+      try {
+        return await scheduledSyncManager.stopScheduledSync()
+      } catch (error) {
+        logger.error('[主进程] 停止定时同步失败:', error)
+        return false
+      }
+    })
+
+    // 手动同步
+    ipcMain.handle('scheduled-sync:manual-sync', async () => {
+      try {
+        return await scheduledSyncManager.manualSync()
+      } catch (error) {
+        logger.error('[主进程] 手动同步失败:', error)
+        return {
+          success: false,
+          message: error instanceof Error ? error.message : '未知错误',
+          errors: [error instanceof Error ? error.message : '未知错误']
+        }
+      }
+    })
+
+    // 测试连接
+    ipcMain.handle('scheduled-sync:test-connection', async () => {
+      try {
+        return await scheduledSyncManager.testConnection()
+      } catch (error) {
+        logger.error('[主进程] 测试同步连接失败:', error)
+        return false
+      }
+    })
+
+    // 获取同步状态
+    ipcMain.handle('scheduled-sync:get-status', async () => {
+      try {
+        return await scheduledSyncManager.getSyncStatus()
+      } catch (error) {
+        logger.error('[主进程] 获取同步状态失败:', error)
+        return null
+      }
+    })
+
+    // 更新配置
+    ipcMain.handle('scheduled-sync:update-config', async (event, config) => {
+      try {
+        const syncConfig = {
+          ...config,
+          userDataPath: app.getPath('userData'),
+          configStore: {
+            get: (key: string, defaultValue?: any) => store.get(key, defaultValue),
+            set: (key: string, value: any) => store.set(key, value)
+          }
+        }
+        return await scheduledSyncManager.updateConfig(syncConfig)
+      } catch (error) {
+        logger.error('[主进程] 更新定时同步配置失败:', error)
+        return false
+      }
+    })
   }
 
   /**

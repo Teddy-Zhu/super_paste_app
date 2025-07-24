@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import Versions from '@renderer/components/Versions.vue'
 </script>
 
 <template>
@@ -16,7 +15,6 @@ import Versions from '@renderer/components/Versions.vue'
         <p class="app-description">基于 Electron + Vue 的智能粘贴工具</p>
       </div>
 
-      <Versions />
     </div>
   </div>
 </template>

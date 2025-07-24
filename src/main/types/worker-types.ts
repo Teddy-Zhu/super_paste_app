@@ -102,6 +102,21 @@ export interface WorkerEvents {
   'clipboard-changed': { timestamp: number }
   'history-updated': { timestamp: number, source?: string }
 
+  // 定时同步事件
+  'sync-scheduled-started': { interval: number; nextSyncTime: number }
+  'sync-scheduled-stopped': {}
+  'sync-started': { timestamp: number }
+  'sync-completed': { timestamp: number; result: any; nextSyncTime: number }
+  'sync-failed': { timestamp: number; result: any; nextSyncTime: number }
+  'sync-error': { timestamp: number; error: string }
+  'manual-sync-started': { timestamp: number }
+  'manual-sync-completed': { timestamp: number; result: any }
+  'manual-sync-failed': { timestamp: number; result: any }
+  'manual-sync-error': { timestamp: number; error: string }
+  'connection-test-success': { timestamp: number }
+  'connection-test-failed': { timestamp: number }
+  'connection-test-error': { timestamp: number; error: string }
+
   // 通用事件
   'worker-ready': {}
   'worker-error': { error: string }

@@ -15,6 +15,7 @@ import type {
 } from '../types/clipboard-types'
 import { ClipboardDataConverter } from '../types/clipboard-types'
 import ActiveWindow from '@paymoapp/active-window'
+import logger from '../utils/logger'
 
 class ClipboardManagerWorker extends BaseWorker {
   private config: ClipboardManagerConfig
@@ -155,7 +156,7 @@ class ClipboardManagerWorker extends BaseWorker {
 
       return result
     } catch (error) {
-      console.error('[剪贴板管理器 Worker] 直接读取剪贴板失败:', error)
+      logger.error('[剪贴板管理器 Worker] 直接读取剪贴板失败:', error)
       return {}
     }
   }
@@ -170,18 +171,40 @@ class ClipboardManagerWorker extends BaseWorker {
       if (process.platform === 'darwin') {
         const hasPermission = ActiveWindow.requestPermissions()
         if (!hasPermission) {
-          console.warn('[剪贴板管理器 Worker] macOS 需要屏幕录制权限才能获取窗口标题')
+          logger.warn('[剪贴板管理器 Worker] macOS 需要屏幕录制权限才能获取窗口标题')
         }
       }
       this.activeWindowInitialized = true
-      console.log('[剪贴板管理器 Worker] ActiveWindow 初始化成功')
+      logger.info('[剪贴板管理器 Worker] ActiveWindow 初始化成功')
     } catch (error) {
-      console.error('[剪贴板管理器 Worker] ActiveWindow 初始化失败:', error)
+      logger.error('[剪贴板管理器 Worker] ActiveWindow 初始化失败:', error)
       this.activeWindowInitialized = false
     }
   }
 
-  public async initialize(config?: Partial<ClipboardManagerConfig>): Promise<void> {
+  public async initialize(params?: { config?: Partial<ClipboardManagerConfig>, userDataPath?: string } | Partial<ClipboardManagerConfig>): Promise<void> {
+    // 处理参数兼容性
+    let config: Partial<ClipboardManagerConfig> | undefined
+    let userDataPath: string | undefined
+
+    if (params && 'config' in params) {
+      // 新格式：{ config, userDataPath }
+      config = params.config
+      userDataPath = params.userDataPath
+    } else {
+      // 旧格式：直接传配置对象
+      config = params as Partial<ClipboardManagerConfig>
+    }
+
+    // 初始化 Worker 基础功能（包括日志系统）
+    if (userDataPath) {
+      this.initializeWorker({
+        userDataPath,
+        logFileName: 'clipboard-manager-worker.log',
+        logScope: 'clipboard-manager-worker'
+      })
+    }
+
     if (config) {
       this.config = { ...this.config, ...config }
     }
@@ -197,7 +220,7 @@ class ClipboardManagerWorker extends BaseWorker {
       this.lastClipboardHash = await this.generateClipboardHashFromData(clipboardData)
       this.checkQuickClipboardChange(clipboardData)
     } catch (error) {
-      console.log('初始化失败')
+      logger.error('[剪贴板管理器 Worker] 初始化失败:', error)
     }
   }
 
@@ -234,8 +257,8 @@ class ClipboardManagerWorker extends BaseWorker {
     try {
       if (this.isInErrorBackoff()) return
 
-      console.log('clipboard changed via listener', new Date().toDateString())
-      console.log('clipboard available formats', data.availableFormats)
+      logger.debug('[剪贴板管理器 Worker] 剪贴板变化检测:', new Date().toDateString())
+      logger.debug('[剪贴板管理器 Worker] 可用格式:', data.availableFormats)
 
       // 将 ClipboardData 转换为内部格式
       const clipboardData = this.convertClipboardData(data)
@@ -246,21 +269,19 @@ class ClipboardManagerWorker extends BaseWorker {
         this.onOperationSuccess()
         return
       }
-      console.log('quick failed , check full hash', new Date().toDateString())
+      logger.debug('[剪贴板管理器 Worker] 快速检查失败，进行完整哈希检查:', new Date().toDateString())
 
       // 生成完整内容哈希
       const currentHash = await this.generateClipboardHashFromData(clipboardData)
-      console.log('full hash', currentHash)
+      logger.debug('[剪贴板管理器 Worker] 完整哈希:', currentHash)
       if (currentHash && currentHash !== this.lastClipboardHash) {
         this.lastClipboardHash = currentHash
 
         if (this.config.enableAutoSave) {
           // 从已获取的数据构建完整内容
-          // console.log('build content from data', new Date().toDateString())
           const clipboardContent = await this.buildClipboardContentFromData(clipboardData)
-          // console.log('save clipboard item', new Date().toDateString())
           await this.saveClipboardItem(clipboardContent)
-          console.log('save clipboard item done', new Date().toDateString())
+          logger.debug('[剪贴板管理器 Worker] 剪贴板项目保存完成:', new Date().toDateString())
         }
 
         this.sendEvent('clipboard-changed', { timestamp: Date.now() })
@@ -326,11 +347,11 @@ class ClipboardManagerWorker extends BaseWorker {
         filesInfo: clipboardData.filesInfo || undefined
       }
       if(quickContent.hasImage) {
-        console.log('has image', quickContent.imageInfo)
+        logger.debug('[剪贴板管理器 Worker] 检测到图片:', quickContent.imageInfo)
       }
       const quickHash = this.generateQuickHash(quickContent)
       if(quickContent.hasImage) {
-        console.log('quick hash changed', quickHash, this.lastQuickHash)
+        logger.debug('[剪贴板管理器 Worker] 快速哈希变化:', quickHash, this.lastQuickHash)
       }
       if (!this.lastQuickHash) {
         this.lastQuickHash = quickHash
@@ -706,7 +727,7 @@ class ClipboardManagerWorker extends BaseWorker {
       const clipboardData = this.readClipboardDirect()
       return await this.buildClipboardContentFromData(clipboardData)
     } catch (error) {
-      console.error('[剪贴板管理器] 获取当前剪贴板内容失败:', error)
+      logger.error('[剪贴板管理器 Worker] 获取当前剪贴板内容失败:', error)
       return {}
     }
   }

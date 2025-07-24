@@ -7,8 +7,8 @@ import type {
   SyncResult,
   WebDAVConfig
 } from './types'
+import { SyncProviderType } from './types'
 import logger from '../utils/logger'
-
 /**
  * WebDAV 同步提供者
  * 实现基于 WebDAV 协议的文件同步功能
@@ -20,6 +20,10 @@ export class WebDAVSyncProvider extends BaseSyncProvider {
   constructor(config: WebDAVConfig) {
     super(config)
     this.webdavConfig = config
+  }
+
+  name(): SyncProviderType {
+    return SyncProviderType.WEBDAV
   }
 
   /**

@@ -8,7 +8,7 @@
  */
 export enum SyncStatus {
   IDLE = 'idle',
-  SYNCING = 'syncing', 
+  SYNCING = 'syncing',
   SUCCESS = 'success',
   ERROR = 'error'
 }

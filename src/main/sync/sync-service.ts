@@ -1,7 +1,4 @@
-import { app } from 'electron'
 import { join } from 'path'
-import { DatabaseService } from '../services/database-service'
-import store from '../config/store'
 import { BaseSyncProvider } from './base-sync-provider'
 import { WebDAVSyncProvider } from './webdav-sync-provider'
 import {
@@ -13,59 +10,44 @@ import type {
   SyncConfig,
   SyncResult,
   SyncEventListener,
-  WebDAVConfig,
-  SyncProviderConfig
+  WebDAVConfig
 } from './types'
 import logger from '../utils/logger'
 
 /**
  * 数据库和配置文件同步服务
- * 负责管理数据库文件和配置文件的同步
+ * 专注于同步业务逻辑，完全由外部控制
+ * 优化后可在 worker 中独立运行
  */
 export class SyncService {
-  private static instance: SyncService
   private syncProvider: BaseSyncProvider | null = null
-  private databaseService: DatabaseService
-  private autoSyncTimer: NodeJS.Timeout | null = null
-  private isAutoSyncEnabled = false
+  private userDataPath: string = ''
 
   // 需要同步的文件路径
   private readonly DATABASE_FILE_NAME = 'clipboard-history.db'
-  private readonly CONFIG_FILE_NAME = 'super-paste-config.json'
-  private readonly REMOTE_DB_PATH = '/super-paste/database/clipboard-history.db'
-  private readonly REMOTE_CONFIG_PATH = '/super-paste/config/super-paste-config.json'
+  private readonly CONFIG_FILE_NAME = 'config.json'
+  private readonly REMOTE_DB_PATH = '/super-paste/clipboard-history.db'
+  private readonly REMOTE_CONFIG_PATH = '/super-paste/config.json'
 
-  private constructor() {
-    this.databaseService = DatabaseService.getInstance()
+  constructor(userDataPath: string) {
+    this.userDataPath = userDataPath
   }
 
   /**
-   * 获取单例实例
+   * 初始化同步提供者
+   * 由外部直接传入配置，不再从存储加载
    */
-  public static getInstance(): SyncService {
-    if (!SyncService.instance) {
-      SyncService.instance = new SyncService()
-    }
-    return SyncService.instance
-  }
-
-  /**
-   * 初始化同步服务
-   */
-  async initialize(): Promise<boolean> {
+  async initialize(providerType: SyncProviderType, providerConfig: SyncConfig): Promise<boolean> {
     try {
-      // 加载同步配置
-      const syncConfig = this.loadSyncConfig()
-      if (syncConfig && syncConfig.enabled) {
-        await this.configureSyncProvider(syncConfig.type, syncConfig.config)
-        
-        if (syncConfig.config.autoSync) {
-          this.startAutoSync()
-        }
+      const success = await this.configureSyncProvider(providerType, providerConfig)
+
+      if (success) {
+        logger.info('[同步服务] 初始化完成')
+      } else {
+        logger.error('[同步服务] 初始化失败')
       }
 
-      logger.info('[同步服务] 初始化完成')
-      return true
+      return success
     } catch (error) {
       logger.error('[同步服务] 初始化失败:', error)
       return false
@@ -100,12 +82,7 @@ export class SyncService {
         return false
       }
 
-      // 保存配置
-      this.saveSyncConfig({
-        type,
-        config,
-        enabled: true
-      })
+      // 不再保存配置，由外部管理
 
       logger.info(`[同步服务] 同步提供者配置成功: ${type}`)
       return true
@@ -227,8 +204,7 @@ export class SyncService {
       const downloaded = await this.syncProvider!.downloadFile(this.REMOTE_DB_PATH, localDbPath)
       if (downloaded) {
         result.downloadedFiles?.push(this.DATABASE_FILE_NAME)
-        // 重新初始化数据库连接
-        this.databaseService.initialize()
+        // 数据库文件已下载，在 worker 中无需重新初始化数据库连接
       } else {
         result.errors?.push('数据库文件下载失败')
       }
@@ -240,8 +216,7 @@ export class SyncService {
       const downloaded = await this.syncProvider!.downloadFile(this.REMOTE_CONFIG_PATH, localConfigPath)
       if (downloaded) {
         result.downloadedFiles?.push(this.CONFIG_FILE_NAME)
-        // 重新加载配置
-        this.reloadConfig()
+        // 配置文件已下载，在 worker 中无需重新加载配置
       } else {
         result.errors?.push('配置文件下载失败')
       }
@@ -334,44 +309,7 @@ export class SyncService {
     }
   }
 
-  /**
-   * 启动自动同步
-   */
-  startAutoSync(): void {
-    if (this.isAutoSyncEnabled) {
-      return
-    }
 
-    const config = this.syncProvider?.getConfig()
-    if (!config || !config.autoSync) {
-      return
-    }
-
-    const interval = (config.syncInterval || 30) * 60 * 1000 // 转换为毫秒
-
-    this.autoSyncTimer = setInterval(async () => {
-      try {
-        await this.sync()
-      } catch (error) {
-        logger.error('[同步服务] 自动同步失败:', error)
-      }
-    }, interval)
-
-    this.isAutoSyncEnabled = true
-    logger.info(`[同步服务] 自动同步已启动，间隔: ${config.syncInterval} 分钟`)
-  }
-
-  /**
-   * 停止自动同步
-   */
-  stopAutoSync(): void {
-    if (this.autoSyncTimer) {
-      clearInterval(this.autoSyncTimer)
-      this.autoSyncTimer = null
-      this.isAutoSyncEnabled = false
-      logger.info('[同步服务] 自动同步已停止')
-    }
-  }
 
   /**
    * 获取同步状态
@@ -398,38 +336,26 @@ export class SyncService {
     }
   }
 
-  /**
-   * 禁用同步
-   */
-  disableSync(): void {
-    this.stopAutoSync()
-    if (this.syncProvider) {
-      this.syncProvider.destroy()
-      this.syncProvider = null
-    }
-    
-    // 更新配置
-    const syncConfig = this.loadSyncConfig()
-    if (syncConfig) {
-      syncConfig.enabled = false
-      store.set('sync_config', syncConfig)
-    }
 
-    logger.info('[同步服务] 同步已禁用')
-  }
 
   /**
    * 获取本地数据库文件路径
    */
   private getLocalDatabasePath(): string {
-    return join(app.getPath('userData'), this.DATABASE_FILE_NAME)
+    if (!this.userDataPath) {
+      throw new Error('用户数据路径未配置')
+    }
+    return join(this.userDataPath, this.DATABASE_FILE_NAME)
   }
 
   /**
    * 获取本地配置文件路径
    */
   private getLocalConfigPath(): string {
-    return join(app.getPath('userData'), this.CONFIG_FILE_NAME)
+    if (!this.userDataPath) {
+      throw new Error('用户数据路径未配置')
+    }
+    return join(this.userDataPath, this.CONFIG_FILE_NAME)
   }
 
   /**
@@ -458,33 +384,12 @@ export class SyncService {
     }
   }
 
-  /**
-   * 重新加载配置
-   */
-  private reloadConfig(): void {
-    // 这里可以触发配置重新加载的逻辑
-    logger.info('[同步服务] 配置文件已重新加载')
-  }
 
-  /**
-   * 加载同步配置
-   */
-  private loadSyncConfig(): (SyncProviderConfig & { enabled: boolean }) | null {
-    return store.get('sync_config', null)
-  }
-
-  /**
-   * 保存同步配置
-   */
-  private saveSyncConfig(config: SyncProviderConfig & { enabled: boolean }): void {
-    store.set('sync_config', config)
-  }
 
   /**
    * 销毁同步服务
    */
   destroy(): void {
-    this.stopAutoSync()
     if (this.syncProvider) {
       this.syncProvider.destroy()
       this.syncProvider = null
@@ -492,6 +397,3 @@ export class SyncService {
     logger.info('[同步服务] 已销毁')
   }
 }
-
-// 导出单例实例
-export const syncService = SyncService.getInstance()

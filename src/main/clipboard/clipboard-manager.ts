@@ -199,7 +199,11 @@ class ClipboardManager extends BaseWorkerManager {
       ...config
     }
 
-    await this.call('initialize', finalConfig)
+    // 需要导入 app 来获取 userDataPath
+    const { app } = require('electron')
+    const userDataPath = app.getPath('userData')
+
+    await this.call('initialize', { config: finalConfig, userDataPath })
   }
 
   /**

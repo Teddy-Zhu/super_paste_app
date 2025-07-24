@@ -3,11 +3,10 @@ import { BaseWorker } from './base-worker'
 import type {
   WorkerMessage,
   WorkerRequest,
-  WorkerResponse,
-  WorkerEvent
+  WorkerResponse
 } from '../types/worker-types'
 import type { CleanupConfig, CleanupStats } from '../types/clipboard-types'
-import log from 'electron-log'
+import logger from '../utils/logger'
 
 /**
  * 剪贴板历史记录清理器 Worker
@@ -43,7 +42,13 @@ class ClipboardHistoryCleanerWorker extends BaseWorker {
   /**
    * 初始化清理器
    */
-  public initialize(): void {
+  public initialize(userDataPath: string): void {
+    // 初始化 Worker 基础功能（包括日志系统）
+    this.initializeWorker({
+      userDataPath,
+      logFileName: 'clipboard-cleaner-worker.log',
+      logScope: 'clipboard-cleaner-worker'
+    })
     // 这里可以添加初始化逻辑，比如从主线程获取配置
   }
 
@@ -129,7 +134,7 @@ class ClipboardHistoryCleanerWorker extends BaseWorker {
 
     // 如果在错误退避期间，跳过清理
     if (this.isInErrorBackoff()) {
-      log.info('[历史记录清理器 Worker] 在错误退避期间，跳过清理操作')
+      logger.info('[历史记录清理器 Worker] 在错误退避期间，跳过清理操作')
       return {
         totalRecords: 0,
         expiredRecords: 0,
@@ -274,7 +279,7 @@ class ClipboardHistoryCleanerWorker extends BaseWorker {
         }
 
         if (deletedIds.length > 0) {
-          log.info(`[历史记录清理器 Worker] 基于数量清理完成，删除了 ${deletedIds.length} 条记录`)
+          logger.info(`[历史记录清理器 Worker] 基于数量清理完成，删除了 ${deletedIds.length} 条记录`)
 
           // 通知清理完成，只传递删除的记录 ID
           this.sendEvent('cleanup-completed', {
@@ -289,7 +294,7 @@ class ClipboardHistoryCleanerWorker extends BaseWorker {
         }
       }
     } catch (error) {
-      log.error('[历史记录清理器 Worker] 基于数量的清理失败:', error)
+      logger.error('[历史记录清理器 Worker] 基于数量的清理失败:', error)
     }
   }
 
@@ -335,7 +340,7 @@ class ClipboardHistoryCleanerWorker extends BaseWorker {
 
       switch (request.method) {
         case 'initialize':
-          result = this.initialize()
+          result = this.initialize(request.params)
           break
         case 'updateConfig':
           result = this.updateConfig(request.params)
@@ -398,15 +403,5 @@ parentPort?.on('message', (message: WorkerMessage) => {
   worker.handleMessage(message)
 })
 
-// Worker 准备就绪，发送 ready 事件
-log.info('[历史记录清理器 Worker] Worker 已准备就绪，等待初始化请求')
-
-// 发送 worker-ready 事件，告知主线程 Worker 已启动
-const readyEvent: WorkerEvent = {
-  id: `event-${Date.now()}-${Math.random()}`,
-  type: 'event',
-  event: 'worker-ready',
-  data: {},
-  timestamp: Date.now()
-}
-parentPort?.postMessage(readyEvent)
+// Worker 准备就绪，等待初始化请求
+logger.info('[历史记录清理器 Worker] Worker 已准备就绪，等待初始化请求')

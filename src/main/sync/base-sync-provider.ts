@@ -1,6 +1,7 @@
 import logger from '../utils/logger'
 import {
-  SyncStatus
+  SyncStatus,
+  SyncProviderType
 } from './types'
 import type {
   SyncConfig,
@@ -23,6 +24,8 @@ export abstract class BaseSyncProvider {
   constructor(config: SyncConfig) {
     this.config = config
   }
+
+  abstract name(): SyncProviderType
 
   /**
    * 初始化同步提供者
