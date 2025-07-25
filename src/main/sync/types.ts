@@ -33,23 +33,18 @@ export enum SyncProviderType {
 }
 
 /**
- * 基础同步配置接口
+ * 基础同步提供者配置接口
+ * 不包含启用状态和间隔，这些由上层管理
  */
-export interface SyncConfig {
-  /** 是否启用同步 */
-  enabled: boolean
-  /** 是否启用自动同步 */
-  autoSync: boolean
-  /** 同步间隔（分钟） */
-  syncInterval: number
+export interface BaseSyncProviderConfig {
   /** 同步方向 */
   syncDirection: SyncDirection
 }
 
 /**
- * WebDAV 同步配置接口
+ * WebDAV 同步提供者配置接口
  */
-export interface WebDAVConfig extends SyncConfig {
+export interface WebDAVConfig extends BaseSyncProviderConfig {
   /** WebDAV 服务器地址 */
   serverUrl: string
   /** 用户名 */
@@ -63,6 +58,12 @@ export interface WebDAVConfig extends SyncConfig {
   /** 是否使用 HTTPS */
   useHttps?: boolean
 }
+
+/**
+ * 同步提供者配置联合类型
+ */
+export type SyncProviderConfig = WebDAVConfig
+// 将来可以添加其他提供者配置：| FTPConfig | SFTPConfig | CloudStorageConfig
 
 /**
  * 同步文件信息接口
@@ -110,21 +111,17 @@ export interface SyncEvent {
 export type SyncEventListener = (event: SyncEvent) => void
 
 /**
- * 同步提供者配置接口
+ * 完整的同步配置接口（包含提供者信息）
  */
-export interface SyncProviderConfig {
-  /** 提供者类型 */
-  type: SyncProviderType
-  /** 提供者配置 */
-  config: SyncConfig
-}
-
-/**
- * 完整的同步配置接口（包含启用状态）
- */
-export interface CompleteSyncConfig extends SyncProviderConfig {
+export interface CompleteSyncConfig {
   /** 是否启用 */
   enabled: boolean
+  /** 同步间隔（分钟） */
+  syncInterval: number
+  /** 提供者类型 */
+  providerType: SyncProviderType
+  /** 提供者配置 */
+  providerConfig: SyncProviderConfig
 }
 
 /**
@@ -142,34 +139,38 @@ export interface SyncStatusInfo {
 }
 
 /**
- * WebDAV 设置选项接口
+ * 定时同步任务配置接口
  */
-export interface WebDAVSetupOptions {
-  /** 服务器地址 */
-  serverUrl: string
-  /** 用户名 */
-  username: string
-  /** 密码 */
-  password: string
-  /** 远程路径（可选） */
-  remotePath?: string
-  /** 是否启用自动同步（可选） */
-  autoSync?: boolean
-  /** 同步间隔（分钟，可选） */
-  syncInterval?: number
-  /** 同步方向（可选） */
-  syncDirection?: SyncDirection
+export interface ScheduledSyncConfig {
+  /** 是否启用定时同步 */
+  enabled: boolean
+  /** 同步间隔（分钟） */
+  syncInterval: number
+  /** 同步提供者类型 */
+  providerType: SyncProviderType
+  /** 同步提供者配置 */
+  providerConfig: SyncProviderConfig
+  /** 用户数据目录路径 */
+  userDataPath: string
 }
+
+/**
+ * 定时同步状态接口
+ */
+export interface ScheduledSyncStatus {
+  isRunning: boolean
+  lastSyncTime: number
+  nextSyncTime: number
+  syncStatus: SyncStatus
+  config: ScheduledSyncConfig | null
+}
+
+
 
 /**
  * IPC 消息类型定义
  */
 export interface SyncIPCMessages {
-  /** 设置 WebDAV 同步 */
-  'sync:setup-webdav': {
-    request: WebDAVSetupOptions
-    response: boolean
-  }
   /** 执行手动同步 */
   'sync:manual-sync': {
     request: void

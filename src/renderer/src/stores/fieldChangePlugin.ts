@@ -46,6 +46,8 @@ export function createFieldChangePlugin(callback: FieldChangeCallback) {
           newValue: newVal,
         })
         oldVal = newVal
+      },{
+        deep: true
       })
     }
   }

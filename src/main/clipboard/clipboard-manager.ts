@@ -9,7 +9,7 @@ import type {
   ClipboardManagerConfig
 } from '../types/clipboard-types'
 import type { WorkerConfig, WorkerRequest } from '../types/worker-types'
-
+import { app } from 'electron'
 
 import logger from '../utils/logger'
 import clipboardManagerWorkerPath from '../workers/clipboard-manager.worker?modulePath'
@@ -56,6 +56,7 @@ class ClipboardManager extends BaseWorkerManager {
 
     // 监听清理完成事件，直接更新缓存
     clipboardHistoryCleaner.on('cleanup-completed', (data: { stats: any, deletedRecordIds?: string[] }) => {
+      logger.info('[剪贴板管理器] 收到清理完成事件:', data.stats)
       // 直接通知 clipboard-manager worker 更新缓存
       if (data.deletedRecordIds && data.deletedRecordIds.length > 0) {
         this.notifyWorkerCacheUpdate(data.deletedRecordIds)
@@ -153,7 +154,6 @@ class ClipboardManager extends BaseWorkerManager {
 
   public async restoreClipboardContent(params: { content: ClipboardContent }): Promise<boolean> {
     try {
-      await this.ensureWorkerInitialized()
       return await this.call('restoreClipboardContent', params)
     } catch (error) {
       logger.error('[剪贴板管理器] 还原剪贴板失败:', error)
@@ -165,7 +165,6 @@ class ClipboardManager extends BaseWorkerManager {
 
   public async restoreClipboardContentAsText(params: { content: ClipboardContent }): Promise<boolean> {
     try {
-      await this.ensureWorkerInitialized()
       return await this.call('restoreClipboardContentAsText', params)
     } catch (error) {
       logger.error('[剪贴板管理器] 还原剪贴板为纯文本失败:', error)
@@ -174,20 +173,13 @@ class ClipboardManager extends BaseWorkerManager {
   }
 
   /**
-   * 确保 Worker 已初始化
-   */
-  private async ensureWorkerInitialized(): Promise<void> {
-    if (!this.isInitialized) {
-      await this.start()
-      // isInitialized 已在 start() 方法中设置，无需重复设置
-    }
-  }
-
-  /**
    * 初始化剪贴板管理器
    */
   public async initialize(config?: Partial<ClipboardManagerConfig>): Promise<void> {
-    await this.ensureWorkerInitialized()
+    // 启动 Worker
+    if (!this.isInitialized) {
+      await this.start()
+    }
 
     // 从store中获取配置
     const maxHistorySize = store.get(STORE_KEY.SETTINGS_MAX_HISTORY_SIZE, 100)
@@ -200,7 +192,6 @@ class ClipboardManager extends BaseWorkerManager {
     }
 
     // 需要导入 app 来获取 userDataPath
-    const { app } = require('electron')
     const userDataPath = app.getPath('userData')
 
     await this.call('initialize', { config: finalConfig, userDataPath })
@@ -210,8 +201,6 @@ class ClipboardManager extends BaseWorkerManager {
    * 开始监听剪贴板变化
    */
   public async startListening(): Promise<void> {
-    await this.ensureWorkerInitialized()
-
     await this.call('startListening')
   }
 
@@ -242,8 +231,6 @@ class ClipboardManager extends BaseWorkerManager {
    */
   public async getConfig(): Promise<ClipboardManagerConfig> {
     try {
-      await this.ensureWorkerInitialized()
-
       return await this.call('getConfig')
     } catch (error) {
       logger.error('[剪贴板管理器] 获取配置失败:', error)
@@ -262,8 +249,6 @@ class ClipboardManager extends BaseWorkerManager {
    */
   public async updateConfig(newConfig: Partial<ClipboardManagerConfig>): Promise<void> {
     try {
-      await this.ensureWorkerInitialized()
-
       await this.call('updateConfig', newConfig)
     } catch (error) {
       logger.error('[剪贴板管理器] 更新配置失败:', error)
@@ -289,10 +274,7 @@ class ClipboardManager extends BaseWorkerManager {
     // 这个方法委托给清理器处理
     try {
       // 导入清理器并更新配置
-      import('./clipboard-history-cleaner').then(module => {
-        const clipboardHistoryCleaner = module.default
-        clipboardHistoryCleaner.updateConfigFromStore()
-      })
+      clipboardHistoryCleaner.updateConfigFromStore()
     } catch (error) {
       logger.error('[剪贴板管理器] 更新清理器配置失败:', error)
     }
@@ -303,8 +285,6 @@ class ClipboardManager extends BaseWorkerManager {
    */
   public async isListeningActive(): Promise<boolean> {
     try {
-      await this.ensureWorkerInitialized()
-
       return await this.call('isListeningActive')
     } catch (error) {
       logger.error('[剪贴板管理器] 获取监听状态失败:', error)
@@ -317,8 +297,6 @@ class ClipboardManager extends BaseWorkerManager {
    */
   public async syncClipboardHash(): Promise<void> {
     try {
-      await this.ensureWorkerInitialized()
-
       await this.call('syncClipboardHash')
     } catch (error) {
       logger.error('[剪贴板管理器] 同步剪贴板哈希值失败:', error)
@@ -332,9 +310,6 @@ class ClipboardManager extends BaseWorkerManager {
   public async handleSystemResume(): Promise<void> {
     try {
       logger.info('[剪贴板管理器] 开始处理系统唤醒恢复')
-
-      // 确保Worker已初始化
-      await this.ensureWorkerInitialized()
 
       // 重置错误状态
       await this.call('resetErrorState')
@@ -359,8 +334,6 @@ class ClipboardManager extends BaseWorkerManager {
    */
   public async getCurrentClipboard(): Promise<ClipboardContent> {
     try {
-      await this.ensureWorkerInitialized()
-
       return await this.call('getCurrentClipboard')
     } catch (error) {
       logger.error('[剪贴板管理器] 获取当前剪贴板内容失败:', error)
@@ -373,7 +346,6 @@ class ClipboardManager extends BaseWorkerManager {
    */
   public async restoreClipboardFromDatabase(itemId: string): Promise<{ success: boolean; message?: string }> {
     try {
-      await this.ensureWorkerInitialized()
       return await this.call('restoreClipboardFromDatabase', itemId)
     } catch (error) {
       logger.error('[剪贴板管理器] 从数据库还原剪贴板失败:', error)
@@ -386,7 +358,6 @@ class ClipboardManager extends BaseWorkerManager {
    */
   public async restoreClipboardFromDatabaseAsText(itemId: string): Promise<{ success: boolean; message?: string }> {
     try {
-      await this.ensureWorkerInitialized()
       return await this.call('restoreClipboardFromDatabaseAsText', itemId)
     } catch (error) {
       logger.error('[剪贴板管理器] 从数据库还原剪贴板为纯文本失败:', error)

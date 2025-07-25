@@ -4,7 +4,7 @@ import {
   SyncProviderType
 } from './types'
 import type {
-  SyncConfig,
+  SyncProviderConfig,
   SyncResult,
   SyncEvent,
   SyncEventListener,
@@ -16,12 +16,12 @@ import type {
  * 定义了所有同步提供者必须实现的接口
  */
 export abstract class BaseSyncProvider {
-  protected config: SyncConfig
+  protected config: SyncProviderConfig
   protected status: SyncStatus = SyncStatus.IDLE
   protected eventListeners: Map<string, SyncEventListener[]> = new Map()
   protected isInitialized = false
 
-  constructor(config: SyncConfig) {
+  constructor(config: SyncProviderConfig) {
     this.config = config
   }
 
@@ -43,6 +43,13 @@ export abstract class BaseSyncProvider {
    * @param remotePath 远程文件路径
    */
   abstract uploadFile(localPath: string, remotePath: string): Promise<boolean>
+
+  /**
+   * 直接上传文件内容
+   * @param fileContent 文件内容（字符串或Buffer）
+   * @param remotePath 远程文件路径
+   */
+  abstract uploadFileWithData(fileContent: string | Buffer, remotePath: string): Promise<boolean>
 
   /**
    * 下载文件
@@ -131,14 +138,14 @@ export abstract class BaseSyncProvider {
   /**
    * 获取配置
    */
-  getConfig(): SyncConfig {
+  getConfig(): SyncProviderConfig {
     return { ...this.config }
   }
 
   /**
    * 更新配置
    */
-  updateConfig(newConfig: Partial<SyncConfig>): void {
+  updateConfig(newConfig: Partial<SyncProviderConfig>): void {
     this.config = { ...this.config, ...newConfig }
     this.emitEvent('config-updated', this.config)
   }

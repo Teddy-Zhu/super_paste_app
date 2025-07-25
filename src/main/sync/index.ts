@@ -15,5 +15,4 @@ export { WebDAVSyncProvider } from './webdav-sync-provider'
 // 同步服务
 export { SyncService, syncService } from './sync-service'
 
-// 同步集成功能
-export * from './sync-integration'
+

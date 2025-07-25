@@ -2,7 +2,7 @@ import { createPinia } from 'pinia'
 import { createPersistedState } from 'pinia-plugin-persistedstate'
 import { createFieldChangePlugin } from './fieldChangePlugin'
 import { sendSync ,invoke, onSimple as on } from '@renderer/api/ipc'
-
+import { isProxy, toRaw } from 'vue'
 const store = createPinia()
 // pinia持久化
 store.use(
@@ -25,7 +25,7 @@ store.use(createFieldChangePlugin(({ storeId, key, oldValue, newValue }) => {
   console.log(`[${storeId}] 字段 ${key} 变了:`, oldValue, '→', newValue)
   // 也可以上传到服务器、日志记录等
 
-  invoke('store-set', `${storeId}.${key}`, newValue)
+  invoke('store-set', `${storeId}.${key}`, isProxy(newValue) ? toRaw(newValue) : newValue)
 }))
 
 on('store-value-changed', ({key, value}) => {

@@ -1,45 +1,14 @@
-import { join } from 'path'
 import { BaseWorkerManager } from './base-worker-manager'
 import type { WorkerConfig, WorkerRequest } from '../types/worker-types'
 import type {
-  SyncConfig,
-  SyncProviderType,
   SyncResult,
-  SyncStatus
+  ScheduledSyncConfig,
+  ScheduledSyncStatus
 } from '../sync/types'
 import logger from '../utils/logger'
+import scheduledSyncWorkerPath from './scheduled-sync.worker?modulePath'
+import { BrowserWindow } from 'electron'
 
-/**
- * 定时同步任务配置接口
- */
-interface ScheduledSyncConfig {
-  /** 是否启用定时同步 */
-  enabled: boolean
-  /** 同步间隔（分钟） */
-  syncInterval: number
-  /** 同步提供者类型 */
-  providerType: SyncProviderType
-  /** 同步提供者配置 */
-  providerConfig: SyncConfig
-  /** 用户数据目录路径 */
-  userDataPath: string
-  /** 配置存储接口（可选） */
-  configStore?: {
-    get: (key: string, defaultValue?: any) => any
-    set: (key: string, value: any) => void
-  }
-}
-
-/**
- * 定时同步状态接口
- */
-interface ScheduledSyncStatus {
-  isRunning: boolean
-  lastSyncTime: number
-  nextSyncTime: number
-  syncStatus: SyncStatus
-  config: ScheduledSyncConfig | null
-}
 
 /**
  * 定时同步任务 Worker 管理器
@@ -51,7 +20,7 @@ export class ScheduledSyncManager extends BaseWorkerManager {
   constructor() {
     const config: WorkerConfig = {
       name: '定时同步任务管理器',
-      workerPath: join(__dirname, 'scheduled-sync.worker.js'),
+      workerPath: scheduledSyncWorkerPath,
       options: {
         workerData: {}
       }
@@ -71,26 +40,88 @@ export class ScheduledSyncManager extends BaseWorkerManager {
 
   /**
    * 初始化定时同步
+   * 总是尝试初始化 Worker，即使配置不完整也确保基础功能可用
    */
   public async initialize(config: ScheduledSyncConfig): Promise<boolean> {
     try {
+      // 确保 Worker 进程启动
       if (!this.isRunning()) {
         await this.start()
       }
 
+      // 尝试初始化 Worker（即使配置不完整也应该成功）
       const result = await this.call<boolean>('initialize', config)
-      
+
       if (result) {
-        logger.info(`[${this.config.name}] 定时同步初始化成功`)
+        logger.info(`[${this.config.name}] Worker 基础功能初始化成功`)
+
+        // 只有在配置完整且启用时才尝试启动定时同步
+        if (config && config.enabled && this.isConfigComplete(config)) {
+          logger.info(`[${this.config.name}] 配置完整且已启用，尝试启动定时同步`)
+          try {
+            const started = await this.startScheduledSync()
+            if (started) {
+              logger.info(`[${this.config.name}] 定时同步已自动启动`)
+            } else {
+              logger.warn(`[${this.config.name}] 定时同步自动启动失败，但 Worker 基础功能正常`)
+            }
+          } catch (startError) {
+            logger.warn(`[${this.config.name}] 定时同步启动异常，但 Worker 基础功能正常:`, startError)
+          }
+        } else {
+          logger.info(`[${this.config.name}] 配置不完整或未启用，仅 Worker 基础功能可用`)
+        }
       } else {
-        logger.warn(`[${this.config.name}] 定时同步初始化失败或未启用`)
+        logger.warn(`[${this.config.name}] Worker 初始化失败`)
       }
 
       return result
     } catch (error) {
-      logger.error(`[${this.config.name}] 初始化定时同步失败:`, error)
+      logger.error(`[${this.config.name}] 初始化过程异常:`, error)
+
+      // 即使出现异常，也尝试确保 Worker 进程可用
+      try {
+        if (!this.isRunning()) {
+          await this.start()
+          logger.info(`[${this.config.name}] Worker 进程启动成功，但配置初始化失败`)
+          return true // Worker 进程可用，即使配置有问题
+        }
+      } catch (startError) {
+        logger.error(`[${this.config.name}] Worker 进程启动也失败:`, startError)
+      }
+
       return false
     }
+  }
+
+  /**
+   * 检查配置是否完整
+   */
+  private isConfigComplete(config: ScheduledSyncConfig): boolean {
+    if (!config || !config.userDataPath || !config.providerType) {
+      return false
+    }
+
+    if (!config.syncInterval || config.syncInterval <= 0) {
+      return false
+    }
+
+    if (!config.providerConfig) {
+      return false
+    }
+
+    // 根据提供者类型检查具体配置
+    if (config.providerType === 'webdav') {
+      const webdavConfig = config.providerConfig as any
+      return !!(
+        webdavConfig.serverUrl &&
+        webdavConfig.username &&
+        webdavConfig.password &&
+        webdavConfig.syncDirection
+      )
+    }
+
+    return true
   }
 
   /**
@@ -139,7 +170,7 @@ export class ScheduledSyncManager extends BaseWorkerManager {
   public async manualSync(): Promise<SyncResult> {
     try {
       const result = await this.call<SyncResult>('manualSync')
-      
+
       if (result.success) {
         logger.info(`[${this.config.name}] 手动同步完成:`, result.message)
       } else {
@@ -158,12 +189,38 @@ export class ScheduledSyncManager extends BaseWorkerManager {
   }
 
   /**
+   * 使用指定配置执行手动同步
+   */
+  public async manualSyncWithConfig(config: ScheduledSyncConfig): Promise<SyncResult> {
+    try {
+      const result = await this.call<SyncResult>('manualSyncWithConfig', config)
+
+      if (result.success) {
+        logger.info(`[${this.config.name}] 使用指定配置手动同步完成:`, result.message)
+      } else {
+        logger.warn(`[${this.config.name}] 使用指定配置手动同步失败:`, result.message)
+      }
+
+      return result
+    } catch (error) {
+      logger.error(`[${this.config.name}] 使用指定配置执行手动同步失败:`, error)
+      return {
+        success: false,
+        message: error instanceof Error ? error.message : '未知错误',
+        errors: [error instanceof Error ? error.message : '未知错误']
+      }
+    }
+  }
+
+
+
+  /**
    * 测试同步连接
    */
   public async testConnection(): Promise<boolean> {
     try {
       const result = await this.call<boolean>('testConnection')
-      
+
       if (result) {
         logger.info(`[${this.config.name}] 连接测试成功`)
       } else {
@@ -173,6 +230,31 @@ export class ScheduledSyncManager extends BaseWorkerManager {
       return result
     } catch (error) {
       logger.error(`[${this.config.name}] 测试连接失败:`, error)
+      return false
+    }
+  }
+
+  /**
+   * 使用指定配置测试同步连接
+   */
+  public async testConnectionWithConfig(config: ScheduledSyncConfig): Promise<boolean> {
+    try {
+      // 确保worker已启动（通常应该在initialize时已启动）
+      if (!this.isRunning()) {
+        await this.start()
+      }
+
+      const result = await this.call<boolean>('testConnectionWithConfig', config)
+
+      if (result) {
+        logger.info(`[${this.config.name}] 使用指定配置连接测试成功`)
+      } else {
+        logger.warn(`[${this.config.name}] 使用指定配置连接测试失败`)
+      }
+
+      return result
+    } catch (error) {
+      logger.error(`[${this.config.name}] 使用指定配置测试连接失败:`, error)
       return false
     }
   }
@@ -229,9 +311,56 @@ export class ScheduledSyncManager extends BaseWorkerManager {
    * 处理来自 Worker 的请求
    */
   protected handleWorkerRequest(request: WorkerRequest): void {
-    // 定时同步 Worker 目前不需要向主线程发送请求
-    // 如果将来需要，可以在这里处理
-    logger.debug(`[${this.config.name}] 收到 Worker 请求:`, request.method)
+    try {
+      switch (request.method) {
+        default:
+          logger.debug(`[${this.config.name}] 收到未处理的 Worker 请求:`, request.method)
+      }
+    } catch (error) {
+      logger.error(`[${this.config.name}] 处理 Worker 请求失败:`, error)
+      // 发送错误响应
+      this.sendWorkerResponse(request.id, false, undefined, error instanceof Error ? error.message : '处理请求失败')
+    }
+  }
+
+
+
+  /**
+   * 向 Worker 发送响应
+   */
+  private sendWorkerResponse(requestId: string, success: boolean, data?: any, error?: string): void {
+    if (!this.worker) {
+      return
+    }
+
+    const response = {
+      id: `response-${Date.now()}`,
+      type: 'response',
+      requestId: requestId,
+      success: success,
+      data: data,
+      error: error,
+      timestamp: Date.now()
+    }
+
+    this.worker.postMessage(response)
+  }
+
+  /**
+   * 向所有窗口发送IPC事件
+   */
+  private sendIpcEventToAllWindows(channel: string, data?: any): void {
+    try {
+      const allWindows = BrowserWindow.getAllWindows()
+
+      allWindows.forEach((window) => {
+        if (window && !window.isDestroyed()) {
+          window.webContents.send(channel, data)
+        }
+      })
+    } catch (error) {
+      logger.error(`[${this.config.name}] 发送IPC事件失败:`, error)
+    }
   }
 
   /**
@@ -248,19 +377,42 @@ export class ScheduledSyncManager extends BaseWorkerManager {
       logger.info(`[${this.config.name}] 定时同步已停止`)
     })
 
+    // 定时同步启动失败事件
+    this.on('sync-scheduled-start-failed', (data) => {
+      logger.error(`[${this.config.name}] 定时同步启动失败: ${data.reason}`)
+    })
+
     // 同步开始事件
-    this.on('sync-started', (data) => {
+    this.on('sync-started', () => {
       logger.debug(`[${this.config.name}] 开始执行同步任务`)
+      // 向前端发送同步开始事件
+      this.sendIpcEventToAllWindows('sync-status-updated', {
+        type: 'sync-started',
+        timestamp: Date.now()
+      })
     })
 
     // 同步完成事件
     this.on('sync-completed', (data) => {
       logger.info(`[${this.config.name}] 同步任务完成`)
+      // 向前端发送同步完成事件
+      this.sendIpcEventToAllWindows('sync-status-updated', {
+        type: 'sync-completed',
+        timestamp: data.timestamp,
+        result: data.result,
+        nextSyncTime: data.nextSyncTime
+      })
     })
 
     // 同步失败事件
     this.on('sync-failed', (data) => {
       logger.warn(`[${this.config.name}] 同步任务失败:`, data.result?.message)
+      // 向前端发送同步失败事件
+      this.sendIpcEventToAllWindows('sync-status-updated', {
+        type: 'sync-failed',
+        timestamp: Date.now(),
+        result: data.result
+      })
     })
 
     // 同步错误事件
@@ -271,14 +423,31 @@ export class ScheduledSyncManager extends BaseWorkerManager {
     // 手动同步事件
     this.on('manual-sync-started', () => {
       logger.debug(`[${this.config.name}] 开始执行手动同步`)
+      // 向前端发送手动同步开始事件
+      this.sendIpcEventToAllWindows('sync-status-updated', {
+        type: 'manual-sync-started',
+        timestamp: Date.now()
+      })
     })
 
     this.on('manual-sync-completed', (data) => {
       logger.info(`[${this.config.name}] 手动同步完成`)
+      // 向前端发送手动同步完成事件
+      this.sendIpcEventToAllWindows('sync-status-updated', {
+        type: 'manual-sync-completed',
+        timestamp: data.timestamp,
+        result: data.result
+      })
     })
 
     this.on('manual-sync-failed', (data) => {
       logger.warn(`[${this.config.name}] 手动同步失败:`, data.result?.message)
+      // 向前端发送手动同步失败事件
+      this.sendIpcEventToAllWindows('sync-status-updated', {
+        type: 'manual-sync-failed',
+        timestamp: Date.now(),
+        result: data.result
+      })
     })
 
     this.on('manual-sync-error', (data) => {

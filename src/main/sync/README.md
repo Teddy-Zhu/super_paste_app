@@ -10,7 +10,6 @@
 2. **BaseSyncProvider** - 抽象基类，定义了所有同步提供者的通用接口
 3. **WebDAVSyncProvider** - WebDAV 同步提供者的具体实现
 4. **SyncService** - 同步服务管理器，负责管理同步流程和配置
-5. **sync-integration.ts** - 提供集成示例和 IPC 处理器
 
 ## 功能特性
 
@@ -44,14 +43,13 @@ await syncService.initialize()
 import { SyncDirection, type WebDAVConfig } from '../sync'
 
 const webdavConfig: WebDAVConfig = {
-  enabled: true,
-  autoSync: true,
-  syncInterval: 30, // 30分钟
   syncDirection: SyncDirection.BIDIRECTIONAL,
   serverUrl: 'https://your-webdav-server.com',
   username: 'your-username',
   password: 'your-password',
-  remotePath: '/super-paste'
+  remotePath: '/super-paste',
+  timeout: 30000,
+  useHttps: true
 }
 
 // 配置 WebDAV 同步提供者

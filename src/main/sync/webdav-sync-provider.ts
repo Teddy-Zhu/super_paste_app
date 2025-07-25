@@ -1,4 +1,4 @@
-import { Connection, ConnectionReaddirComplexResult } from 'webdav-client'
+import { createClient, WebDAVClient, FileStat } from 'webdav'
 import { promises as fs } from 'fs'
 import { dirname } from 'path'
 import { BaseSyncProvider } from './base-sync-provider'
@@ -14,7 +14,7 @@ import logger from '../utils/logger'
  * 实现基于 WebDAV 协议的文件同步功能
  */
 export class WebDAVSyncProvider extends BaseSyncProvider {
-  private client: Connection | null = null
+  private client: WebDAVClient | null = null
   private webdavConfig: WebDAVConfig
 
   constructor(config: WebDAVConfig) {
@@ -32,8 +32,7 @@ export class WebDAVSyncProvider extends BaseSyncProvider {
   async initialize(): Promise<boolean> {
     try {
       // 创建 WebDAV 连接
-      this.client = new Connection({
-        url: this.webdavConfig.serverUrl,
+      this.client = createClient(this.webdavConfig.serverUrl, {
         username: this.webdavConfig.username,
         password: this.webdavConfig.password
       })
@@ -65,28 +64,20 @@ export class WebDAVSyncProvider extends BaseSyncProvider {
       return false
     }
 
-    return new Promise((resolve) => {
-      this.client!.readdir('/', (error) => {
-        if (error) {
-          logger.error('[WebDAV同步] 连接测试失败:', error)
-          resolve(false)
-        } else {
-          logger.debug('[WebDAV同步] 连接测试成功')
-          resolve(true)
-        }
-      })
-    })
+    try {
+      await this.client.getDirectoryContents('/')
+      logger.debug('[WebDAV同步] 连接测试成功')
+      return true
+    } catch (error) {
+      logger.error('[WebDAV同步] 连接测试失败:', error)
+      return false
+    }
   }
 
   /**
    * 上传文件到 WebDAV 服务器
    */
   async uploadFile(localPath: string, remotePath: string): Promise<boolean> {
-    if (!this.client) {
-      logger.error('[WebDAV同步] 客户端未初始化')
-      return false
-    }
-
     try {
       // 检查本地文件是否存在
       const exists = await this.fileExistsLocal(localPath)
@@ -98,30 +89,43 @@ export class WebDAVSyncProvider extends BaseSyncProvider {
       // 读取本地文件
       const fileContent = await fs.readFile(localPath)
 
+      // 使用 uploadFileWithData 方法上传
+      const uploaded = await this.uploadFileWithData(fileContent, remotePath)
+      if (uploaded) {
+        logger.debug(`[WebDAV同步] 文件上传成功: ${localPath} -> ${remotePath}`)
+      }
+      return uploaded
+    } catch (error) {
+      logger.error(`[WebDAV同步] 文件上传失败: ${localPath}`, error)
+      return false
+    }
+  }
+
+  /**
+   * 直接上传文件内容到 WebDAV 服务器
+   */
+  async uploadFileWithData(fileContent: string | Buffer, remotePath: string): Promise<boolean> {
+    if (!this.client) {
+      logger.error('[WebDAV同步] 客户端未初始化')
+      return false
+    }
+
+    try {
       // 确保远程目录存在
       const remoteDir = dirname(remotePath)
       await this.ensureRemoteDirectory(remoteDir)
 
-      // 上传文件
-      return new Promise((resolve) => {
-        this.client!.put(remotePath, fileContent, (error) => {
-          if (error) {
-            logger.error(`[WebDAV同步] 文件上传失败: ${localPath}`, error)
-            resolve(false)
-          } else {
-            logger.debug(`[WebDAV同步] 文件上传成功: ${localPath} -> ${remotePath}`)
-            this.emitEvent('file-synced', { 
-              action: 'upload', 
-              localPath, 
-              remotePath, 
-              timestamp: new Date() 
-            })
-            resolve(true)
-          }
-        })
+      // 上传文件内容
+      await this.client.putFileContents(remotePath, fileContent)
+      logger.debug(`[WebDAV同步] 文件内容上传成功: ${remotePath}`)
+      this.emitEvent('file-synced', {
+        action: 'upload',
+        remotePath,
+        timestamp: new Date()
       })
+      return true
     } catch (error) {
-      logger.error(`[WebDAV同步] 文件上传失败: ${localPath}`, error)
+      logger.error(`[WebDAV同步] 文件内容上传失败: ${remotePath}`, error)
       return false
     }
   }
@@ -148,30 +152,17 @@ export class WebDAVSyncProvider extends BaseSyncProvider {
       await this.ensureLocalDirectory(localDir)
 
       // 下载文件
-      return new Promise((resolve) => {
-        this.client!.get(remotePath, (error, fileContent) => {
-          if (error) {
-            logger.error(`[WebDAV同步] 文件下载失败: ${remotePath}`, error)
-            resolve(false)
-          } else {
-            fs.writeFile(localPath, fileContent as Buffer)
-              .then(() => {
-                logger.debug(`[WebDAV同步] 文件下载成功: ${remotePath} -> ${localPath}`)
-                this.emitEvent('file-synced', { 
-                  action: 'download', 
-                  remotePath, 
-                  localPath, 
-                  timestamp: new Date() 
-                })
-                resolve(true)
-              })
-              .catch((writeError) => {
-                logger.error(`[WebDAV同步] 文件写入失败: ${localPath}`, writeError)
-                resolve(false)
-              })
-          }
-        })
+      const fileContent = await this.client.getFileContents(remotePath)
+      await fs.writeFile(localPath, fileContent as Buffer)
+
+      logger.debug(`[WebDAV同步] 文件下载成功: ${remotePath} -> ${localPath}`)
+      this.emitEvent('file-synced', {
+        action: 'download',
+        remotePath,
+        localPath,
+        timestamp: new Date()
       })
+      return true
     } catch (error) {
       logger.error(`[WebDAV同步] 文件下载失败: ${remotePath}`, error)
       return false
@@ -187,17 +178,14 @@ export class WebDAVSyncProvider extends BaseSyncProvider {
       return false
     }
 
-    return new Promise((resolve) => {
-      this.client!.delete(remotePath, (error) => {
-        if (error) {
-          logger.error(`[WebDAV同步] 文件删除失败: ${remotePath}`, error)
-          resolve(false)
-        } else {
-          logger.debug(`[WebDAV同步] 文件删除成功: ${remotePath}`)
-          resolve(true)
-        }
-      })
-    })
+    try {
+      await this.client.deleteFile(remotePath)
+      logger.debug(`[WebDAV同步] 文件删除成功: ${remotePath}`)
+      return true
+    } catch (error) {
+      logger.error(`[WebDAV同步] 文件删除失败: ${remotePath}`, error)
+      return false
+    }
   }
 
   /**
@@ -211,28 +199,25 @@ export class WebDAVSyncProvider extends BaseSyncProvider {
 
     const targetPath = remotePath || this.webdavConfig.remotePath
 
-    return new Promise((resolve) => {
-      this.client!.readdir(targetPath, { properties: true, extraProperties: [] }, (error, files) => {
-        if (error) {
-          logger.error(`[WebDAV同步] 列出文件失败: ${targetPath}`, error)
-          resolve([])
-        } else {
-          const fileInfos: SyncFileInfo[] = []
-          if (Array.isArray(files)) {
-            for (const item of files as ConnectionReaddirComplexResult[]) {
-              if (item.isFile) {
-                fileInfos.push({
-                  path: item.href,
-                  lastModified: item.lastModified,
-                  size: item.size
-                })
-              }
-            }
-          }
-          resolve(fileInfos)
+    try {
+      const files = await this.client.getDirectoryContents(targetPath) as FileStat[]
+      const fileInfos: SyncFileInfo[] = []
+
+      for (const item of files) {
+        if (item.type === 'file') {
+          fileInfos.push({
+            path: item.filename,
+            lastModified: new Date(item.lastmod),
+            size: item.size
+          })
         }
-      })
-    })
+      }
+
+      return fileInfos
+    } catch (error) {
+      logger.error(`[WebDAV同步] 列出文件失败: ${targetPath}`, error)
+      return []
+    }
   }
 
   /**
@@ -243,15 +228,11 @@ export class WebDAVSyncProvider extends BaseSyncProvider {
       return false
     }
 
-    return new Promise((resolve) => {
-      this.client!.exists(remotePath, (error, exists) => {
-        if (error) {
-          resolve(false)
-        } else {
-          resolve(exists)
-        }
-      })
-    })
+    try {
+      return await this.client.exists(remotePath)
+    } catch (error) {
+      return false
+    }
   }
 
   /**
@@ -262,31 +243,20 @@ export class WebDAVSyncProvider extends BaseSyncProvider {
       return null
     }
 
-    return new Promise((resolve) => {
-      this.client!.readdir(dirname(remotePath), { properties: true, extraProperties: [] }, (error, files) => {
-        if (error) {
-          logger.error(`[WebDAV同步] 获取文件信息失败: ${remotePath}`, error)
-          resolve(null)
-        } else {
-          if (Array.isArray(files)) {
-            const targetFile = (files as ConnectionReaddirComplexResult[]).find(
-              item => item.href.endsWith(remotePath) || item.name === remotePath.split('/').pop()
-            )
-            if (targetFile && targetFile.isFile) {
-              resolve({
-                path: targetFile.href,
-                lastModified: targetFile.lastModified,
-                size: targetFile.size
-              })
-            } else {
-              resolve(null)
-            }
-          } else {
-            resolve(null)
-          }
+    try {
+      const stat = await this.client.stat(remotePath) as FileStat
+      if (stat.type === 'file') {
+        return {
+          path: stat.filename,
+          lastModified: new Date(stat.lastmod),
+          size: stat.size
         }
-      })
-    })
+      }
+      return null
+    } catch (error) {
+      logger.error(`[WebDAV同步] 获取文件信息失败: ${remotePath}`, error)
+      return null
+    }
   }
 
   /**
@@ -371,26 +341,17 @@ export class WebDAVSyncProvider extends BaseSyncProvider {
       return
     }
 
-    return new Promise((resolve, reject) => {
-      this.client!.exists(remotePath, (error, exists) => {
-        if (error) {
-          reject(error)
-        } else if (!exists) {
-          // 目录不存在，尝试创建
-          this.client!.mkdir(remotePath, (mkdirError) => {
-            if (mkdirError) {
-              logger.error(`[WebDAV同步] 创建远程目录失败: ${remotePath}`, mkdirError)
-              reject(mkdirError)
-            } else {
-              logger.debug(`[WebDAV同步] 创建远程目录: ${remotePath}`)
-              resolve()
-            }
-          })
-        } else {
-          resolve()
-        }
-      })
-    })
+    try {
+      const exists = await this.client.exists(remotePath)
+      if (!exists) {
+        // 目录不存在，尝试创建
+        await this.client.createDirectory(remotePath, { recursive: true })
+        logger.debug(`[WebDAV同步] 创建远程目录: ${remotePath}`)
+      }
+    } catch (error) {
+      logger.error(`[WebDAV同步] 创建远程目录失败: ${remotePath}`, error)
+      throw error
+    }
   }
 
   /**

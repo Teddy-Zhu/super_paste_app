@@ -4,6 +4,8 @@ import IconKeyboard from '~icons/mdi/keyboard'
 import IconInformation from '~icons/mdi/information'
 import IconTag from '~icons/mdi/tag'
 import IconBug from '~icons/mdi/bug'
+import IconSync from '~icons/mdi/sync'
+import { useSettingsStore } from '@renderer/stores/common'
 
 // 导入组件
 import GeneralSettings from './components/GeneralSettings.vue'
@@ -11,6 +13,7 @@ import TagsManagement from './components/TagsManagement.vue'
 import ShortcutSettings from './components/ShortcutSettings.vue'
 import DebugSettings from './components/DebugSettings.vue'
 import AboutSection from './components/AboutSection.vue'
+import SyncSettings from './components/SyncSettings.vue'
 
 // 当前选中的设置项
 const activeSection = ref('general')
@@ -22,6 +25,11 @@ const settingSections = [
     id: 'general',
     name: '通用设置',
     icon: IconSettings
+  },
+  {
+    id: 'sync',
+    name: '同步设置',
+    icon: IconSync
   },
   {
     id: 'tags',
@@ -73,6 +81,9 @@ const setActiveSection = (sectionId: string) => {
     <div class="main-content">
       <!-- 通用设置 -->
       <GeneralSettings v-if="activeSection === 'general'" :settings-store="settingsStore" />
+
+      <!-- 同步设置 -->
+      <SyncSettings v-if="activeSection === 'sync'" />
 
       <!-- 标签管理 -->
       <TagsManagement v-if="activeSection === 'tags'" />

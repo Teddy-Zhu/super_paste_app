@@ -1,3 +1,6 @@
+import { createHash } from 'crypto'
+import { promises as fs } from 'fs'
+
 // 防抖配置更新的定时器
 const debounceTimers = new Map<string, NodeJS.Timeout>()
 
@@ -102,5 +105,37 @@ export class HashUtils {
     }
 
     return this.generateStringHash(imageData)
+  }
+
+  /**
+   * 计算文件的MD5哈希值
+   * 用于同步时检测文件变化
+   */
+  static async generateFileHash(filePath: string): Promise<string> {
+    try {
+      const fileBuffer = await fs.readFile(filePath)
+      const hash = createHash('md5')
+      hash.update(fileBuffer)
+      return hash.digest('hex')
+    } catch (error) {
+      // 如果文件不存在或读取失败，返回空字符串
+      return ''
+    }
+  }
+
+  /**
+   * 计算文件的SHA256哈希值
+   * 提供更强的哈希算法选择
+   */
+  static async generateFileSHA256Hash(filePath: string): Promise<string> {
+    try {
+      const fileBuffer = await fs.readFile(filePath)
+      const hash = createHash('sha256')
+      hash.update(fileBuffer)
+      return hash.digest('hex')
+    } catch (error) {
+      // 如果文件不存在或读取失败，返回空字符串
+      return ''
+    }
   }
 }

@@ -1,6 +1,8 @@
 import { parentPort } from 'node:worker_threads'
+
 import { BaseWorker } from './base-worker'
 import { SyncService } from '../sync/sync-service'
+
 import type {
   WorkerMessage,
   WorkerRequest,
@@ -8,33 +10,11 @@ import type {
   WorkerEvent
 } from '../types/worker-types'
 import type {
-  SyncConfig,
-  SyncProviderType,
   SyncResult,
-  SyncStatus
+  ScheduledSyncConfig
 } from '../sync/types'
 import logger from '../utils/logger'
-
-/**
- * 定时同步任务配置接口
- */
-interface ScheduledSyncConfig {
-  /** 是否启用定时同步 */
-  enabled: boolean
-  /** 同步间隔（分钟） */
-  syncInterval: number
-  /** 同步提供者类型 */
-  providerType: SyncProviderType
-  /** 同步提供者配置 */
-  providerConfig: SyncConfig
-  /** 用户数据目录路径 */
-  userDataPath: string
-  /** 配置存储接口（可选，worker 中通常不需要） */
-  configStore?: {
-    get: (key: string, defaultValue?: any) => any
-    set: (key: string, value: any) => void
-  }
-}
+import { SyncStatus } from '../sync/types'
 
 /**
  * 定时同步任务 Worker
@@ -42,7 +22,7 @@ interface ScheduledSyncConfig {
  */
 class ScheduledSyncWorker extends BaseWorker {
   private config: ScheduledSyncConfig | null = null
-  private syncService: SyncService
+  private syncService: SyncService | null = null
   private syncTimer: NodeJS.Timeout | null = null
   private isRunning: boolean = false
   private isSyncing: boolean = false
@@ -51,8 +31,7 @@ class ScheduledSyncWorker extends BaseWorker {
 
   constructor() {
     super()
-    // SyncService 现在需要在初始化时创建
-    this.syncService = null as any // 将在 initialize 方法中创建
+    // SyncService 将在 initialize 方法中创建
   }
 
   protected getWorkerName(): string {
@@ -61,49 +40,111 @@ class ScheduledSyncWorker extends BaseWorker {
 
   /**
    * 初始化定时同步 Worker
+   * 总是初始化 Worker 基础功能，即使配置不完整也能成功初始化
    */
   public async initialize(config: ScheduledSyncConfig): Promise<boolean> {
     try {
       // 初始化 Worker 基础功能（包括日志系统）
       this.initializeWorker({
-        userDataPath: config.userDataPath,
+        userDataPath: config?.userDataPath || '',
         logFileName: 'sync-worker.log',
         logScope: 'sync-worker'
       })
 
-      if (!config || !config.enabled) {
-        logger.info(`[${this.getWorkerName()}] 同步未启用，跳过初始化`)
-        return false
-      }
-
+      // 保存配置（即使为空也保存）
       this.config = config
 
-      // 创建同步服务实例
-      this.syncService = new SyncService(config.userDataPath)
-
-      // 初始化同步服务
-      const initialized = await this.syncService.initialize(
-        config.providerType,
-        config.providerConfig
-      )
-
-      if (!initialized) {
-        logger.error(`[${this.getWorkerName()}] 同步服务初始化失败`)
-        return false
+      // 检查配置是否完整且启用
+      if (!this.isConfigValid(config)) {
+        logger.info(`[${this.getWorkerName()}] 配置不完整或未启用，仅初始化 Worker 基础功能`)
+        return true // Worker 基础功能初始化成功
       }
 
-      logger.info(`[${this.getWorkerName()}] 初始化完成，同步间隔: ${config.syncInterval} 分钟`)
-      return true
+      // 尝试初始化同步服务
+      try {
+        // 创建同步服务实例
+        this.syncService = new SyncService(config.userDataPath)
+
+        // 初始化同步服务
+        const initialized = await this.syncService.initialize(
+          config.providerType,
+          config.providerConfig
+        )
+
+        if (!initialized) {
+          logger.warn(`[${this.getWorkerName()}] 同步服务初始化失败，但 Worker 基础功能正常`)
+          // 销毁失败的同步服务实例
+          if (this.syncService) {
+            this.syncService.destroy()
+            this.syncService = null
+          }
+          return true // Worker 基础功能仍然可用
+        }
+
+        logger.info(`[${this.getWorkerName()}] 完整初始化成功，同步间隔: ${config.syncInterval} 分钟`)
+        return true
+      } catch (syncError) {
+        logger.warn(`[${this.getWorkerName()}] 同步服务初始化异常，但 Worker 基础功能正常:`, syncError)
+        // 清理失败的同步服务
+        if (this.syncService) {
+          try {
+            this.syncService.destroy()
+          } catch (destroyError) {
+            logger.debug(`[${this.getWorkerName()}] 清理同步服务时出错:`, destroyError)
+          }
+          this.syncService = null
+        }
+        return true // Worker 基础功能仍然可用
+      }
     } catch (error) {
-      logger.error(`[${this.getWorkerName()}] 初始化失败:`, error)
+      logger.error(`[${this.getWorkerName()}] Worker 基础功能初始化失败:`, error)
+      return false // 只有在 Worker 基础功能都无法初始化时才返回 false
+    }
+  }
+
+  /**
+   * 检查配置是否有效且完整
+   */
+  private isConfigValid(config: ScheduledSyncConfig | null | undefined): boolean {
+    logger.debug(`[${this.getWorkerName()}] 检查配置是否有效且完整:`, config)
+    if (!config) {
       return false
     }
+
+    // 检查基础字段
+    if (!config.enabled || !config.userDataPath || !config.providerType) {
+      return false
+    }
+
+    // 检查同步间隔
+    if (!config.syncInterval || config.syncInterval <= 0) {
+      return false
+    }
+
+    // 检查提供者配置
+    if (!config.providerConfig) {
+      return false
+    }
+
+    // 根据提供者类型检查具体配置
+    if (config.providerType === 'webdav') {
+      const webdavConfig = config.providerConfig as any
+      return !!(
+        webdavConfig.serverUrl &&
+        webdavConfig.username &&
+        webdavConfig.password &&
+        webdavConfig.syncDirection
+      )
+    }
+
+    // 其他提供者类型的验证可以在这里添加
+    return true
   }
 
   /**
    * 启动定时同步
    */
-  public startScheduledSync(): boolean {
+  public async startScheduledSync(): Promise<boolean> {
     if (!this.config || !this.config.enabled) {
       logger.warn(`[${this.getWorkerName()}] 配置未设置或未启用，无法启动定时同步`)
       return false
@@ -115,6 +156,46 @@ class ScheduledSyncWorker extends BaseWorker {
     }
 
     try {
+      // 如果同步服务未初始化，先初始化
+      if (!this.syncService) {
+        logger.info(`[${this.getWorkerName()}] 同步服务未初始化，开始初始化...`)
+
+        // 创建同步服务实例
+        this.syncService = new SyncService(this.config.userDataPath)
+
+        // 初始化同步服务
+        const initialized = await this.syncService.initialize(
+          this.config.providerType,
+          this.config.providerConfig
+        )
+
+        if (!initialized) {
+          logger.error(`[${this.getWorkerName()}] 同步服务初始化失败`)
+          this.sendEvent('sync-scheduled-start-failed', {
+            reason: '同步服务初始化失败',
+            timestamp: Date.now()
+          })
+          return false
+        }
+
+        logger.info(`[${this.getWorkerName()}] 同步服务初始化成功`)
+      }
+
+      // 在启动定时同步前先测试 provider 连通性
+      logger.info(`[${this.getWorkerName()}] 正在测试同步服务器连通性...`)
+      const connectionTest = await this.testConnection()
+
+      if (!connectionTest) {
+        logger.error(`[${this.getWorkerName()}] 同步服务器连通性测试失败，无法启动定时同步`)
+        this.sendEvent('sync-scheduled-start-failed', {
+          reason: '同步服务器连通性测试失败',
+          timestamp: Date.now()
+        })
+        return false
+      }
+
+      logger.info(`[${this.getWorkerName()}] 同步服务器连通性测试成功，启动定时同步`)
+
       this.isRunning = true
       this.scheduleNextSync()
 
@@ -127,6 +208,10 @@ class ScheduledSyncWorker extends BaseWorker {
       return true
     } catch (error) {
       logger.error(`[${this.getWorkerName()}] 启动定时同步失败:`, error)
+      this.sendEvent('sync-scheduled-start-failed', {
+        reason: error instanceof Error ? error.message : '未知错误',
+        timestamp: Date.now()
+      })
       return false
     }
   }
@@ -163,7 +248,7 @@ class ScheduledSyncWorker extends BaseWorker {
       return
     }
 
-    const intervalMs = this.config.syncInterval * 60 * 1000 // 转换为毫秒
+    const intervalMs = this.config.syncInterval
     this.nextSyncTime = Date.now() + intervalMs
 
     this.syncTimer = setTimeout(async () => {
@@ -172,6 +257,10 @@ class ScheduledSyncWorker extends BaseWorker {
 
     logger.debug(`[${this.getWorkerName()}] 已安排下次同步时间: ${new Date(this.nextSyncTime).toLocaleString()}`)
   }
+
+
+
+
 
   /**
    * 执行同步任务
@@ -200,6 +289,10 @@ class ScheduledSyncWorker extends BaseWorker {
     try {
       logger.info(`[${this.getWorkerName()}] 开始执行定时同步任务`)
       this.sendEvent('sync-started', { timestamp: Date.now() })
+
+      if (!this.syncService) {
+        throw new Error('同步服务未初始化')
+      }
 
       const result: SyncResult = await this.syncService.sync()
 
@@ -247,8 +340,12 @@ class ScheduledSyncWorker extends BaseWorker {
       logger.info(`[${this.getWorkerName()}] 开始执行手动同步`)
       this.sendEvent('manual-sync-started', { timestamp: Date.now() })
 
+      if (!this.syncService) {
+        throw new Error('同步服务未初始化，请先启用同步功能或使用带配置的手动同步')
+      }
+
       const result: SyncResult = await this.syncService.sync()
-      
+
       this.lastSyncTime = Date.now()
 
       if (result.success) {
@@ -274,7 +371,79 @@ class ScheduledSyncWorker extends BaseWorker {
         message: error instanceof Error ? error.message : '未知错误',
         errors: [error instanceof Error ? error.message : '未知错误']
       }
-      
+
+      this.sendEvent('manual-sync-error', {
+        timestamp: Date.now(),
+        error: errorResult.message
+      })
+
+      return errorResult
+    }
+  }
+
+  /**
+   * 使用指定配置执行手动同步
+   */
+  public async manualSyncWithConfig(config: ScheduledSyncConfig): Promise<SyncResult> {
+    try {
+      logger.info(`[${this.getWorkerName()}] 开始使用指定配置执行手动同步`)
+      this.sendEvent('manual-sync-started', { timestamp: Date.now() })
+
+      // 创建临时的同步服务实例进行同步
+      const tempSyncService = new SyncService(config.userDataPath)
+
+      // 初始化临时同步服务
+      const initialized = await tempSyncService.initialize(
+        config.providerType,
+        config.providerConfig
+      )
+
+      if (!initialized) {
+        logger.error(`[${this.getWorkerName()}] 临时同步服务初始化失败`)
+        const errorResult: SyncResult = {
+          success: false,
+          message: '同步服务初始化失败',
+          errors: ['同步服务初始化失败']
+        }
+        this.sendEvent('manual-sync-failed', {
+          timestamp: Date.now(),
+          result: errorResult
+        })
+        return errorResult
+      }
+
+      // 执行同步
+      const result: SyncResult = await tempSyncService.sync()
+
+      // 销毁临时同步服务
+      tempSyncService.destroy()
+
+      this.lastSyncTime = Date.now()
+
+      if (result.success) {
+        logger.info(`[${this.getWorkerName()}] 使用指定配置手动同步完成:`, result.message)
+        this.sendEvent('manual-sync-completed', {
+          timestamp: this.lastSyncTime,
+          result: result
+        })
+        this.onOperationSuccess()
+      } else {
+        logger.warn(`[${this.getWorkerName()}] 使用指定配置手动同步失败:`, result.message)
+        this.sendEvent('manual-sync-failed', {
+          timestamp: this.lastSyncTime,
+          result: result
+        })
+      }
+
+      return result
+    } catch (error) {
+      logger.error(`[${this.getWorkerName()}] 使用指定配置手动同步执行异常:`, error)
+      const errorResult: SyncResult = {
+        success: false,
+        message: error instanceof Error ? error.message : '未知错误',
+        errors: [error instanceof Error ? error.message : '未知错误']
+      }
+
       this.sendEvent('manual-sync-error', {
         timestamp: Date.now(),
         error: errorResult.message
@@ -290,8 +459,14 @@ class ScheduledSyncWorker extends BaseWorker {
   public async testConnection(): Promise<boolean> {
     try {
       logger.info(`[${this.getWorkerName()}] 开始测试同步连接`)
+
+      if (!this.syncService) {
+        logger.error(`[${this.getWorkerName()}] 同步服务未初始化，无法测试连接`)
+        return false
+      }
+
       const result = await this.syncService.testConnection()
-      
+
       if (result) {
         logger.info(`[${this.getWorkerName()}] 连接测试成功`)
         this.sendEvent('connection-test-success', { timestamp: Date.now() })
@@ -304,6 +479,54 @@ class ScheduledSyncWorker extends BaseWorker {
       return result
     } catch (error) {
       logger.error(`[${this.getWorkerName()}] 连接测试异常:`, error)
+      this.sendEvent('connection-test-error', {
+        timestamp: Date.now(),
+        error: error instanceof Error ? error.message : '未知错误'
+      })
+      return false
+    }
+  }
+
+  /**
+   * 使用指定配置测试同步连接
+   */
+  public async testConnectionWithConfig(config: ScheduledSyncConfig): Promise<boolean> {
+    try {
+      logger.info(`[${this.getWorkerName()}] 开始使用指定配置测试同步连接，配置:${JSON.stringify(config)}`)
+
+      // 创建临时的同步服务实例进行测试
+      const tempSyncService = new SyncService(config.userDataPath)
+
+      // 初始化临时同步服务
+      const initialized = await tempSyncService.initialize(
+        config.providerType,
+        config.providerConfig
+      )
+
+      if (!initialized) {
+        logger.error(`[${this.getWorkerName()}] 临时同步服务初始化失败`)
+        this.sendEvent('connection-test-failed', { timestamp: Date.now() })
+        return false
+      }
+
+      // 测试连接
+      const result = await tempSyncService.testConnection()
+
+      // 销毁临时同步服务
+      tempSyncService.destroy()
+
+      if (result) {
+        logger.info(`[${this.getWorkerName()}] 使用指定配置连接测试成功`)
+        this.sendEvent('connection-test-success', { timestamp: Date.now() })
+        this.onOperationSuccess()
+      } else {
+        logger.warn(`[${this.getWorkerName()}] 使用指定配置连接测试失败`)
+        this.sendEvent('connection-test-failed', { timestamp: Date.now() })
+      }
+
+      return result
+    } catch (error) {
+      logger.error(`[${this.getWorkerName()}] 使用指定配置连接测试异常:`, error)
       this.sendEvent('connection-test-error', {
         timestamp: Date.now(),
         error: error instanceof Error ? error.message : '未知错误'
@@ -326,7 +549,7 @@ class ScheduledSyncWorker extends BaseWorker {
       isRunning: this.isRunning,
       lastSyncTime: this.lastSyncTime,
       nextSyncTime: this.nextSyncTime,
-      syncStatus: this.syncService.getSyncStatus(),
+      syncStatus: this.syncService?.getSyncStatus() || SyncStatus.IDLE,
       config: this.config
     }
   }
@@ -336,6 +559,7 @@ class ScheduledSyncWorker extends BaseWorker {
    */
   public async updateConfig(newConfig: ScheduledSyncConfig): Promise<boolean> {
     try {
+      // console.log('updateConfig', newConfig)
       // 如果正在运行，先停止
       if (this.isRunning) {
         this.stopScheduledSync()
@@ -351,7 +575,7 @@ class ScheduledSyncWorker extends BaseWorker {
 
       if (initialized && newConfig.enabled) {
         // 如果配置启用且初始化成功，启动定时同步
-        return this.startScheduledSync()
+        return await this.startScheduledSync()
       }
 
       return initialized
@@ -391,7 +615,7 @@ class ScheduledSyncWorker extends BaseWorker {
           result = await this.initialize(request.params)
           break
         case 'startScheduledSync':
-          result = this.startScheduledSync()
+          result = await this.startScheduledSync()
           break
         case 'stopScheduledSync':
           result = this.stopScheduledSync()
@@ -399,8 +623,14 @@ class ScheduledSyncWorker extends BaseWorker {
         case 'manualSync':
           result = await this.manualSync()
           break
+        case 'manualSyncWithConfig':
+          result = await this.manualSyncWithConfig(request.params)
+          break
         case 'testConnection':
           result = await this.testConnection()
+          break
+        case 'testConnectionWithConfig':
+          result = await this.testConnectionWithConfig(request.params)
           break
         case 'getSyncStatus':
           result = this.getSyncStatus()
@@ -447,11 +677,12 @@ parentPort?.on('message', (message: WorkerMessage) => {
   worker.handleMessage(message)
 })
 
+// 发送 worker-ready 消息（统一发送时机）
 const readyEvent: WorkerEvent = {
   id: `event-${Date.now()}-${Math.random()}`,
   type: 'event',
   event: 'worker-ready',
-  data: {},
+  data: { workerName: '定时同步 Worker' },
   timestamp: Date.now()
 }
 parentPort?.postMessage(readyEvent)

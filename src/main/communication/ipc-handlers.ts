@@ -10,7 +10,9 @@ import { debounceExecution } from '../utils/common'
 import { MAX_HISTORY_SIZE_DEBOUNCE_DELAY, MAX_KEEP_TIME_DEBOUNCE_DELAY } from '../config/constants'
 import clipboardManager from '../clipboard/clipboard-manager'
 import { scheduledSyncManager } from '../workers/scheduled-sync-manager'
-import { SyncProviderType } from '../sync/types'
+import type { ScheduledSyncConfig } from '../sync/types'
+import { SyncStatus } from '../sync/types'
+import { SyncConfigUtils } from '../sync/sync-config-utils'
 import logger from '../utils/logger'
 
 /**
@@ -151,6 +153,7 @@ export class IPCHandlerManager {
     // 设置存储值
     ipcMain.handle('store-set', async (_, key: string, value: unknown) => {
       try {
+        logger.debug(`[主进程] 设置存储值 [${key}]:`, value)
         store.raw_set(key, value)
 
         // 处理特殊配置更新
@@ -175,6 +178,8 @@ export class IPCHandlerManager {
       }
     })
   }
+
+
 
   /**
    * 处理特殊配置更新
@@ -202,6 +207,7 @@ export class IPCHandlerManager {
         debounceExecution(
           'update-max-history-size',
           () => {
+            logger.debug('[主进程] 最大历史记录数量配置已更新，更新剪贴板管理器配置')
             clipboardManager.updateMaxHistorySizeFromStore()
           },
           MAX_HISTORY_SIZE_DEBOUNCE_DELAY
@@ -213,6 +219,7 @@ export class IPCHandlerManager {
         debounceExecution(
           'update-max-keep-time',
           () => {
+            logger.debug('[主进程] 最大保存时间配置已更新，更新清理器配置')
             clipboardManager.updateMaxKeepTimeFromStore()
           },
           MAX_KEEP_TIME_DEBOUNCE_DELAY
@@ -223,13 +230,59 @@ export class IPCHandlerManager {
       if (key === STORE_KEY.SETTINGS_AUTO_START) {
         const autoStart = value as boolean
         const success = await autoStartManager.setEnabled(autoStart)
-        
+
         if (!success) {
           logger.error('[主进程] 设置自动启动失败')
         } else {
           logger.debug(`[主进程] 自动启动状态已更新: ${autoStart}`)
         }
       }
+
+      // 如果更新的是同步启用状态，根据值开启或关闭同步功能
+      // if (key === STORE_KEY.SYNC_ENABLED) {
+      //   const syncEnabled = value as boolean
+      //   logger.debug(`[主进程] 同步启用状态已更新: ${syncEnabled}`)
+
+      //   if (syncEnabled) {
+      //     // 启用同步：重新加载同步配置并初始化定时同步
+      //     try {
+      //       const syncConfig = SyncConfigUtils.loadSyncConfig()
+
+      //       if (syncConfig && syncConfig.enabled) {
+      //         logger.info('[主进程] 同步已启用，开始初始化定时同步')
+
+      //         // 初始化定时同步管理器
+      //         const initialized = await scheduledSyncManager.initialize(syncConfig)
+
+      //         if (initialized) {
+      //           logger.info('[主进程] 定时同步服务初始化并启动成功')
+      //         } else {
+      //           logger.warn('[主进程] 定时同步服务初始化失败')
+      //         }
+      //       } else {
+      //         logger.warn('[主进程] 同步配置不完整，无法启动定时同步')
+      //       }
+      //     } catch (error) {
+      //       logger.error('[主进程] 启用同步失败:', error)
+      //     }
+      //   } else {
+      //     // 禁用同步：停止定时同步
+      //     try {
+      //       logger.info('[主进程] 同步已禁用，停止定时同步')
+
+      //       const stopped = await scheduledSyncManager.stopScheduledSync()
+
+      //       if (stopped) {
+      //         logger.info('[主进程] 定时同步已成功停止')
+      //       } else {
+      //         logger.warn('[主进程] 停止定时同步失败')
+      //       }
+      //     } catch (error) {
+      //       logger.error('[主进程] 禁用同步失败:', error)
+      //     }
+      //   }
+      // }
+      logger.debug(`[主进程] 处理特殊配置更新完成 [${key}]`)
     } catch (error) {
       logger.error(`[主进程] 处理特殊配置更新失败 [${key}]:`, error)
     }
@@ -240,15 +293,11 @@ export class IPCHandlerManager {
    */
   private static setupScheduledSyncHandlers(): void {
     // 初始化定时同步
-    ipcMain.handle('scheduled-sync:initialize', async (event, config) => {
+    ipcMain.handle('scheduled-sync:initialize', async (_, config: Omit<ScheduledSyncConfig, 'userDataPath'>) => {
       try {
-        const syncConfig = {
+        const syncConfig: ScheduledSyncConfig = {
           ...config,
-          userDataPath: app.getPath('userData'),
-          configStore: {
-            get: (key: string, defaultValue?: any) => store.get(key, defaultValue),
-            set: (key: string, value: any) => store.set(key, value)
-          }
+          userDataPath: app.getPath('userData')
         }
         return await scheduledSyncManager.initialize(syncConfig)
       } catch (error) {
@@ -291,10 +340,38 @@ export class IPCHandlerManager {
       }
     })
 
-    // 测试连接
-    ipcMain.handle('scheduled-sync:test-connection', async () => {
+    // 使用指定配置手动同步
+    ipcMain.handle('scheduled-sync:manual-sync-with-config', async (_, config: Omit<ScheduledSyncConfig, 'userDataPath'>) => {
       try {
-        return await scheduledSyncManager.testConnection()
+        const syncConfig: ScheduledSyncConfig = {
+          ...config,
+          userDataPath: app.getPath('userData')
+        }
+        return await scheduledSyncManager.manualSyncWithConfig(syncConfig)
+      } catch (error) {
+        logger.error('[主进程] 使用指定配置手动同步失败:', error)
+        return {
+          success: false,
+          message: error instanceof Error ? error.message : '未知错误',
+          errors: [error instanceof Error ? error.message : '未知错误']
+        }
+      }
+    })
+
+    // 测试连接
+    ipcMain.handle('scheduled-sync:test-connection', async (_, config?: Omit<ScheduledSyncConfig, 'userDataPath'>) => {
+      try {
+        if (config) {
+          // 如果传入了配置，使用传入的配置进行测试
+          const syncConfig: ScheduledSyncConfig = {
+            ...config,
+            userDataPath: app.getPath('userData')
+          }
+          return await scheduledSyncManager.testConnectionWithConfig(syncConfig)
+        } else {
+          // 如果没有传入配置，使用当前配置进行测试
+          return await scheduledSyncManager.testConnection()
+        }
       } catch (error) {
         logger.error('[主进程] 测试同步连接失败:', error)
         return false
@@ -304,27 +381,74 @@ export class IPCHandlerManager {
     // 获取同步状态
     ipcMain.handle('scheduled-sync:get-status', async () => {
       try {
-        return await scheduledSyncManager.getSyncStatus()
+        // 检查同步管理器是否正在运行
+        if (!scheduledSyncManager.isRunning()) {
+          // 如果同步功能未开启，返回默认状态
+          return {
+            success: true,
+            data: {
+              isRunning: false,
+              lastSyncTime: 0,
+              nextSyncTime: 0,
+              syncStatus: SyncStatus.IDLE,
+              config: null
+            }
+          }
+        }
+
+        const status = await scheduledSyncManager.getSyncStatus()
+        return { success: true, data: status }
       } catch (error) {
         logger.error('[主进程] 获取同步状态失败:', error)
-        return null
+        return { success: false, error: (error as Error).message }
       }
     })
 
     // 更新配置
-    ipcMain.handle('scheduled-sync:update-config', async (event, config) => {
+    ipcMain.handle('scheduled-sync:update-config', async (_, config: Omit<ScheduledSyncConfig, 'userDataPath'>) => {
       try {
-        const syncConfig = {
+        const syncConfig: ScheduledSyncConfig = {
           ...config,
-          userDataPath: app.getPath('userData'),
-          configStore: {
-            get: (key: string, defaultValue?: any) => store.get(key, defaultValue),
-            set: (key: string, value: any) => store.set(key, value)
-          }
+          userDataPath: app.getPath('userData')
         }
         return await scheduledSyncManager.updateConfig(syncConfig)
       } catch (error) {
         logger.error('[主进程] 更新定时同步配置失败:', error)
+        return false
+      }
+    })
+
+    // 刷新计划同步任务
+    ipcMain.handle('scheduled-sync:refresh', async () => {
+      try {
+        logger.info('[主进程] 开始刷新计划同步任务')
+
+        // 从存储中读取基础同步配置（即使 provider 不可用也能获取配置）
+        const syncConfig = SyncConfigUtils.loadBaseSyncConfig()
+
+        logger.debug('[主进程] 已加载基础同步配置:', {
+          enabled: syncConfig.enabled,
+          provider: syncConfig.providerType,
+          interval: syncConfig.syncInterval
+        })
+
+        // 使用 updateConfig 方法来重启计划同步任务
+        // 该方法会自动处理停止、重新初始化和根据 enabled 状态启动的逻辑
+        const result = await scheduledSyncManager.updateConfig(syncConfig)
+
+        if (result) {
+          if (syncConfig.enabled) {
+            logger.info('[主进程] 计划同步任务刷新成功，同步已启用')
+          } else {
+            logger.info('[主进程] 计划同步任务刷新成功，Worker 基础功能可用')
+          }
+        } else {
+          logger.warn('[主进程] 计划同步任务刷新失败')
+        }
+
+        return result
+      } catch (error) {
+        logger.error('[主进程] 刷新计划同步任务失败:', error)
         return false
       }
     })

@@ -7,6 +7,7 @@ import type { CleanupConfig, CleanupStats } from '../types/clipboard-types'
 import type { WorkerConfig, WorkerRequest } from '../types/worker-types'
 import clipboardHistoryCleanerWorkerPath from '../workers/clipboard-history-cleaner.worker?modulePath'
 import logger from '../utils/logger'
+import {app } from 'electron'
 
 /**
  * 剪贴板历史记录清理器（主线程接口）
@@ -40,6 +41,19 @@ class ClipboardHistoryCleaner extends BaseWorkerManager {
           logger.error('[清理器管理器] 基于数量的清理检查失败:', error)
         })
       }
+    })
+
+    // 监听清理完成事件（来自清理器 Worker）
+    this.on('cleanup-completed', (data: { stats: any, deletedRecordIds?: string[] }) => {
+      logger.info('[清理器管理器] 收到清理完成事件:', data.stats)
+
+      // 通知前端更新
+      if (data.stats.deletedRecords > 0) {
+        this.notifyFrontendHistoryUpdated()
+      }
+
+      // 转发事件给剪贴板管理器（通过 EventEmitter 机制）
+      // this.emit('cleanup-completed', data)
     })
 
     // 监听清理错误事件
@@ -103,18 +117,31 @@ class ClipboardHistoryCleaner extends BaseWorkerManager {
   }
 
   /**
-   * 确保 Worker 已初始化
+   * 初始化剪贴板历史清理器
    */
-  private async ensureWorkerInitialized(): Promise<void> {
+  public async initialize(): Promise<void> {
+    // 启动 Worker
     if (!this.isInitialized) {
       await this.start()
-      // 需要导入 app 来获取 userDataPath
-      const { app } = require('electron')
-      const userDataPath = app.getPath('userData')
-      await this.call('initialize', userDataPath)
-      this.updateConfigFromStore()
-      this.isInitialized = true
     }
+
+    // 需要导入 app 来获取 userDataPath
+    const userDataPath = app.getPath('userData')
+
+    // 从 store 获取初始配置
+    const maxKeepTime = store.get(STORE_KEY.SETTINGS_MAX_KEEP_TIME, -1)
+    const maxHistorySize = store.get(STORE_KEY.SETTINGS_MAX_HISTORY_SIZE, 100)
+
+    const initialConfig: Partial<CleanupConfig> = {
+      maxKeepTime,
+      maxHistorySize,
+      cleanupInterval: 60 * 60 * 1000, // 1小时
+      enableAutoCleanup: maxKeepTime !== -1,
+      enableCountBasedCleanup: true
+    }
+
+    logger.info('[历史记录清理器] 初始化清理器 Worker')
+    await this.call('initialize', { config: initialConfig, userDataPath })
   }
 
 
@@ -140,8 +167,6 @@ class ClipboardHistoryCleaner extends BaseWorkerManager {
    */
   public async startAutoCleanup(): Promise<void> {
     try {
-      await this.ensureWorkerInitialized()
-
       await this.call('startAutoCleanup')
     } catch (error) {
       logger.error('[历史记录清理器] 启动自动清理失败:', error)
@@ -166,15 +191,9 @@ class ClipboardHistoryCleaner extends BaseWorkerManager {
    */
   public async performCleanup(): Promise<CleanupStats> {
     try {
-      await this.ensureWorkerInitialized()
-
       const stats = await this.call('performCleanup')
 
-      // 如果有记录被删除，通知前端更新
-      if (stats.deletedRecords > 0) {
-        this.notifyFrontendHistoryUpdated()
-      }
-
+      // 注意：前端通知现在由 cleanup-completed 事件监听器处理
       return stats
     } catch (error) {
       logger.error('[历史记录清理器] 执行清理操作失败:', error)
@@ -192,8 +211,6 @@ class ClipboardHistoryCleaner extends BaseWorkerManager {
    */
   public async checkCountBasedCleanup(maxHistorySize: number): Promise<void> {
     try {
-      await this.ensureWorkerInitialized()
-
       await this.call('checkCountBasedCleanup', maxHistorySize)
     } catch (error) {
       logger.error('[清理器管理器] 基于数量的清理检查失败:', error)
@@ -207,9 +224,10 @@ class ClipboardHistoryCleaner extends BaseWorkerManager {
     const maxKeepTime = store.get(STORE_KEY.SETTINGS_MAX_KEEP_TIME, -1)
     const maxHistorySize = store.get(STORE_KEY.SETTINGS_MAX_HISTORY_SIZE, 100)
 
-    const config = {
+    const config: Partial<CleanupConfig> = {
       maxKeepTime,
       maxHistorySize,
+      enableAutoCleanup: maxKeepTime !== -1,
       enableCountBasedCleanup: true
     }
 

@@ -3,7 +3,8 @@ import { BaseWorker } from './base-worker'
 import type {
   WorkerMessage,
   WorkerRequest,
-  WorkerResponse
+  WorkerResponse,
+  WorkerEvent
 } from '../types/worker-types'
 import type { CleanupConfig, CleanupStats } from '../types/clipboard-types'
 import logger from '../utils/logger'
@@ -42,29 +43,61 @@ class ClipboardHistoryCleanerWorker extends BaseWorker {
   /**
    * 初始化清理器
    */
-  public initialize(userDataPath: string): void {
+  public initialize(params?: { config?: Partial<CleanupConfig>, userDataPath: string } | string): void {
+    // 处理参数兼容性
+    let config: Partial<CleanupConfig> | undefined
+    let userDataPath: string | undefined
+
+    if (typeof params === 'string') {
+      // 旧格式：直接传 userDataPath 字符串
+      userDataPath = params
+    } else if (params && typeof params === 'object') {
+      // 新格式：{ config, userDataPath }
+      config = params.config
+      userDataPath = params.userDataPath
+    } else {
+      userDataPath = ''
+    }
+
     // 初始化 Worker 基础功能（包括日志系统）
     this.initializeWorker({
       userDataPath,
       logFileName: 'clipboard-cleaner-worker.log',
       logScope: 'clipboard-cleaner-worker'
     })
-    // 这里可以添加初始化逻辑，比如从主线程获取配置
+    // 更新配置
+    if (config) {
+      this.config = { ...this.config, ...config }
+
+      // 如果启用了自动清理，立即启动
+      if (this.config.enableAutoCleanup) {
+        this.startAutoCleanup()
+      }
+    }
   }
 
   /**
    * 更新配置
    */
-  public updateConfig(newConfig: { maxKeepTime: number }): void {
+  public updateConfig(newConfig: Partial<CleanupConfig>): void {
     const oldConfig = { ...this.config }
-    
-    this.config.maxKeepTime = newConfig.maxKeepTime
-    this.config.enableAutoCleanup = newConfig.maxKeepTime !== -1
 
+    // 更新所有提供的配置项
+    this.config = { ...this.config, ...newConfig }
 
+    // 自动设置 enableAutoCleanup 基于 maxKeepTime
+    if ('maxKeepTime' in newConfig) {
+      this.config.enableAutoCleanup = this.config.maxKeepTime !== -1
+    }
 
-    // 如果配置发生变化，重新启动自动清理
-    if (oldConfig.maxKeepTime !== this.config.maxKeepTime) {
+    // 如果关键配置发生变化，重新启动自动清理
+    const shouldRestart = (
+      oldConfig.maxKeepTime !== this.config.maxKeepTime ||
+      oldConfig.enableAutoCleanup !== this.config.enableAutoCleanup ||
+      oldConfig.cleanupInterval !== this.config.cleanupInterval
+    )
+
+    if (shouldRestart) {
       this.stopAutoCleanup()
       if (this.config.enableAutoCleanup) {
         this.startAutoCleanup()
@@ -90,7 +123,7 @@ class ClipboardHistoryCleanerWorker extends BaseWorker {
     if (this.cleanupTimer) {
       return
     }
-    
+
     // 立即执行一次清理
     this.performCleanup()
 
@@ -195,7 +228,7 @@ class ClipboardHistoryCleanerWorker extends BaseWorker {
           for (const record of recordsToDelete) {
             // 1. 先删除该记录的所有标签绑定
             await this.callMainThread('database-unbindAllTagsFromRecord', { contentId: record.content_id })
-            
+
             // 2. 然后删除记录本身
             await this.callMainThread('database-deleteRecord', { contentId: record.content_id })
             deletedRecordIds.push(record.content_id)
@@ -403,5 +436,12 @@ parentPort?.on('message', (message: WorkerMessage) => {
   worker.handleMessage(message)
 })
 
-// Worker 准备就绪，等待初始化请求
-logger.info('[历史记录清理器 Worker] Worker 已准备就绪，等待初始化请求')
+// 发送 worker-ready 消息（统一发送时机）
+const readyEvent: WorkerEvent = {
+  id: `event-${Date.now()}-${Math.random()}`,
+  type: 'event',
+  event: 'worker-ready',
+  data: { workerName: '历史记录清理器 Worker' },
+  timestamp: Date.now()
+}
+parentPort?.postMessage(readyEvent)

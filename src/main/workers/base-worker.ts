@@ -42,9 +42,6 @@ export abstract class BaseWorker {
     // 初始化日志系统
     this.initializeLogger(config)
 
-    // 发送 worker-ready 事件
-    this.sendWorkerReadyEvent()
-
     // 子类可以重写此方法来添加额外的初始化逻辑
     this.onWorkerInitialized(config)
   }
@@ -73,8 +70,9 @@ export abstract class BaseWorker {
 
   /**
    * 发送 Worker 准备就绪事件
+   * 子类可以在适当的时机调用此方法
    */
-  private sendWorkerReadyEvent(): void {
+  protected sendWorkerReadyEvent(): void {
     const readyEvent: WorkerEvent = {
       id: `event-${Date.now()}-${Math.random()}`,
       type: 'event',
@@ -82,6 +80,7 @@ export abstract class BaseWorker {
       data: { workerName: this.getWorkerName() },
       timestamp: Date.now()
     }
+    logger.info(`[${this.getWorkerName()}] Worker 准备就绪，等待初始化请求`)
     parentPort?.postMessage(readyEvent)
   }
 

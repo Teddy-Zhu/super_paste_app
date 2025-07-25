@@ -9,12 +9,16 @@ const electronAPI = {
   ipcRenderer: {
     // 监听消息
     on: (channel: string, listener: (...args: any[]) => void) => {
-      return ipcRenderer.on(channel, listener)
+      ipcRenderer.on(channel, listener)
+      // 返回取消监听的函数
+      return () => ipcRenderer.off(channel, listener)
     },
 
     // 一次性监听
     once: (channel: string, listener: (...args: any[]) => void) => {
-      return ipcRenderer.once(channel, listener)
+      ipcRenderer.once(channel, listener)
+      // 返回取消监听的函数
+      return () => ipcRenderer.off(channel, listener)
     },
 
     // 发送异步消息
@@ -30,6 +34,11 @@ const electronAPI = {
     // 发送同步消息（仅在必要时使用）
     sendSync: (channel: string, ...args: any[]) => {
       return ipcRenderer.sendSync(channel, ...args)
+    },
+
+    // 移除监听器
+    off: (channel: string, listener: (...args: any[]) => void) => {
+      return ipcRenderer.off(channel, listener)
     },
 
     // 移除监听器（已废弃，但项目中仍在使用）

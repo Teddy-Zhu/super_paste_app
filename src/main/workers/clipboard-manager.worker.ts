@@ -1166,11 +1166,12 @@ parentPort?.on('message', (message: WorkerMessage) => {
   worker.handleMessage(message)
 })
 
+// 发送 worker-ready 消息（统一发送时机）
 const readyEvent: WorkerEvent = {
   id: `event-${Date.now()}-${Math.random()}`,
   type: 'event',
   event: 'worker-ready',
-  data: {},
+  data: { workerName: '剪贴板管理器 Worker' },
   timestamp: Date.now()
 }
 parentPort?.postMessage(readyEvent)

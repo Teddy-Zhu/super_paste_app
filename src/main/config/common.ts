@@ -6,13 +6,12 @@ export const STORE_KEY= {
     SETTINGS_MAX_KEEP_TIME: 'settings.maxKeepTime',
 
     SYNC_CONFIG: 'sync',
-    SYNC_ENABLEED: 'sync.enabled',
+    SYNC_ENABLED: 'sync.enabled',
     SYNC_PROVIDER: 'sync.provider',
-    SYNC_AUTO_SYNC: 'sync.autoSync',
     SYNC_INTERVAL: 'sync.interval',
     SYNC_DIRECTION: 'sync.direction',
 
-    SYNC_PROVIDER_PARAMS: 'sync_config.params.%s'
+    SYNC_PROVIDER_PARAMS: 'sync.params.%s'
 
 
 

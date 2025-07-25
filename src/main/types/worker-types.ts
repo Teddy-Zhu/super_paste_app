@@ -105,6 +105,7 @@ export interface WorkerEvents {
   // 定时同步事件
   'sync-scheduled-started': { interval: number; nextSyncTime: number }
   'sync-scheduled-stopped': {}
+  'sync-scheduled-start-failed': { reason: string; timestamp: number }
   'sync-started': { timestamp: number }
   'sync-completed': { timestamp: number; result: any; nextSyncTime: number }
   'sync-failed': { timestamp: number; result: any; nextSyncTime: number }

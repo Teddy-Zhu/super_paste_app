@@ -1,12 +1,21 @@
 import { defineStore } from 'pinia'
 
-export const useSettingsStore = defineStore('settings',{
+export const useSyncStore = defineStore('sync',{
   state: () => ({
-    autoStart: false,
-    globalShortcut: '', // 默认为空，用户需要手动设置
-    maxHistorySize: 100,
-    maxKeepTime: -1, // 最大保存时间（天），-1 表示不限制
-    clipboardListening: true, // 剪贴板监听状态，默认开启
+    enabled: false,
+    provider: '',
+    interval: 3000000,
+    direction: 'bidirectional',
+    params: {
+      webdav :{
+        serverUrl: '',
+        username: '',
+        password: '',
+        remotePath: '',
+        timeout: 30000,
+        useHttps: false
+      }
+    }
   }),
   getters: {
 

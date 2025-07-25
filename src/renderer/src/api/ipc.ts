@@ -19,6 +19,7 @@ declare global {
         send: (channel: string, ...args: any[]) => void
         invoke: (channel: string, ...args: any[]) => Promise<any>
         sendSync: (channel: string, ...args: any[]) => any
+        off: (channel: string, listener: (...args: any[]) => void) => void
         removeListener: (channel: string, listener: (...args: any[]) => void) => void
         removeAllListeners: (channel: string) => void
       }

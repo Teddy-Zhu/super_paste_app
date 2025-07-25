@@ -899,9 +899,9 @@ onUnmounted(() => {
   background: #fef9e6;
   border-bottom: 1px solid #f0f0f0;
   backdrop-filter: blur(20px);
-  height: 56px;
-  min-height: 56px;
-  max-height: 56px;
+  height: 48px;
+  min-height: 48px;
+  max-height: 48px;
   box-sizing: border-box;
   z-index: 1000;
 }
@@ -1205,10 +1205,11 @@ onUnmounted(() => {
 
 /* 剪贴板滚动容器样式 */
 .clipboard-scroll-container {
-  padding-top: 15px;
+  padding-top: 16px;
   padding-left: 20px;
-  padding-bottom: 15px;
+  padding-bottom: 0px;
   overflow: hidden;
+  height: 100vh;
 }
 
 .clipboard-list-wrapper {

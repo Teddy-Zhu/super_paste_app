@@ -24,6 +24,9 @@ import { windowStateManager } from './ui/windows/window-state'
 import { SystemIntegrationService } from './system/initialization-services'
 import { IPCHandlerManager } from './communication/ipc-handlers'
 import { CLIPBOARD_CONFIG } from './config/constants'
+
+// 同步相关模块
+import { SyncConfigUtils } from './sync/sync-config-utils'
 if (process.platform === 'darwin' && is.dev) {
   app.disableHardwareAcceleration()
 }
@@ -180,13 +183,16 @@ class SuperPasteApp {
       // 3. 初始化剪贴板管理器（可能耗时）
       await this.initializeClipboardManager()
 
-      // 4. 设置系统集成功能
+      // 4. 初始化剪贴板历史清理器
+      await this.initializeClipboardHistoryCleaner()
+
+      // 5. 设置系统集成功能
       await this.setupSystemIntegration()
 
-      // 5. 创建 overlay 窗口（预先创建，保持隐藏）
+      // 6. 创建 overlay 窗口（预先创建，保持隐藏）
       this.createOverlayWindow()
 
-      // 6. 初始化定时同步服务
+      // 7. 初始化定时同步服务
       await this.initializeScheduledSync()
 
       logger.debug('[主进程] 后台服务初始化全部完成')
@@ -232,6 +238,24 @@ class SuperPasteApp {
   }
 
   /**
+   * 初始化剪贴板历史清理器
+   */
+  private async initializeClipboardHistoryCleaner(): Promise<void> {
+    try {
+      // 初始化清理器（启动worker并配置）
+      await clipboardHistoryCleaner.initialize()
+      logger.debug('[主进程] 剪贴板历史清理器Worker初始化完成')
+
+      // 启动自动清理（如果配置了保留时间）
+      await clipboardHistoryCleaner.startAutoCleanup()
+      logger.debug('[主进程] 剪贴板历史清理器自动清理启动完成')
+    } catch (error) {
+      logger.error('[主进程] 剪贴板历史清理器初始化失败:', error)
+      // 清理器初始化失败不影响应用主要功能
+    }
+  }
+
+  /**
    * 设置系统集成功能
    */
   private async setupSystemIntegration(): Promise<void> {
@@ -252,6 +276,8 @@ class SuperPasteApp {
     logger.debug('[主进程] Overlay 窗口创建完成')
   }
 
+
+
   /**
    * 初始化定时同步服务
    */
@@ -259,6 +285,24 @@ class SuperPasteApp {
     try {
       // 设置事件监听器
       scheduledSyncManager.setupEventListeners()
+
+      // 总是加载基础配置，即使 provider 不可用
+      const baseConfig = SyncConfigUtils.loadBaseSyncConfig()
+
+      logger.info('[主进程] 开始初始化定时同步 Worker', baseConfig)
+
+      // 初始化定时同步管理器（总是使用基础配置初始化 Worker）
+      const initialized = await scheduledSyncManager.initialize(baseConfig)
+
+      if (initialized) {
+        if (baseConfig.enabled) {
+          logger.info('[主进程] 定时同步 Worker 初始化成功，同步任务已启动')
+        } else {
+          logger.info('[主进程] 定时同步 Worker 基础功能初始化成功，等待完整配置')
+        }
+      } else {
+        logger.warn('[主进程] 定时同步 Worker 初始化失败')
+      }
 
       logger.debug('[主进程] 定时同步服务初始化完成')
     } catch (error) {

@@ -7,12 +7,13 @@ import {
   SyncProviderType
 } from './types'
 import type {
-  SyncConfig,
+  SyncProviderConfig,
   SyncResult,
   SyncEventListener,
   WebDAVConfig
 } from './types'
 import logger from '../utils/logger'
+import { HashUtils } from '../utils/common'
 
 /**
  * 数据库和配置文件同步服务
@@ -26,8 +27,8 @@ export class SyncService {
   // 需要同步的文件路径
   private readonly DATABASE_FILE_NAME = 'clipboard-history.db'
   private readonly CONFIG_FILE_NAME = 'config.json'
-  private readonly REMOTE_DB_PATH = '/super-paste/clipboard-history.db'
-  private readonly REMOTE_CONFIG_PATH = '/super-paste/config.json'
+  private readonly REMOTE_DB_PATH = './clipboard-history.db'
+  private readonly REMOTE_CONFIG_PATH = './config.json'
 
   constructor(userDataPath: string) {
     this.userDataPath = userDataPath
@@ -37,7 +38,7 @@ export class SyncService {
    * 初始化同步提供者
    * 由外部直接传入配置，不再从存储加载
    */
-  async initialize(providerType: SyncProviderType, providerConfig: SyncConfig): Promise<boolean> {
+  async initialize(providerType: SyncProviderType, providerConfig: SyncProviderConfig): Promise<boolean> {
     try {
       const success = await this.configureSyncProvider(providerType, providerConfig)
 
@@ -57,7 +58,7 @@ export class SyncService {
   /**
    * 配置同步提供者
    */
-  async configureSyncProvider(type: SyncProviderType, config: SyncConfig): Promise<boolean> {
+  async configureSyncProvider(type: SyncProviderType, config: SyncProviderConfig): Promise<boolean> {
     try {
       // 销毁现有同步提供者
       if (this.syncProvider) {
@@ -189,6 +190,9 @@ export class SyncService {
         result.errors?.push('配置文件上传失败')
       }
     }
+
+    // 上传版本信息文件
+    await this.uploadVersionFile(result)
   }
 
   /**
@@ -242,6 +246,11 @@ export class SyncService {
       this.CONFIG_FILE_NAME,
       result
     )
+
+    // 如果有文件被上传，则上传版本信息文件
+    if (result.uploadedFiles && result.uploadedFiles.length > 0) {
+      await this.uploadVersionFile(result)
+    }
   }
 
   /**
@@ -384,7 +393,47 @@ export class SyncService {
     }
   }
 
+  /**
+   * 上传版本信息文件
+   */
+  private async uploadVersionFile(result: SyncResult): Promise<void> {
+    try {
+      const localDbPath = this.getLocalDatabasePath()
+      const localConfigPath = this.getLocalConfigPath()
 
+      // 计算文件hash
+      const dbFileHash = await HashUtils.generateFileHash(localDbPath)
+      const configFileHash = await HashUtils.generateFileHash(localConfigPath)
+
+      // 创建版本信息
+      const versionInfo = {
+        lastUpdateTime: Date.now(),
+        files: {
+          database: {
+            hash: dbFileHash,
+            path: this.DATABASE_FILE_NAME
+          },
+          config: {
+            hash: configFileHash,
+            path: this.CONFIG_FILE_NAME
+          }
+        }
+      }
+
+      // 直接上传文件内容，无需创建临时文件
+      const versionContent = JSON.stringify(versionInfo, null, 2)
+      const uploaded = await this.syncProvider!.uploadFileWithData(versionContent, './version.txt')
+      if (uploaded) {
+        result.uploadedFiles?.push('version.txt')
+        logger.info('[同步服务] 版本信息文件上传成功')
+      } else {
+        result.errors?.push('版本信息文件上传失败')
+      }
+    } catch (error) {
+      logger.error('[同步服务] 创建或上传版本信息文件失败:', error)
+      result.errors?.push('版本信息文件处理失败')
+    }
+  }
 
   /**
    * 销毁同步服务
