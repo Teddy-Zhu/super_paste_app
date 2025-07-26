@@ -6,7 +6,7 @@ import { HashUtils } from '../utils/common'
 export interface ClipboardContent {
   text?: string
   html?: string
-  image?: string // base64 编码的图片数据
+  image?: Buffer // 图片原始数据 (Buffer)
   rtf?: string
   files?: string[] // 文件路径列表
 }
@@ -36,11 +36,23 @@ export interface AppInfoRecord {
 }
 
 /**
+ * 前端使用的剪贴板内容格式（图片为 Uint8Array）
+ */
+export interface ClipboardContentForUI {
+  text?: string
+  html?: string
+  image?: Uint8Array // 图片原始数据（Uint8Array 格式，用于前端显示）
+  rtf?: string
+  files?: string[] // 文件路径列表
+}
+
+/**
  * 剪贴板历史记录项（内存中使用）
+ * 支持两种内容格式：内部处理用的 Buffer 格式和前端显示用的 base64 字符串格式
  */
 export interface ClipboardItem {
   id: string
-  content: ClipboardContent
+  content: ClipboardContent | ClipboardContentForUI
   primaryType: 'text' | 'html' | 'image' | 'rtf' | 'files' | 'url' | 'email' | 'phone' | 'code' | 'color' | 'empty'
   availableFormats: string[]
   timestamp: number
@@ -58,7 +70,7 @@ export interface ClipboardHistoryRecord {
   hash: string
   content_text?: string
   content_html?: string
-  content_image?: string
+  content_image?: Buffer
   content_rtf?: string
   content_files?: string // JSON 字符串，存储文件路径数组
   primary_type: string
@@ -171,12 +183,16 @@ export interface TagQueryOptions {
 export class ClipboardDataConverter {
   /**
    * 将数据库记录转换为内存中的剪贴板项
+   * 注意：为了前端显示，图片 Buffer 数据会被转换为 Uint8Array
    */
   static recordToItem(record: ClipboardHistoryRecord, tags?: TagGroup[]): ClipboardItem {
-    const content: ClipboardContent = {}
+    const content: any = {} // 使用 any 来避免类型冲突，因为前端需要 Uint8Array
     if (record.content_text) content.text = record.content_text
     if (record.content_html) content.html = record.content_html
-    if (record.content_image) content.image = record.content_image
+    if (record.content_image) {
+      // 将 Buffer 转换为 Uint8Array 供前端显示
+      content.image = new Uint8Array(record.content_image)
+    }
     if (record.content_rtf) content.rtf = record.content_rtf
     if (record.content_files) {
       try {
@@ -205,7 +221,7 @@ export class ClipboardDataConverter {
     content_id: string
     content_text?: string
     content_html?: string
-    content_image?: string
+    content_image?: Buffer
     content_rtf?: string
     content_files?: string
     primary_type: string
@@ -214,11 +230,24 @@ export class ClipboardDataConverter {
     last_used: number
     source_app?: string
   } {
+    // 处理图片数据：支持 Buffer、Uint8Array 和 base64 字符串格式
+    let imageBuffer: Buffer | undefined = undefined
+    if (item.content.image) {
+      if (Buffer.isBuffer(item.content.image)) {
+        imageBuffer = item.content.image
+      } else if (item.content.image instanceof Uint8Array) {
+        // 从 Uint8Array 转换为 Buffer
+        imageBuffer = Buffer.from(item.content.image)
+      } else if (typeof item.content.image === 'string') {
+        imageBuffer = Buffer.from(item.content.image, 'base64')
+      }
+    }
+
     return {
       content_id: item.id,
       content_text: item.content.text,
       content_html: item.content.html,
-      content_image: item.content.image,
+      content_image: imageBuffer,
       content_rtf: item.content.rtf,
       content_files: item.content.files ? JSON.stringify(item.content.files) : undefined,
       primary_type: item.primaryType,
@@ -326,7 +355,8 @@ export class ClipboardDataConverter {
 
     // 对图片内容进行优化处理
     if (content.image) {
-      optimizedContent.image = ClipboardDataConverter.generateImageHash(content.image)
+      const imageHash = ClipboardDataConverter.generateImageHash(content.image)
+      optimizedContent.image = Buffer.from(imageHash, 'utf8')
     }
 
     return HashUtils.generateContentHash(optimizedContent)
@@ -336,14 +366,14 @@ export class ClipboardDataConverter {
    * 生成图片内容的轻量级哈希
    * 使用采样策略而不是完整内容，大幅减少CPU消耗
    */
-  private static generateImageHash(imageData: string): string {
-    if (!imageData) return ''
+  private static generateImageHash(imageData: Buffer): string {
+    if (!imageData || imageData.length === 0) return ''
 
     const dataLength = imageData.length
 
-    // 小图片（<= 4KB base64）直接使用完整数据
+    // 小图片（<= 4KB）直接使用完整数据
     if (dataLength <= 4096) {
-      return imageData
+      return imageData.toString('base64')
     }
 
     // 大图片使用采样策略：
@@ -351,15 +381,16 @@ export class ClipboardDataConverter {
     // 2. 数据长度
     // 3. 每隔一定间隔采样
     // 4. 数据尾部
-    const head = imageData.substring(0, 512)  // 头部512字节
-    const tail = imageData.substring(dataLength - 512)  // 尾部512字节
+    const head = imageData.subarray(0, 512).toString('base64')  // 头部512字节
+    const tail = imageData.subarray(dataLength - 512).toString('base64')  // 尾部512字节
 
     // 中间部分采样：每隔1000字节取32字节
     let samples = ''
     const sampleInterval = 1000
     const sampleSize = 32
     for (let i = 1000; i < dataLength - 1000; i += sampleInterval) {
-      samples += imageData.substring(i, Math.min(i + sampleSize, dataLength))
+      const end = Math.min(i + sampleSize, dataLength)
+      samples += imageData.subarray(i, end).toString('base64')
     }
 
     // 组合采样数据
@@ -461,7 +492,7 @@ export class ClipboardDataConverter {
     content_id: string
     content_text?: string
     content_html?: string
-    content_image?: string
+    content_image?: Buffer
     content_rtf?: string
     content_files?: string
     primary_type: string

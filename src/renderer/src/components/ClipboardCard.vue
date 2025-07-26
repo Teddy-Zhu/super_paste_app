@@ -6,13 +6,13 @@ import DOMPurify from 'dompurify'
 import IconFile from '~icons/mdi/file'
 import IconFileMultiple from '~icons/mdi/file-multiple'
 import IconTextBox from '~icons/mdi/text-box'
-
 import IconTag from '~icons/mdi/tag'
 import IconCheck from '~icons/mdi/check'
 import IconDelete from '~icons/mdi/delete'
 import IconCircle from '~icons/mdi/circle'
 import { useContextMenu } from '@renderer/composables/useContextMenu'
 import { tags, clipboard } from '@renderer/api/renderer-api'
+import ImageDisplay from './ImageDisplay.vue'
 
 interface Props {
   item: ClipboardItem
@@ -564,7 +564,12 @@ const shortcutLabel = computed(() => {
 
       <!-- 图片预览 -->
       <div class="card-image" v-else-if="item.primaryType === 'image' && item.content.image">
-        <img :src="'data:image/png;base64,' +item.content.image" alt="Image preview" @load="handleImageLoad" />
+        <ImageDisplay
+          :image-data="item.content.image"
+          alt="Image preview"
+          image-class="card-image-inner"
+          @load="handleImageLoad"
+        />
       </div>
 
       <!-- 文件路径预览 -->
@@ -904,7 +909,8 @@ const shortcutLabel = computed(() => {
   border-radius: 12px; */
 }
 
-.card-image img {
+.card-image img,
+.card-image-inner {
   width: 100%;
   height: 100%;
   object-fit: contain;

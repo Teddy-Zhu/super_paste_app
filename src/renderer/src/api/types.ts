@@ -130,11 +130,11 @@ export interface StoreOperations {
   set<T = any>(key: string, value: T): Promise<void>
 }
 
-// 剪贴板内容数据类型
+// 剪贴板内容数据类型（前端版本 - 图片数据为 Uint8Array）
 export interface ClipboardContent {
   text?: string
   html?: string
-  image?: string // base64 编码的图片数据
+  image?: Uint8Array // 图片原始数据（Uint8Array 格式）
   rtf?: string
   files?: string[] // 文件路径列表
 }

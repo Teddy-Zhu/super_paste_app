@@ -101,7 +101,7 @@ class ClipboardDatabase {
         hash TEXT NOT NULL,
         content_text TEXT,
         content_html TEXT,
-        content_image TEXT,
+        content_image BLOB,
         content_rtf TEXT,
         content_files TEXT,
         primary_type TEXT NOT NULL,

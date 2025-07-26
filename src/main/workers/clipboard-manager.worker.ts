@@ -59,7 +59,7 @@ class ClipboardManagerWorker extends BaseWorker {
 
   /**
    * 直接读取剪贴板内容（使用 @teddyzhu/clipboard）
-   * 现在使用新的 getImageData API 获取完整的图片信息，并支持文件
+   * 使用最新的 getImageData API 获取完整的图片信息，并支持文件
    */
   private readClipboardDirect(): any {
     try {
@@ -104,30 +104,16 @@ class ClipboardManagerWorker extends BaseWorker {
         // 文件获取失败时静默处理
       }
 
-      // 使用新的 getImageData API 获取完整图片信息
+      // 使用最新的 getImageData API 获取完整图片信息
       let imageData: any = null
       let hasImage = false
 
       try {
         imageData = this.clipboard.getImageData()
-        hasImage = !!(imageData && imageData.base64Data)
+        hasImage = !!(imageData && imageData.data && Buffer.isBuffer(imageData.data))
       } catch (e) {
-        // 如果没有图片或获取失败，使用旧的 API
-        try {
-          const imageBase64 = this.clipboard.getImageBase64()
-          hasImage = !!imageBase64
-          if (hasImage) {
-            imageData = {
-              width: 0,
-              height: 0,
-              size: imageBase64.length,
-              base64Data: imageBase64
-            }
-          }
-        } catch (e2) {
-          // 图片获取完全失败时静默处理
-          hasImage = false
-        }
+        // 图片获取失败时静默处理
+        hasImage = false
       }
 
       const result: any = {
@@ -146,7 +132,7 @@ class ClipboardManagerWorker extends BaseWorker {
           height: imageData.height || 0,
           quickId: `${imageData.width || 0}x${imageData.height || 0}_${imageData.size || 0}`
         }
-        result.image = imageData.base64Data
+        result.image = imageData.data // 现在是 Buffer 数据
       }
 
       // 如果有文件，添加文件基本信息
@@ -314,15 +300,15 @@ class ClipboardManagerWorker extends BaseWorker {
       }
     }
 
-    // 处理图片数据
+    // 处理图片数据 - 使用最新的 ImageData 结构
     if (data.image) {
-      const imageData = data.image as any // 类型断言，因为 ImageData 接口包含这些属性
+      const imageData = data.image as any // ImageData 接口包含 width, height, size, data
       result.imageInfo = {
         width: imageData.width || 0,
         height: imageData.height || 0,
         quickId: `${imageData.width || 0}x${imageData.height || 0}_${imageData.size || 0}`
       }
-      result.image = imageData.base64Data || imageData
+      result.image = imageData.data // 现在是 Buffer 数据
     }
 
     return result
@@ -777,12 +763,12 @@ class ClipboardManagerWorker extends BaseWorker {
       // 添加图片内容
       if (content.image) {
         try {
-          // 构建 ImageData 对象
+          // 构建 ImageData 对象，使用 Buffer 数据
           clipboardData.image = {
             width: 0,  // 宽度信息可能不可用，设为0
             height: 0, // 高度信息可能不可用，设为0
             size: content.image.length,
-            base64Data: content.image
+            data: content.image // 现在使用 Buffer 数据
           }
           clipboardData.availableFormats.push('image')
           console.log('[剪贴板管理器 Worker] 添加图片内容')
