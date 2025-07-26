@@ -13,6 +13,6 @@ export { BaseSyncProvider } from './base-sync-provider'
 export { WebDAVSyncProvider } from './webdav-sync-provider'
 
 // 同步服务
-export { SyncService, syncService } from './sync-service'
+export { SyncService } from './sync-service'
 
 
