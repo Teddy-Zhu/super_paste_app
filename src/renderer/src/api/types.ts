@@ -31,6 +31,7 @@ export interface IpcChannels {
   'clipboard-get-history': ClipboardHistoryQueryOptions | { limit?: number } | void
   'clipboard-restore': { itemId: string }
   'clipboard-restore-as-text': { itemId: string }
+  'clipboard-restore-ocr-text': { itemId: string }
   'clipboard-delete-item': { itemId: string }
   'clipboard-clear-history': void
   'clipboard-get-status': void
@@ -61,6 +62,8 @@ export interface IpcResponses {
   // 剪贴板相关响应
   'clipboard-get-history': { success: boolean; data?: any[]; error?: string }
   'clipboard-restore': { success: boolean; message?: string; error?: string }
+  'clipboard-restore-as-text': { success: boolean; message?: string; error?: string }
+  'clipboard-restore-ocr-text': { success: boolean; message?: string; error?: string }
   'clipboard-delete-item': { success: boolean; message?: string; error?: string }
   'clipboard-clear-history': { success: boolean; message?: string; error?: string }
   'clipboard-get-status': { success: boolean; data?: any; error?: string }
@@ -137,6 +140,7 @@ export interface ClipboardContent {
   image?: Uint8Array // 图片原始数据（Uint8Array 格式）
   rtf?: string
   files?: string[] // 文件路径列表
+  ocr?: string // OCR识别的文本内容
 }
 
 // 应用信息类型
@@ -200,6 +204,7 @@ export interface ClipboardManagerConfig {
   maxHistorySize: number
   checkInterval: number
   enableAutoSave: boolean
+  enableLocalOCR: boolean
 }
 
 // 剪贴板状态类型
@@ -232,6 +237,7 @@ export interface ClipboardOperations {
   searchHistory(options: ClipboardHistoryQueryOptions): Promise<ClipboardHistoryResult>
   restore(itemId: string): Promise<boolean>
   restoreAsText(itemId: string): Promise<boolean>
+  restoreOcrText(itemId: string): Promise<boolean>
   deleteItem(itemId: string): Promise<boolean>
   clearHistory(): Promise<boolean>
   getStatus(): Promise<ClipboardStatus>

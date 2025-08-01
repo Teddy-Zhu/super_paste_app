@@ -217,27 +217,7 @@ class ClipboardHistoryCleaner extends BaseWorkerManager {
     }
   }
 
-  /**
-   * 从 store 更新配置
-   */
-  public updateConfigFromStore(): void {
-    const maxKeepTime = store.get(STORE_KEY.SETTINGS_MAX_KEEP_TIME, -1)
-    const maxHistorySize = store.get(STORE_KEY.SETTINGS_MAX_HISTORY_SIZE, 100)
 
-    const config: Partial<CleanupConfig> = {
-      maxKeepTime,
-      maxHistorySize,
-      enableAutoCleanup: maxKeepTime !== -1,
-      enableCountBasedCleanup: true
-    }
-
-    // 更新 Worker 配置
-    if (this.isRunning()) {
-      this.call('updateConfig', config).catch((error) => {
-        logger.error('[历史记录清理器] 更新配置失败:', error)
-      })
-    }
-  }
 
   /**
    * 获取当前配置

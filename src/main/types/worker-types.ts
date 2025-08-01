@@ -85,9 +85,7 @@ export interface ClipboardManagerWorkerMethods {
   'getRecordsByParseType': (parseType: string) => any[]
   'getTagStats': () => any[]
   
-  // 配置更新
-  'updateMaxHistorySizeFromStore': () => void
-  'updateMaxKeepTimeFromStore': () => void
+
   
 
 }

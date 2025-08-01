@@ -9,6 +9,7 @@ export interface ClipboardContent {
   image?: Buffer // 图片原始数据 (Buffer)
   rtf?: string
   files?: string[] // 文件路径列表
+  ocr?: string // OCR识别的文本内容
 }
 
 /**
@@ -44,6 +45,7 @@ export interface ClipboardContentForUI {
   image?: Uint8Array // 图片原始数据（Uint8Array 格式，用于前端显示）
   rtf?: string
   files?: string[] // 文件路径列表
+  ocr?: string // OCR识别的文本内容
 }
 
 /**
@@ -73,6 +75,7 @@ export interface ClipboardHistoryRecord {
   content_image?: Buffer
   content_rtf?: string
   content_files?: string // JSON 字符串，存储文件路径数组
+  content_ocr?: string // OCR识别的文本内容，用于搜索
   primary_type: string
   available_formats: string
   timestamp: number
@@ -87,6 +90,7 @@ export interface ClipboardManagerConfig {
   maxHistorySize: number
   checkInterval: number
   enableAutoSave: boolean
+  enableLocalOCR: boolean
 }
 
 /**
@@ -201,6 +205,7 @@ export class ClipboardDataConverter {
         content.files = []
       }
     }
+    if (record.content_ocr) content.ocr = record.content_ocr
 
     return {
       id: record.content_id,
@@ -224,6 +229,7 @@ export class ClipboardDataConverter {
     content_image?: Buffer
     content_rtf?: string
     content_files?: string
+    content_ocr?: string
     primary_type: string
     available_formats: string
     timestamp: number
@@ -250,6 +256,7 @@ export class ClipboardDataConverter {
       content_image: imageBuffer,
       content_rtf: item.content.rtf,
       content_files: item.content.files ? JSON.stringify(item.content.files) : undefined,
+      content_ocr: item.content.ocr,
       primary_type: item.primaryType,
       available_formats: JSON.stringify(item.availableFormats),
       timestamp: item.timestamp,
@@ -352,6 +359,7 @@ export class ClipboardDataConverter {
     if (content.html) optimizedContent.html = content.html
     if (content.rtf) optimizedContent.rtf = content.rtf
     if (content.files) optimizedContent.files = content.files
+    if (content.ocr) optimizedContent.ocr = content.ocr
 
     // 对图片内容进行优化处理
     if (content.image) {
@@ -495,6 +503,7 @@ export class ClipboardDataConverter {
     content_image?: Buffer
     content_rtf?: string
     content_files?: string
+    content_ocr?: string
     primary_type: string
     available_formats: string
     timestamp: number

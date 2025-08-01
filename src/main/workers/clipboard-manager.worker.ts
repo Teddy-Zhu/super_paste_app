@@ -16,6 +16,8 @@ import type {
 import { ClipboardDataConverter } from '../types/clipboard-types'
 import ActiveWindow from '@paymoapp/active-window'
 import logger from '../utils/logger'
+import { ocrService, OCRServiceOptions } from '../services/ocr-service'
+import path from 'path'
 
 class ClipboardManagerWorker extends BaseWorker {
   private config: ClipboardManagerConfig
@@ -28,6 +30,9 @@ class ClipboardManagerWorker extends BaseWorker {
   private lastItemId: string = ''
   private lastItemHash: string = ''
   private activeWindowInitialized: boolean = false
+  private ocrInitialized: boolean = false
+  private ocrResourcePath: string = ''
+  private isDev: boolean = false
 
   // 历史记录缓存：hash -> { id, hash }
   private historyCache: Map<string, { id: string, hash: string }> = new Map()
@@ -40,7 +45,8 @@ class ClipboardManagerWorker extends BaseWorker {
     this.config = {
       maxHistorySize: 100,
       checkInterval: 200,
-      enableAutoSave: false
+      enableAutoSave: false,
+      enableLocalOCR: false
     }
 
     // 初始化剪贴板管理器
@@ -168,15 +174,78 @@ class ClipboardManagerWorker extends BaseWorker {
     }
   }
 
-  public async initialize(params?: { config?: Partial<ClipboardManagerConfig>, userDataPath?: string } | Partial<ClipboardManagerConfig>): Promise<void> {
+  /**
+   * 设置 OCR 相关参数
+   */
+  private setupOCRParameters(isPackaged?: boolean, appPath?: string): void {
+    try {
+      // 判断是否为开发环境
+      this.isDev = false
+
+      // 根据是否打包来确定资源路径
+      logger.info('[剪贴板管理器 Worker] 是否为打包环境:', isPackaged)
+      if (isPackaged) {
+        // 打包后的路径 - 使用程序安装目录下的 resources
+        this.ocrResourcePath = path.join(appPath || '', 'resources', 'ocr').replace('/app.asar', '')
+        logger.info('[剪贴板管理器 Worker] 打包环境下的 OCR 资源路径:', this.ocrResourcePath)
+      } else {
+        // 开发环境路径 - 从当前文件位置向上查找
+        this.ocrResourcePath = path.join(__dirname, '..', '..', 'resources', 'ocr')
+      }
+
+      logger.debug('[剪贴板管理器 Worker] OCR 参数设置完成:', {
+        isDev: this.isDev,
+        resourcePath: this.ocrResourcePath
+      })
+    } catch (error) {
+      logger.error('[剪贴板管理器 Worker] OCR 参数设置失败:', error)
+      // 设置默认值
+      this.isDev = false
+      this.ocrResourcePath = ''
+    }
+  }
+
+  /**
+   * 初始化 OCR 服务
+   */
+  private async initializeOCRService(): Promise<void> {
+    if (this.ocrInitialized) {
+      return
+    }
+
+    if (!this.ocrResourcePath) {
+      throw new Error('OCR 资源路径未设置')
+    }
+
+    const ocrOptions: OCRServiceOptions = {
+      resourcePath: this.ocrResourcePath,
+      isDev: this.isDev,
+      ocrConfig: {
+        detRatio: 1.0,
+        recImgHeight: 48,
+        enableSpaceOptimize: true,
+        enableDocCls: false
+      }
+    }
+
+    await ocrService.initialize(ocrOptions)
+    this.ocrInitialized = true
+
+    logger.debug('[剪贴板管理器 Worker] OCR 服务初始化成功')
+  }
+
+  public async initialize(params?: { config?: Partial<ClipboardManagerConfig>, userDataPath?: string, isPackaged?: boolean, appPath?: string } | Partial<ClipboardManagerConfig>): Promise<void> {
     // 处理参数兼容性
     let config: Partial<ClipboardManagerConfig> | undefined
     let userDataPath: string | undefined
-
+    let isPackaged: boolean = true
+    let appPath: string | undefined
     if (params && 'config' in params) {
-      // 新格式：{ config, userDataPath }
+      // 新格式：{ config, userDataPath, isPackaged, appPath }
       config = params.config
       userDataPath = params.userDataPath
+      isPackaged = params.isPackaged || true
+      appPath = params.appPath
     } else {
       // 旧格式：直接传配置对象
       config = params as Partial<ClipboardManagerConfig>
@@ -194,6 +263,9 @@ class ClipboardManagerWorker extends BaseWorker {
     if (config) {
       this.config = { ...this.config, ...config }
     }
+
+    // 设置 OCR 相关参数
+    this.setupOCRParameters(isPackaged, appPath)
 
     try {
       // 初始化历史记录缓存
@@ -462,10 +534,16 @@ class ClipboardManagerWorker extends BaseWorker {
         this.lastItemId = newItemId
         this.lastItemHash = contentHash
 
-        this.sendEvent('cleanup-check-required', {
-          reason: 'new-record-added',
-          maxHistorySize: this.config.maxHistorySize
-        })
+        // 如果启用了本地OCR且有图片，异步进行OCR识别
+        if (this.config.enableLocalOCR && content.image) {
+          this.performAsyncOCR(newItemId, content.image)
+        }
+
+        // check in clean workers
+        // this.sendEvent('cleanup-check-required', {
+        //   reason: 'new-record-added',
+        //   maxHistorySize: this.config.maxHistorySize
+        // })
       }
 
       this.sendEvent('history-updated', { timestamp: Date.now() })
@@ -1031,6 +1109,97 @@ class ClipboardManagerWorker extends BaseWorker {
     }
   }
 
+  /**
+   * 从数据库获取内容并还原剪贴板为OCR文本
+   * 专门用于图片的OCR识别文本
+   */
+  public async restoreClipboardFromDatabaseAsOcrText(itemId: string): Promise<{ success: boolean; message?: string }> {
+    try {
+      // 参数验证
+      if (!itemId || typeof itemId !== 'string') {
+        return { success: false, message: '无效的项目ID' }
+      }
+
+      // 从数据库获取记录
+      const targetRecord = await this.callMainThread('database-getRecordByContentId', { contentId: itemId })
+
+      if (!targetRecord) {
+        return { success: false, message: '未找到指定的剪贴板项' }
+      }
+
+      // 检查是否有OCR文本内容
+      if (!targetRecord.content_ocr || !targetRecord.content_ocr.trim()) {
+        return { success: false, message: '该项目没有OCR文本内容' }
+      }
+
+      // 直接使用 setContents API 只设置OCR文本
+      const clipboardData = {
+        availableFormats: ['text'],
+        text: targetRecord.content_ocr
+      }
+      this.clipboard.setContents(clipboardData)
+
+      console.log('[剪贴板管理器 Worker] OCR文本已还原到剪贴板')
+
+
+      return {
+        success: true,
+        message: 'OCR文本已还原到剪贴板' 
+      }
+    } catch (error) {
+      console.error('[剪贴板管理器 Worker] 从数据库还原剪贴板为OCR文本失败:', error)
+      return { success: false, message: '还原剪贴板为OCR文本失败' }
+    }
+  }
+
+  /**
+   * 异步执行OCR识别
+   */
+  private async performAsyncOCR(contentId: string, imageBuffer: Buffer): Promise<void> {
+    try {
+      logger.debug('[剪贴板管理器 Worker] 开始异步OCR识别:', contentId)
+
+      // 确保OCR服务已初始化
+      if (!ocrService.ready) {
+        try {
+          await this.initializeOCRService()
+        } catch (error) {
+          logger.error('[剪贴板管理器 Worker] OCR服务初始化失败:', error)
+          return
+        }
+      }
+
+      // 执行OCR识别
+      const ocrResult = await ocrService.recognizeText(imageBuffer)
+
+      if (ocrResult.success && ocrResult.text && ocrResult.text.trim()) {
+        logger.debug('[剪贴板管理器 Worker] OCR识别成功:', contentId, '识别文本长度:', ocrResult.text.length)
+
+        // 更新数据库中的OCR字段
+        const updateSuccess = await this.callMainThread('database-updateOCR', {
+          contentId: contentId,
+          ocrText: ocrResult.text
+        })
+
+        if (updateSuccess) {
+          // 通知前端更新这条记录的OCR值
+          this.sendEvent('record-ocr-updated', {
+            contentId: contentId,
+            ocrText: ocrResult.text,
+            timestamp: Date.now()
+          })
+          logger.debug('[剪贴板管理器 Worker] OCR结果已更新到数据库并通知前端:', contentId)
+        } else {
+          logger.error('[剪贴板管理器 Worker] 更新OCR结果到数据库失败:', contentId)
+        }
+      } else {
+        logger.debug('[剪贴板管理器 Worker] OCR识别失败或无文本:', contentId, ocrResult.error)
+      }
+    } catch (error) {
+      logger.error('[剪贴板管理器 Worker] 异步OCR处理失败:', contentId, error)
+    }
+  }
+
   private async getCurrentAppInfo(): Promise<AppInfo | undefined> {
     try {
       // 检查 ActiveWindow 是否已初始化
@@ -1115,6 +1284,9 @@ class ClipboardManagerWorker extends BaseWorker {
           break
         case 'restoreClipboardFromDatabaseAsText':
           result = await this.restoreClipboardFromDatabaseAsText(request.params)
+          break
+        case 'restoreClipboardFromDatabaseAsOcrText':
+          result = await this.restoreClipboardFromDatabaseAsOcrText(request.params)
           break
         case 'getCurrentClipboard':
           result = await this.getCurrentClipboard()

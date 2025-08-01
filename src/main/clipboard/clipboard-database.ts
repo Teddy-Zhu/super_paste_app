@@ -104,6 +104,7 @@ class ClipboardDatabase {
         content_image BLOB,
         content_rtf TEXT,
         content_files TEXT,
+        content_ocr TEXT,
         primary_type TEXT NOT NULL,
         available_formats TEXT NOT NULL,
         timestamp INTEGER NOT NULL,
@@ -172,6 +173,7 @@ class ClipboardDatabase {
       'CREATE INDEX IF NOT EXISTS idx_content_text ON clipboard_history(content_text)',
       'CREATE INDEX IF NOT EXISTS idx_content_html ON clipboard_history(content_html)',
       'CREATE INDEX IF NOT EXISTS idx_content_files ON clipboard_history(content_files)',
+      'CREATE INDEX IF NOT EXISTS idx_content_ocr ON clipboard_history(content_ocr)',
 
       // 标签组表索引
       'CREATE INDEX IF NOT EXISTS idx_tag_groups_name ON tag_groups(name)',
@@ -199,7 +201,8 @@ class ClipboardDatabase {
     timestamp: number,
     lastUsed: number,
     sourceApp?: string,
-    hash?: string
+    hash?: string,
+    contentOcr?: string
   ): boolean {
     if (!this.db) throw new Error('数据库未初始化')
 
@@ -210,9 +213,9 @@ class ClipboardDatabase {
       const insertSQL = `
         INSERT OR REPLACE INTO clipboard_history (
           content_id, hash, content_text, content_html, content_image,
-          content_rtf, content_files, primary_type, available_formats,
+          content_rtf, content_files, content_ocr, primary_type, available_formats,
           timestamp, last_used, source_app, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
       `
 
       const stmt = this.db.prepare(insertSQL)
@@ -224,6 +227,7 @@ class ClipboardDatabase {
         content.image || null,
         content.rtf || null,
         content.files ? JSON.stringify(content.files) : null,
+        contentOcr || null,
         primaryType,
         JSON.stringify(availableFormats),
         timestamp,
@@ -246,8 +250,8 @@ class ClipboardDatabase {
 
     try {
       const updateSQL = `
-        UPDATE clipboard_history 
-        SET last_used = ?, updated_at = CURRENT_TIMESTAMP 
+        UPDATE clipboard_history
+        SET last_used = ?, updated_at = CURRENT_TIMESTAMP
         WHERE content_id = ?
       `
 
@@ -257,6 +261,29 @@ class ClipboardDatabase {
       return result.changes > 0
     } catch (error) {
       logger.error('[剪贴板数据库] 更新最后使用时间失败:', error)
+      return false
+    }
+  }
+
+  /**
+   * 更新记录的OCR内容
+   */
+  public updateOCR(contentId: string, ocrText: string): boolean {
+    if (!this.db) throw new Error('数据库未初始化')
+
+    try {
+      const updateSQL = `
+        UPDATE clipboard_history
+        SET content_ocr = ?, updated_at = CURRENT_TIMESTAMP
+        WHERE content_id = ?
+      `
+
+      const stmt = this.db.prepare(updateSQL)
+      const result = stmt.run(ocrText, contentId)
+
+      return result.changes > 0
+    } catch (error) {
+      logger.error('[剪贴板数据库] 更新OCR内容失败:', error)
       return false
     }
   }
@@ -299,8 +326,8 @@ class ClipboardDatabase {
       // 如果有内容搜索条件
       if (searchText && searchText.trim()) {
         const searchPattern = `%${searchText.trim()}%`
-        whereConditions.push('(ch.content_text LIKE ?)')
-        params.push(searchPattern)
+        whereConditions.push('(ch.content_text LIKE ? OR ch.content_ocr LIKE ?)')
+        params.push(searchPattern, searchPattern)
       }
 
       // 添加WHERE子句

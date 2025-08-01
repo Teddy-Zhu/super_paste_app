@@ -96,6 +96,13 @@ export class DatabaseService {
   }
 
   /**
+   * 更新OCR内容
+   */
+  public updateOCR(params: { contentId: string, ocrText: string }): boolean {
+    return clipboardDatabase.updateOCR(params.contentId, params.ocrText)
+  }
+
+  /**
    * 查询带标签信息的记录
    */
   public queryRecordsWithTags(options: QueryOptions = {}): Array<ClipboardHistoryRecord & { tags: TagGroupRecord[], appInfo?: AppInfoRecord }> {
@@ -291,6 +298,8 @@ export class DatabaseService {
           return this.clearAllRecords()
         case 'updateLastUsed':
           return this.updateLastUsed(params)
+        case 'updateOCR':
+          return this.updateOCR(params)
         case 'queryRecordsWithTags':
           return this.queryRecordsWithTags(params)
         case 'getRecordCount':

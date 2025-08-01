@@ -150,6 +150,21 @@ class IpcManager {
       }
     })
 
+    // 还原剪贴板内容为OCR文本
+    ipcMain.handle('clipboard-restore-ocr-text', async (_, itemId: string) => {
+      try {
+        // 直接调用worker中的还原方法，包含数据库查询和剪贴板操作
+        const result = await clipboardManager.call('restoreClipboardFromDatabaseAsOcrText', itemId)
+        return result
+      } catch (error) {
+        logger.error('[IPC管理器] 还原剪贴板为OCR文本失败:', error)
+        return {
+          success: false,
+          error: (error as Error).message || '还原剪贴板为OCR文本失败'
+        }
+      }
+    })
+
     // 删除剪贴板历史项
     ipcMain.handle('clipboard-delete-item', async (_, itemId: string) => {
       try {

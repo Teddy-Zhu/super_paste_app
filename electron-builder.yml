@@ -10,11 +10,20 @@ files:
   - '!{.eslintcache,eslint.config.mjs,.prettierignore,.prettierrc.yaml,dev-app-update.yml,CHANGELOG.md,README.md}'
   - '!{.env,.env.*,.npmrc,pnpm-lock.yaml}'
   - '!{tsconfig.json,tsconfig.node.json,tsconfig.web.json}'
+  - '!**/*onnxruntime_providers_cuda*'
+  - '!**/*onnxruntime_providers_tensorrt*'
+  - '!scripts/*'
 asarUnpack:
   - resources/**
+extraResources:
+  - from: resources/ocr/
+    to: resources/ocr/
+    filter:
+      - "**/*"
 electronLanguages:
   - en-US
   - zh-CN
+afterPack: scripts/afterPack.js
 win:
   executableName: super_paste_app
   icon: build/icon/icons/icon.ico

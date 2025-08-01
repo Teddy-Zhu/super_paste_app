@@ -29,6 +29,7 @@ const props = defineProps<Props>()
 const emit = defineEmits<{
   click: [itemId: string]
   restoreAsText: [itemId: string]
+  restoreOcrText: [itemId: string]
   delete: [itemId: string]
 }>()
 
@@ -361,6 +362,16 @@ const handleContextMenu = (event: MouseEvent) => {
     }
   ]
 
+  // 如果是图片类型且有OCR文字，添加复制OCR文字选项
+  if (props.item.primaryType === 'image' && props.item.content.ocr && props.item.content.ocr.trim()) {
+    menuItems.push({
+      label: '复制OCR文字',
+      icon: IconTextBox,
+      action: () => handleRestoreOcrText(),
+      disabled: false
+    })
+  }
+
   // 添加标签相关菜单项
   if (props.allTags && props.allTags.length > 0) {
     // 获取当前项目已有的标签ID
@@ -431,6 +442,11 @@ const handleContextMenu = (event: MouseEvent) => {
 // 处理粘贴为纯文本
 const handleRestoreAsText = () => {
   emit('restoreAsText', props.item.id)
+}
+
+// 处理复制OCR文字
+const handleRestoreOcrText = () => {
+  emit('restoreOcrText', props.item.id)
 }
 
 // 处理删除项目
@@ -901,12 +917,18 @@ const shortcutLabel = computed(() => {
 .card-image {
   flex: 1;
   display: flex;
-  align-items: center;
-  justify-content: center;
+  flex-direction: column;
   margin: calc(-1 * var(--card-main-padding));
   overflow: hidden;
   /* background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
   border-radius: 12px; */
+}
+
+.card-image > :first-child {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .card-image img,
@@ -917,8 +939,32 @@ const shortcutLabel = computed(() => {
   /* border-radius: 12px;
   box-shadow:
     0 4px 8px rgba(0, 0, 0, 0.08),
-    0 2px 4px rgba(0, 0, 0, 0.06); 
+    0 2px 4px rgba(0, 0, 0, 0.06);
   transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);*/
+}
+
+.card-ocr-text {
+  padding: 8px 12px;
+  background: rgba(248, 250, 252, 0.9);
+  border-top: 1px solid rgba(226, 232, 240, 0.8);
+  font-size: 11px;
+  line-height: 1.4;
+  max-height: 80px;
+  overflow-y: auto;
+}
+
+.ocr-label {
+  font-weight: 600;
+  color: #64748b;
+  margin-bottom: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.ocr-content {
+  color: #475569;
+  word-break: break-word;
+  white-space: pre-wrap;
 }
 
 .card-file {

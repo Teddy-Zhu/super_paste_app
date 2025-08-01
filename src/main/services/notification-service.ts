@@ -72,6 +72,29 @@ export class NotificationService {
   }
 
   /**
+   * 通知前端单条记录OCR更新
+   */
+  static notifyRecordOCRUpdate(data: {
+    contentId: string
+    ocrText: string
+    timestamp: number
+  }): void {
+    try {
+      const allWindows = BrowserWindow.getAllWindows()
+
+      allWindows.forEach((window) => {
+        if (window && !window.isDestroyed()) {
+          window.webContents.send('record-ocr-updated', data)
+        }
+      })
+
+      logger.debug('[通知服务] 已通知前端记录OCR更新:', data.contentId)
+    } catch (error) {
+      logger.error('[通知服务] 通知前端记录OCR更新失败:', error)
+    }
+  }
+
+  /**
    * 通用的前端事件通知方法
    */
   static notifyFrontend(eventName: string, data: any): void {

@@ -25,6 +25,11 @@ export default defineConfig({
     ]
   },
   renderer: {
+    build: {
+      rollupOptions:{
+        external: ['@paymoapp/active-window', '@teddyzhu/auto-launch', 'onnxruntime-node']
+      }
+    },
     resolve: {
       alias: {
         '@renderer': resolve('src/renderer/src')

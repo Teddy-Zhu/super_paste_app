@@ -48,6 +48,12 @@ class ClipboardManager extends BaseWorkerManager {
       // this.notifyFrontendUpdate('history-updated', data)
     })
 
+    // 监听单条记录OCR更新事件
+    this.on('record-ocr-updated', (data: { contentId: string, ocrText: string, timestamp: number }) => {
+      // 通知前端单条记录OCR更新
+      NotificationService.notifyRecordOCRUpdate(data)
+    })
+
     // 监听清理检查请求事件
     this.on('cleanup-check-required', (data: { reason: string; maxHistorySize: number }) => {
       // 转发给清理器处理
@@ -183,18 +189,22 @@ class ClipboardManager extends BaseWorkerManager {
 
     // 从store中获取配置
     const maxHistorySize = store.get(STORE_KEY.SETTINGS_MAX_HISTORY_SIZE, 100)
+    const enableLocalOCR = store.get(STORE_KEY.SETTINGS_ENABLE_LOCAL_OCR, false)
 
     const finalConfig: Partial<ClipboardManagerConfig> = {
       maxHistorySize,
       checkInterval: 200,
       enableAutoSave: false,
+      enableLocalOCR,
       ...config
     }
 
-    // 需要导入 app 来获取 userDataPath
+    // 需要导入 app 来获取 userDataPath、isPackaged 和 appPath
     const userDataPath = app.getPath('userData')
+    const isPackaged = app.isPackaged
+    const appPath = app.getAppPath()
 
-    await this.call('initialize', { config: finalConfig, userDataPath })
+    await this.call('initialize', { config: finalConfig, userDataPath, isPackaged, appPath })
   }
 
   /**
@@ -236,10 +246,12 @@ class ClipboardManager extends BaseWorkerManager {
       logger.error('[剪贴板管理器] 获取配置失败:', error)
       // 返回默认配置
       const maxHistorySize = store.get(STORE_KEY.SETTINGS_MAX_HISTORY_SIZE, 100)
+      const enableLocalOCR = store.get(STORE_KEY.SETTINGS_ENABLE_LOCAL_OCR, false)
       return {
         maxHistorySize,
         checkInterval: 200,
-        enableAutoSave: false
+        enableAutoSave: false,
+        enableLocalOCR
       }
     }
   }
@@ -255,30 +267,7 @@ class ClipboardManager extends BaseWorkerManager {
     }
   }
 
-  /**
-   * 从store更新maxHistorySize配置
-   */
-  public async updateMaxHistorySizeFromStore(): Promise<void> {
-    try {
-      const maxHistorySize = store.get(STORE_KEY.SETTINGS_MAX_HISTORY_SIZE, 100)
-      await this.updateConfig({ maxHistorySize })
-    } catch (error) {
-      logger.error('[剪贴板管理器] 从store更新maxHistorySize失败:', error)
-    }
-  }
 
-  /**
-   * 从store更新maxKeepTime配置并更新清理器
-   */
-  public updateMaxKeepTimeFromStore(): void {
-    // 这个方法委托给清理器处理
-    try {
-      // 导入清理器并更新配置
-      clipboardHistoryCleaner.updateConfigFromStore()
-    } catch (error) {
-      logger.error('[剪贴板管理器] 更新清理器配置失败:', error)
-    }
-  }
 
   /**
    * 获取监听状态

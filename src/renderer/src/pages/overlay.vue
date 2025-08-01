@@ -141,7 +141,7 @@ const setupCloseEventListeners = () => {
 /**
  * 通用剪贴板还原函数
  */
-const restoreClipboard = async (itemId: string, restoreMethod: 'restore' | 'restoreAsText'): Promise<void> => {
+const restoreClipboard = async (itemId: string, restoreMethod: 'restore' | 'restoreAsText' | 'restoreOcrText'): Promise<void> => {
   try {
     if (!itemId || typeof itemId !== 'string') {
       throw new OverlayError(
@@ -156,14 +156,18 @@ const restoreClipboard = async (itemId: string, restoreMethod: 'restore' | 'rest
     if (success) {
       closeWindow()
     } else {
+      const methodName = restoreMethod === 'restoreAsText' ? '纯文本' :
+                        restoreMethod === 'restoreOcrText' ? 'OCR文字' : ''
       throw new OverlayError(
-        `剪贴板${restoreMethod === 'restoreAsText' ? '纯文本' : ''}还原操作失败`,
+        `剪贴板${methodName}还原操作失败`,
         OverlayErrorCode.CLIPBOARD_LOAD_FAILED,
         { itemId }
       )
     }
   } catch (error) {
-    console.error(`[前端] 还原剪贴板${restoreMethod === 'restoreAsText' ? '为纯文本' : ''}失败:`, error)
+    const methodName = restoreMethod === 'restoreAsText' ? '为纯文本' :
+                      restoreMethod === 'restoreOcrText' ? '为OCR文字' : ''
+    console.error(`[前端] 还原剪贴板${methodName}失败:`, error)
   }
 }
 
@@ -176,6 +180,11 @@ const restoreClipboardContent = (itemId: string) => restoreClipboard(itemId, 're
  * 还原剪贴板内容为纯文本
  */
 const restoreClipboardContentAsText = (itemId: string) => restoreClipboard(itemId, 'restoreAsText')
+
+/**
+ * 还原剪贴板内容为OCR文字
+ */
+const restoreClipboardContentAsOcrText = (itemId: string) => restoreClipboard(itemId, 'restoreOcrText')
 
 /**
  * 删除剪贴板项目
@@ -726,12 +735,23 @@ onMounted(async () => {
       scrollAndTagsManager.reloadTags().catch(console.error)
     })
 
+    // 监听单条记录OCR更新通知
+    const removeOCRUpdateListener = onSimple('record-ocr-updated', (data: { contentId: string, ocrText: string, timestamp: number }) => {
+      // 更新对应记录的OCR字段
+      const targetItem = clipboardHistory.value.find(item => item.id === data.contentId)
+      if (targetItem && targetItem.content) {
+        targetItem.content.ocr = data.ocrText
+        console.log('[前端] OCR更新:', data.contentId, '文本长度:', data.ocrText.length)
+      }
+    })
+
     // 将清理函数添加到事件管理器
     eventManager.addEventListener(window, 'beforeunload', () => {
       removeSlideInListener()
       removeCloseListener?.()
       removeClipboardUpdateListener()
       removeTagsUpdateListener()
+      removeOCRUpdateListener()
     })
 
   } catch (error) {
@@ -852,6 +872,7 @@ onUnmounted(() => {
               :apps="clipboardApps"
               @click="() => restoreClipboardContent(item.id)"
               @restore-as-text="() => restoreClipboardContentAsText(item.id)"
+              @restore-ocr-text="() => restoreClipboardContentAsOcrText(item.id)"
               @delete="() => deleteClipboardItem(item.id)" />
           </transition-group>
         </div>

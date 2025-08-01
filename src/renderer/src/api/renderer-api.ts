@@ -85,6 +85,11 @@ export const clipboard: ClipboardOperations = {
     return result.success
   },
 
+  async restoreOcrText(itemId: string): Promise<boolean> {
+    const result: ClipboardIpcResponse = await invoke('clipboard-restore-ocr-text', itemId)
+    return result.success
+  },
+
   async deleteItem(itemId: string): Promise<boolean> {
     const result: ClipboardIpcResponse = await invoke('clipboard-delete-item', itemId)
     return result.success

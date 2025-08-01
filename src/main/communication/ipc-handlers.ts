@@ -9,6 +9,7 @@ import { STORE_KEY } from '../config/common'
 import { debounceExecution } from '../utils/common'
 import { MAX_HISTORY_SIZE_DEBOUNCE_DELAY, MAX_KEEP_TIME_DEBOUNCE_DELAY } from '../config/constants'
 import clipboardManager from '../clipboard/clipboard-manager'
+import clipboardHistoryCleaner from '../clipboard/clipboard-history-cleaner'
 import { scheduledSyncManager } from '../workers/scheduled-sync-manager'
 import type { ScheduledSyncConfig } from '../sync/types'
 import { SyncStatus } from '../sync/types'
@@ -207,9 +208,14 @@ export class IPCHandlerManager {
       if (key === STORE_KEY.SETTINGS_MAX_HISTORY_SIZE) {
         debounceExecution(
           'update-max-history-size',
-          () => {
+          async () => {
             logger.debug('[主进程] 最大历史记录数量配置已更新，更新剪贴板管理器配置')
-            clipboardManager.updateMaxHistorySizeFromStore()
+            try {
+              const maxHistorySize = store.get(STORE_KEY.SETTINGS_MAX_HISTORY_SIZE, 100)
+              await clipboardManager.updateConfig({ maxHistorySize })
+            } catch (error) {
+              logger.error('[主进程] 更新剪贴板管理器maxHistorySize失败:', error)
+            }
           },
           MAX_HISTORY_SIZE_DEBOUNCE_DELAY
         )
@@ -219,9 +225,16 @@ export class IPCHandlerManager {
       if (key === STORE_KEY.SETTINGS_MAX_KEEP_TIME) {
         debounceExecution(
           'update-max-keep-time',
-          () => {
+          async () => {
             logger.debug('[主进程] 最大保存时间配置已更新，更新清理器配置')
-            clipboardManager.updateMaxKeepTimeFromStore()
+            try {
+              const maxKeepTime = store.get(STORE_KEY.SETTINGS_MAX_KEEP_TIME, -1)
+              await clipboardHistoryCleaner.call('updateConfig', {
+                maxKeepTime
+              })
+            } catch (error) {
+              logger.error('[主进程] 更新清理器配置失败:', error)
+            }
           },
           MAX_KEEP_TIME_DEBOUNCE_DELAY
         )
@@ -236,6 +249,19 @@ export class IPCHandlerManager {
           logger.error('[主进程] 设置自动启动失败')
         } else {
           logger.debug(`[主进程] 自动启动状态已更新: ${autoStart}`)
+        }
+      }
+
+      // 如果更新的是本地OCR配置，更新剪贴板管理器配置
+      if (key === STORE_KEY.SETTINGS_ENABLE_LOCAL_OCR) {
+        const enableLocalOCR = value as boolean
+        logger.debug(`[主进程] 本地OCR配置已更新: ${enableLocalOCR}`)
+
+        try {
+          await clipboardManager.updateConfig({ enableLocalOCR })
+          logger.debug('[主进程] 剪贴板管理器本地OCR配置已更新')
+        } catch (error) {
+          logger.error('[主进程] 更新剪贴板管理器本地OCR配置失败:', error)
         }
       }
 

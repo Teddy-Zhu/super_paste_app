@@ -27,8 +27,11 @@
     "@teddyzhu/auto-launch": "6.0.0-rc.8",
     "@teddyzhu/clipboard": "^0.0.5",
     "better-sqlite3": "^12.2.0",
+    "canvas": "^3.1.2",
     "electron-log": "^5.4.1",
     "electron-store": "^10.1.0",
+    "esearch-ocr": "^8.4.4",
+    "onnxruntime-node": "1.22.0-rev",
     "webdav": "^5.8.0"
   },
   "devDependencies": {
@@ -69,10 +72,12 @@
     "onlyBuiltDependencies": [
       "@paymoapp/active-window",
       "better-sqlite3",
+      "canvas",
       "core-js",
       "electron",
       "esbuild",
       "get-windows",
+      "onnxruntime-node",
       "vue-demi"
     ]
   },
