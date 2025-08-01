@@ -10,6 +10,7 @@ export const STORE_KEY= {
     SYNC_PROVIDER: 'sync.provider',
     SYNC_INTERVAL: 'sync.interval',
     SYNC_DIRECTION: 'sync.direction',
+    SYNC_CONFIG_ONLY: 'sync.configOnly',
 
     SYNC_PROVIDER_PARAMS: 'sync.params.%s'
 

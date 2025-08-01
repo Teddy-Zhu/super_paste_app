@@ -14,6 +14,7 @@ import type {
 } from './types'
 import logger from '../utils/logger'
 import { HashUtils } from '../utils/common'
+import { NotificationService } from '../services/notification-service'
 
 /**
  * 数据库和配置文件同步服务
@@ -152,6 +153,15 @@ export class SyncService {
         result.message = `同步完成，但存在 ${result.errors.length} 个错误`
       }
 
+      // 检查是否有文件被下载，如果有则需要通知前端重启
+      if (result.downloadedFiles && result.downloadedFiles.length > 0) {
+        logger.info('[同步服务] 检测到文件已下载，通知前端重启应用')
+        NotificationService.notifySyncRequiresRestart({
+          downloadedFiles: result.downloadedFiles,
+          message: `已下载 ${result.downloadedFiles.length} 个文件，需要重启应用以应用更改`
+        })
+      }
+
       logger.info('[同步服务] 同步完成', result)
       return result
     } catch (error) {
@@ -170,9 +180,10 @@ export class SyncService {
   private async syncUpload(result: SyncResult): Promise<void> {
     const localDbPath = this.getLocalDatabasePath()
     const localConfigPath = this.getLocalConfigPath()
+    const config = this.syncProvider!.getConfig()
 
-    // 上传数据库文件
-    if (await this.fileExists(localDbPath)) {
+    // 上传数据库文件（除非设置了仅同步配置）
+    if (!config.configOnly && await this.fileExists(localDbPath)) {
       const uploaded = await this.syncProvider!.uploadFile(localDbPath, this.REMOTE_DB_PATH)
       if (uploaded) {
         result.uploadedFiles?.push(this.DATABASE_FILE_NAME)
@@ -201,16 +212,19 @@ export class SyncService {
   private async syncDownload(result: SyncResult): Promise<void> {
     const localDbPath = this.getLocalDatabasePath()
     const localConfigPath = this.getLocalConfigPath()
+    const config = this.syncProvider!.getConfig()
 
-    // 下载数据库文件
-    const dbExists = await this.syncProvider!.fileExists(this.REMOTE_DB_PATH)
-    if (dbExists) {
-      const downloaded = await this.syncProvider!.downloadFile(this.REMOTE_DB_PATH, localDbPath)
-      if (downloaded) {
-        result.downloadedFiles?.push(this.DATABASE_FILE_NAME)
-        // 数据库文件已下载，在 worker 中无需重新初始化数据库连接
-      } else {
-        result.errors?.push('数据库文件下载失败')
+    // 下载数据库文件（除非设置了仅同步配置）
+    if (!config.configOnly) {
+      const dbExists = await this.syncProvider!.fileExists(this.REMOTE_DB_PATH)
+      if (dbExists) {
+        const downloaded = await this.syncProvider!.downloadFile(this.REMOTE_DB_PATH, localDbPath)
+        if (downloaded) {
+          result.downloadedFiles?.push(this.DATABASE_FILE_NAME)
+          // 数据库文件已下载，在 worker 中无需重新初始化数据库连接
+        } else {
+          result.errors?.push('数据库文件下载失败')
+        }
       }
     }
 
@@ -231,13 +245,17 @@ export class SyncService {
    * 执行双向同步
    */
   private async syncBidirectional(result: SyncResult): Promise<void> {
-    // 数据库文件双向同步
-    await this.syncFileBidirectional(
-      this.getLocalDatabasePath(),
-      this.REMOTE_DB_PATH,
-      this.DATABASE_FILE_NAME,
-      result
-    )
+    const config = this.syncProvider!.getConfig()
+
+    // 数据库文件双向同步（除非设置了仅同步配置）
+    if (!config.configOnly) {
+      await this.syncFileBidirectional(
+        this.getLocalDatabasePath(),
+        this.REMOTE_DB_PATH,
+        this.DATABASE_FILE_NAME,
+        result
+      )
+    }
 
     // 配置文件双向同步
     await this.syncFileBidirectional(
@@ -398,25 +416,30 @@ export class SyncService {
    */
   private async uploadVersionFile(result: SyncResult): Promise<void> {
     try {
+      const config = this.syncProvider!.getConfig()
       const localDbPath = this.getLocalDatabasePath()
       const localConfigPath = this.getLocalConfigPath()
 
-      // 计算文件hash
-      const dbFileHash = await HashUtils.generateFileHash(localDbPath)
+      // 计算配置文件hash
       const configFileHash = await HashUtils.generateFileHash(localConfigPath)
 
       // 创建版本信息
-      const versionInfo = {
+      const versionInfo: any = {
         lastUpdateTime: Date.now(),
         files: {
-          database: {
-            hash: dbFileHash,
-            path: this.DATABASE_FILE_NAME
-          },
           config: {
             hash: configFileHash,
             path: this.CONFIG_FILE_NAME
           }
+        }
+      }
+
+      // 如果不是仅同步配置模式，包含数据库文件信息
+      if (!config.configOnly) {
+        const dbFileHash = await HashUtils.generateFileHash(localDbPath)
+        versionInfo.files.database = {
+          hash: dbFileHash,
+          path: this.DATABASE_FILE_NAME
         }
       }
 

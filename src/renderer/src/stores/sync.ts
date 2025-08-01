@@ -6,6 +6,7 @@ export const useSyncStore = defineStore('sync',{
     provider: '',
     interval: 3000000,
     direction: 'bidirectional',
+    configOnly: false,
     params: {
       webdav :{
         serverUrl: '',

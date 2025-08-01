@@ -31,6 +31,7 @@ export class IPCHandlerManager {
     this.setupStoreHandlers()
     this.setupAnimationHandlers()
     this.setupScheduledSyncHandlers()
+    this.setupAppRestartHandlers()
     
     logger.debug('[主进程] IPC 事件处理器注册完成')
   }
@@ -450,6 +451,29 @@ export class IPCHandlerManager {
       } catch (error) {
         logger.error('[主进程] 刷新计划同步任务失败:', error)
         return false
+      }
+    })
+  }
+
+  /**
+   * 设置应用重启相关 IPC 处理器
+   */
+  private static setupAppRestartHandlers(): void {
+    // 重启应用
+    ipcMain.handle('app:restart', async () => {
+      try {
+        logger.info('[主进程] 收到应用重启请求')
+        
+        // 延迟重启，给前端时间处理通知
+        setTimeout(() => {
+          app.relaunch()
+          app.exit()
+        }, 1000)
+        
+        return { success: true }
+      } catch (error) {
+        logger.error('[主进程] 应用重启失败:', error)
+        return { success: false, error: (error as Error).message }
       }
     })
   }

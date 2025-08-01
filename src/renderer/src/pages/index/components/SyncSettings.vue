@@ -12,6 +12,7 @@ const localConfig = ref({
   provider: '',
   interval: 30, // 分钟
   direction: 'bidirectional',
+  configOnly: false,
   params: {
     webdav: {
       serverUrl: '',
@@ -63,6 +64,7 @@ const initializeLocalConfig = () => {
     provider: syncStore.provider,
     interval: Math.floor(syncStore.interval / 60000), // 从毫秒转换为分钟
     direction: syncStore.direction,
+    configOnly: syncStore.configOnly,
     params: {
       webdav: { ...syncStore.params.webdav }
     }
@@ -98,6 +100,12 @@ const updateDirection = (direction: string) => {
 // 更新同步间隔
 const updateInterval = (interval: number) => {
   localConfig.value.interval = interval
+  hasUnsavedChanges.value = true
+}
+
+// 更新仅同步配置选项
+const updateConfigOnly = (configOnly: boolean) => {
+  localConfig.value.configOnly = configOnly
   hasUnsavedChanges.value = true
 }
 
@@ -152,6 +160,7 @@ const buildSyncConfig = () => {
     providerType: 'webdav' as const,
     providerConfig: {
       syncDirection: localConfig.value.direction,
+      configOnly: localConfig.value.configOnly,
       serverUrl: webdav.serverUrl.trim(),
       username: webdav.username.trim(),
       password: webdav.password,
@@ -248,6 +257,7 @@ const saveConfig = async () => {
     syncStore.provider = localConfig.value.provider
     syncStore.interval = localConfig.value.interval * 60000 // 转换为毫秒
     syncStore.direction = localConfig.value.direction
+    syncStore.configOnly = localConfig.value.configOnly
     syncStore.params.webdav = { ...localConfig.value.params.webdav }
     
     // 等待1秒后刷新计划同步任务
@@ -476,6 +486,24 @@ onUnmounted(() => {
               {{ option.label }}
             </option>
           </select>
+        </div>
+      </div>
+
+      <!-- 仅同步配置 -->
+      <div class="setting-card" v-if="localConfig.enabled">
+        <div class="setting-info">
+          <h4 class="setting-title">仅同步配置</h4>
+          <p class="setting-description">仅同步配置文件，不进行数据同步</p>
+        </div>
+        <div class="setting-control">
+          <label class="toggle-switch">
+            <input
+              type="checkbox"
+              :checked="localConfig.configOnly"
+              @change="updateConfigOnly(($event.target as HTMLInputElement).checked)"
+            >
+            <span class="toggle-slider"></span>
+          </label>
         </div>
       </div>
 

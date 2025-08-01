@@ -257,6 +257,10 @@ export interface AppOperations {
   getCacheStats(): Promise<AppCacheStats>
 }
 
+// 应用控制操作类型
+export interface AppControlOperations {
+  restart(): Promise<boolean>
+}
 
 // 完整的 API 接口
 export interface RendererAPI extends
@@ -273,5 +277,8 @@ export interface RendererAPI extends
 
   // 应用信息操作
   apps: AppOperations
+
+  // 应用控制操作
+  app: AppControlOperations
 
 }

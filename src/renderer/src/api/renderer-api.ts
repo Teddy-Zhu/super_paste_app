@@ -218,6 +218,21 @@ export const apps: AppOperations = {
 }
 
 /**
+ * 应用控制操作封装
+ */
+export const app = {
+  async restart(): Promise<boolean> {
+    try {
+      const result: { success: boolean; error?: string } = await invoke('app:restart')
+      return result.success
+    } catch (error) {
+      console.error('重启应用失败:', error)
+      return false
+    }
+  }
+}
+
+/**
  * 工具函数：带超时的 invoke 调用
  */
 export async function invokeWithTimeout<T>(
@@ -255,6 +270,9 @@ export const rendererAPI: RendererAPI = {
 
   // 应用信息操作
   apps,
+
+  // 应用控制操作
+  app,
 
   // 原始 IPC 方法
   ipc: {

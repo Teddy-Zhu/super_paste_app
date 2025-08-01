@@ -89,4 +89,26 @@ export class NotificationService {
       logger.error(`[通知服务] 发送前端事件 ${eventName} 失败:`, error)
     }
   }
+
+  /**
+   * 通知前端同步完成，需要重启应用
+   */
+  static notifySyncRequiresRestart(data: {
+    downloadedFiles: string[]
+    message: string
+  }): void {
+    try {
+      const allWindows = BrowserWindow.getAllWindows()
+
+      allWindows.forEach((window) => {
+        if (window && !window.isDestroyed()) {
+          window.webContents.send('sync-requires-restart', data)
+        }
+      })
+
+      logger.info('[通知服务] 已通知前端同步完成，需要重启应用')
+    } catch (error) {
+      logger.error('[通知服务] 通知前端同步需要重启失败:', error)
+    }
+  }
 }
