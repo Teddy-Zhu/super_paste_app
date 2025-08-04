@@ -30,8 +30,8 @@
     "canvas": "^3.1.2",
     "electron-log": "^5.4.1",
     "electron-store": "^10.1.0",
-    "esearch-ocr": "^8.4.4",
     "onnxruntime-node": "1.22.0-rev",
+    "onnxruntime-common": "^1.22.0",
     "webdav": "^5.8.0"
   },
   "devDependencies": {

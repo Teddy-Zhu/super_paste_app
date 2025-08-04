@@ -1,4 +1,4 @@
-import { setOCREnv, init } from 'esearch-ocr'
+import { setOCREnv, init } from '../ocr/main'
 import * as ort from 'onnxruntime-node'
 import { promises as fs } from 'fs'
 import path from 'path'
