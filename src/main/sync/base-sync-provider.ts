@@ -1,8 +1,5 @@
 import logger from '../utils/logger'
-import {
-  SyncStatus,
-  SyncProviderType
-} from './types'
+import { SyncStatus, SyncProviderType } from './types'
 import type {
   SyncProviderConfig,
   SyncResult,
@@ -106,7 +103,7 @@ export abstract class BaseSyncProvider {
     }
 
     this.setStatus(SyncStatus.SYNCING)
-    
+
     try {
       const result = await this.performSync()
       this.setStatus(result.success ? SyncStatus.SUCCESS : SyncStatus.ERROR)
@@ -191,7 +188,7 @@ export abstract class BaseSyncProvider {
     const listeners = this.eventListeners.get(type)
     if (listeners && listeners.length > 0) {
       const event: SyncEvent = { type: type as any, data }
-      listeners.forEach(listener => {
+      listeners.forEach((listener) => {
         try {
           listener(event)
         } catch (error) {

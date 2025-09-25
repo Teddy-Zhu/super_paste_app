@@ -61,7 +61,16 @@ export class DatabaseService {
     sourceApp?: string
     hash?: string
   }): boolean {
-    const { contentId, content, primaryType, availableFormats, timestamp, lastUsed, sourceApp, hash } = params
+    const {
+      contentId,
+      content,
+      primaryType,
+      availableFormats,
+      timestamp,
+      lastUsed,
+      sourceApp,
+      hash
+    } = params
     return clipboardDatabase.insertRecord(
       contentId,
       content,
@@ -91,21 +100,23 @@ export class DatabaseService {
   /**
    * 更新最后使用时间
    */
-  public updateLastUsed(params: { contentId: string, lastUsed: number }): boolean {
+  public updateLastUsed(params: { contentId: string; lastUsed: number }): boolean {
     return clipboardDatabase.updateLastUsed(params.contentId, params.lastUsed)
   }
 
   /**
    * 更新OCR内容
    */
-  public updateOCR(params: { contentId: string, ocrText: string }): boolean {
+  public updateOCR(params: { contentId: string; ocrText: string }): boolean {
     return clipboardDatabase.updateOCR(params.contentId, params.ocrText)
   }
 
   /**
    * 查询带标签信息的记录
    */
-  public queryRecordsWithTags(options: QueryOptions = {}): Array<ClipboardHistoryRecord & { tags: TagGroupRecord[], appInfo?: AppInfoRecord }> {
+  public queryRecordsWithTags(
+    options: QueryOptions = {}
+  ): Array<ClipboardHistoryRecord & { tags: TagGroupRecord[]; appInfo?: AppInfoRecord }> {
     return clipboardDatabase.queryRecordsWithTags(options)
   }
 
@@ -140,14 +151,16 @@ export class DatabaseService {
   /**
    * 轻量级查询：只获取记录的 content_id 和 hash
    */
-  public queryRecordIdsAndHashes(options: QueryOptions = {}): Array<{ content_id: string, hash: string }> {
+  public queryRecordIdsAndHashes(
+    options: QueryOptions = {}
+  ): Array<{ content_id: string; hash: string }> {
     return clipboardDatabase.queryRecordIdsAndHashes(options)
   }
 
   /**
    * 轻量级查询：获取最后使用的记录的基本信息
    */
-  public getLastRecordInfo(): { content_id: string, hash: string } | null {
+  public getLastRecordInfo(): { content_id: string; hash: string } | null {
     return clipboardDatabase.getLastRecordInfo()
   }
 
@@ -163,7 +176,9 @@ export class DatabaseService {
   /**
    * 创建标签组
    */
-  public createTagGroup(params: { name: string, color: string, description?: string } | { tag: TagGroup }): string | null {
+  public createTagGroup(
+    params: { name: string; color: string; description?: string } | { tag: TagGroup }
+  ): string | null {
     try {
       let tag: TagGroup
 
@@ -212,7 +227,11 @@ export class DatabaseService {
   /**
    * 更新标签组
    */
-  public updateTagGroup(params: { tagId: string, updates?: Partial<Omit<TagGroup, 'id' | 'createdAt'>>, updateData?: Partial<Omit<TagGroup, 'id' | 'createdAt'>> }): boolean {
+  public updateTagGroup(params: {
+    tagId: string
+    updates?: Partial<Omit<TagGroup, 'id' | 'createdAt'>>
+    updateData?: Partial<Omit<TagGroup, 'id' | 'createdAt'>>
+  }): boolean {
     // 支持两种参数格式：updates 或 updateData
     const updates = params.updates || params.updateData
     if (!updates) {
@@ -231,14 +250,14 @@ export class DatabaseService {
   /**
    * 绑定标签到记录
    */
-  public bindTagToRecord(params: { contentId: string, tagId: string }): boolean {
+  public bindTagToRecord(params: { contentId: string; tagId: string }): boolean {
     return clipboardDatabase.bindTagToRecord(params.contentId, params.tagId)
   }
 
   /**
    * 解除标签绑定
    */
-  public unbindTagFromRecord(params: { contentId: string, tagId: string }): boolean {
+  public unbindTagFromRecord(params: { contentId: string; tagId: string }): boolean {
     return clipboardDatabase.unbindTagFromRecord(params.contentId, params.tagId)
   }
 
@@ -252,7 +271,7 @@ export class DatabaseService {
   /**
    * 获取标签统计信息
    */
-  public getTagStats(): Array<{ tagId: string, tagName: string, recordCount: number }> {
+  public getTagStats(): Array<{ tagId: string; tagName: string; recordCount: number }> {
     return clipboardDatabase.getTagGroupStats()
   }
 
@@ -261,7 +280,11 @@ export class DatabaseService {
   /**
    * 插入或更新应用信息
    */
-  public insertOrUpdateApp(params: { application: string, path: string, icon?: string }): string | null {
+  public insertOrUpdateApp(params: {
+    application: string
+    path: string
+    icon?: string
+  }): string | null {
     return clipboardDatabase.insertOrUpdateApp(params.application, params.path, params.icon)
   }
 
@@ -275,7 +298,7 @@ export class DatabaseService {
   /**
    * 获取应用缓存统计信息
    */
-  public getAppCacheStats(): { cacheSize: number, maxCacheSize: number } {
+  public getAppCacheStats(): { cacheSize: number; maxCacheSize: number } {
     return clipboardDatabase.getAppCacheStats()
   }
 

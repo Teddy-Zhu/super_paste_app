@@ -30,6 +30,7 @@ const emit = defineEmits<{
   click: [itemId: string]
   restoreAsText: [itemId: string]
   restoreOcrText: [itemId: string]
+  parseQRCode: [itemId: string]
   delete: [itemId: string]
 }>()
 
@@ -212,7 +213,7 @@ const getCharacterCount = (item: ClipboardItem): string => {
     }
     return 'File Path'
   }
-  
+
   if (content.text) {
     return `${content.text.length} character${content.text.length !== 1 ? 's' : ''}`
   }
@@ -291,7 +292,7 @@ const getContrastColor = computed(() => {
   const b = parseInt(hex.substring(4, 6), 16)
 
   // 计算亮度 (使用 YIQ 公式)
-  const yiq = ((r * 299) + (g * 587) + (b * 114)) / 1000
+  const yiq = (r * 299 + g * 587 + b * 114) / 1000
 
   // 根据亮度返回黑色或白色
   return yiq >= 128 ? '#000000' : '#ffffff'
@@ -301,17 +302,17 @@ const getContrastColor = computed(() => {
 const getCardTheme = (primaryType: string): string => {
   // 根据 primaryType 分配主题色
   const themeMap: Record<string, string> = {
-    'text': 'blue',
-    'image': 'green',
-    'html': 'purple',
-    'url': 'orange',
-    'files': 'teal',
-    'email': 'red',
-    'phone': 'red',
-    'code': 'purple',
-    'rtf': 'blue',
-    'color': 'green',
-    'empty': 'gray'
+    text: 'blue',
+    image: 'green',
+    html: 'purple',
+    url: 'orange',
+    files: 'teal',
+    email: 'red',
+    phone: 'red',
+    code: 'purple',
+    rtf: 'blue',
+    color: 'green',
+    empty: 'gray'
   }
 
   return themeMap[primaryType] || 'blue'
@@ -363,7 +364,11 @@ const handleContextMenu = (event: MouseEvent) => {
   ]
 
   // 如果是图片类型且有OCR文字，添加复制OCR文字选项
-  if (props.item.primaryType === 'image' && props.item.content.ocr && props.item.content.ocr.trim()) {
+  if (
+    props.item.primaryType === 'image' &&
+    props.item.content.ocr &&
+    props.item.content.ocr.trim()
+  ) {
     menuItems.push({
       label: '复制OCR文字',
       icon: IconTextBox,
@@ -372,22 +377,32 @@ const handleContextMenu = (event: MouseEvent) => {
     })
   }
 
+  // 如果是图片类型，添加解析二维码选项
+  if (props.item.primaryType === 'image') {
+    menuItems.push({
+      label: '解析二维码',
+      icon: IconTextBox,
+      action: () => handleParseQRCode(),
+      disabled: false
+    })
+  }
+
   // 添加标签相关菜单项
   if (props.allTags && props.allTags.length > 0) {
     // 获取当前项目已有的标签ID
-    const currentTagIds = props.item.tags?.map(tag => tag.id) || []
+    const currentTagIds = props.item.tags?.map((tag) => tag.id) || []
 
     // 创建标签二级菜单
     const tagSubmenu: any[] = []
 
     // 添加可选择的标签
-    props.allTags.forEach(tag => {
+    props.allTags.forEach((tag) => {
       const isTagged = currentTagIds.includes(tag.id)
       tagSubmenu.push({
         label: isTagged ? `${tag.name}` : tag.name,
         icon: isTagged ? IconCheck : IconCircle, // 已绑定显示勾选，未绑定显示圆点
         iconColor: tag.color, // 使用标签定义的颜色
-        action: () => isTagged ? handleRemoveTag(tag.id) : handleAddTag(tag.id),
+        action: () => (isTagged ? handleRemoveTag(tag.id) : handleAddTag(tag.id)),
         disabled: false
       })
     })
@@ -449,6 +464,11 @@ const handleRestoreOcrText = () => {
   emit('restoreOcrText', props.item.id)
 }
 
+// 处理解析二维码
+const handleParseQRCode = () => {
+  emit('parseQRCode', props.item.id)
+}
+
 // 处理删除项目
 const handleDeleteItem = async () => {
   try {
@@ -464,8 +484,6 @@ const handleDeleteItem = async () => {
     alert('删除失败: ' + (error as Error).message)
   }
 }
-
-
 
 // 处理添加标签
 const handleAddTag = async (tagId: string) => {
@@ -521,10 +539,7 @@ const shortcutLabel = computed(() => {
 <template>
   <div
     class="clipboard-card"
-    :class="[
-      `theme-${getCardTheme(item.primaryType)}`,
-      { 'selected': isSelected }
-    ]"
+    :class="[`theme-${getCardTheme(item.primaryType)}`, { selected: isSelected }]"
     @click="handleClick"
     @contextmenu="handleContextMenu"
   >
@@ -546,33 +561,28 @@ const shortcutLabel = computed(() => {
 
       <!-- RTF 内容预览 - 如果存在 HTML 则优先使用 HTML -->
       <div class="card-rich-preview" v-if="item.primaryType === 'rtf' && item.content.html">
-        <div
-          class="rich-content"
-          v-html="htmlContent"
-        ></div>
+        <div class="rich-content" v-html="htmlContent"></div>
         <div class="rich-content-overlay"></div>
       </div>
 
       <!-- RTF 内容预览 - 仅当没有 HTML 时使用 RTF 转换 -->
       <div class="card-rich-preview" v-else-if="item.primaryType === 'rtf' && item.content.rtf">
-        <div
-          class="rich-content"
-          v-html="rtfToHtml"
-        ></div>
+        <div class="rich-content" v-html="rtfToHtml"></div>
         <div class="rich-content-overlay"></div>
       </div>
 
       <!-- HTML 内容预览 -->
       <div class="card-rich-preview" v-else-if="item.primaryType === 'html' && item.content.html">
-        <div
-          class="rich-content"
-          v-html="htmlContent"
-        ></div>
+        <div class="rich-content" v-html="htmlContent"></div>
         <div class="rich-content-overlay"></div>
       </div>
 
       <!-- 颜色预览 -->
-      <div class="card-color" v-else-if="item.primaryType === 'color' && colorValue" :style="{ backgroundColor: colorValue || undefined }">
+      <div
+        class="card-color"
+        v-else-if="item.primaryType === 'color' && colorValue"
+        :style="{ backgroundColor: colorValue || undefined }"
+      >
         <div class="color-display">
           <span class="color-text" :style="{ color: getContrastColor }">{{ colorValue }}</span>
         </div>
@@ -604,7 +614,14 @@ const shortcutLabel = computed(() => {
       </div>
 
       <!-- 其他类型内容预览 -->
-      <div class="card-preview" v-else-if="item.primaryType !== 'image' && item.primaryType !== 'color' && item.primaryType !== 'files'">
+      <div
+        class="card-preview"
+        v-else-if="
+          item.primaryType !== 'image' &&
+          item.primaryType !== 'color' &&
+          item.primaryType !== 'files'
+        "
+      >
         {{ getContentPreview(item) }}
       </div>
     </div>
@@ -678,8 +695,6 @@ const shortcutLabel = computed(() => {
     0 4px 10px rgba(59, 130, 246, 0.15);
   border-color: rgba(59, 130, 246, 0.3);
 }
-
-
 
 /* 卡片主题色 */
 .theme-green .type-label {
@@ -782,7 +797,6 @@ const shortcutLabel = computed(() => {
   /* border: 1px solid rgba(255, 255, 255, 0.2); */
 }
 
-
 .time-label {
   font-size: 11px;
   color: #64748b;
@@ -869,14 +883,14 @@ const shortcutLabel = computed(() => {
   pointer-events: auto;
 }
 
-:global(.rich-content>*:first-child) {
-  overflow: hidden!important;
-  padding: 0!important;
-  margin: 0!important;
-  border: none!important;
+:global(.rich-content > *:first-child) {
+  overflow: hidden !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  border: none !important;
 }
 :global(.rich-content *) {
-  overflow: hidden!important;
+  overflow: hidden !important;
 }
 
 /* 禁用所有可能的交互元素 */
@@ -893,7 +907,7 @@ const shortcutLabel = computed(() => {
 .rich-content audio,
 .rich-content [onclick],
 .rich-content [href],
-.rich-content [style*="cursor: pointer"] {
+.rich-content [style*='cursor: pointer'] {
   color: #64748b !important;
   text-decoration: none !important;
   cursor: default !important;
@@ -912,7 +926,6 @@ const shortcutLabel = computed(() => {
   text-decoration: none !important;
   background: none !important;
 }
-
 
 .card-image {
   flex: 1;
@@ -1143,7 +1156,8 @@ const shortcutLabel = computed(() => {
 }
 
 @keyframes shortcut-pulse {
-  0%, 100% {
+  0%,
+  100% {
     transform: scale(1);
     box-shadow: 0 1px 2px rgba(59, 130, 246, 0.3);
   }

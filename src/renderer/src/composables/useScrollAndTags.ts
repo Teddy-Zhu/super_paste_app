@@ -32,21 +32,21 @@ export interface TagState {
 export interface ScrollAndTagsManager {
   // 滚动状态
   readonly isScrolling: Ref<boolean>
-  
+
   // 标签状态
   readonly allTags: Ref<TagGroup[]>
   readonly activeTagId: Ref<string>
   readonly isTagSwitching: Ref<boolean>
   readonly tagStats: Ref<Record<string, number>>
   readonly tabs: Ref<TabData[]>
-  
+
   // 滚动方法
   scrollToSelectedItem: () => void
   handleWheel: (event: WheelEvent) => void
   ensureSelectedItemVisible: () => void
   initializeScrollbar: () => void
   destroyScrollbar: () => void
-  
+
   // 标签方法
   loadAllTags: () => Promise<void>
   loadTagStats: () => Promise<void>
@@ -57,10 +57,10 @@ export interface ScrollAndTagsManager {
 // ==================== 常量定义 ====================
 
 const CARD_WIDTH = 300
-const CARD_GAP = 16  // 修正为实际的 CSS gap 值
-const CONTAINER_PADDING_LEFT = 20  // 容器左侧 padding
+const CARD_GAP = 16 // 修正为实际的 CSS gap 值
+const CONTAINER_PADDING_LEFT = 20 // 容器左侧 padding
 const TOTAL_CARD_WIDTH = CARD_WIDTH + CARD_GAP
-const SCROLL_MARGIN = 40  // 滚动时的边距，确保选中项不会紧贴边缘
+const SCROLL_MARGIN = 40 // 滚动时的边距，确保选中项不会紧贴边缘
 
 const SCROLLBAR_OPTIONS: Partial<ScrollbarOptions> = {
   damping: 0.1,
@@ -79,7 +79,6 @@ export function useScrollAndTags(
   loadClipboardHistory: (options?: ClipboardHistoryQueryOptions) => Promise<void>,
   getSearchText: () => string
 ): ScrollAndTagsManager {
-
   // ==================== 状态管理 ====================
 
   const isScrolling = ref(false)
@@ -87,20 +86,20 @@ export function useScrollAndTags(
 
   // 获取上下文菜单管理器
   const { hideContextMenu } = useContextMenu()
-  
+
   const tagStateManager = useStateManager<TagState>({
     allTags: [],
     activeTagId: 'all',
     isTagSwitching: false,
     tagStats: {}
   })
-  
+
   // 提取状态引用
   const allTags = computed(() => tagStateManager.state.value.allTags)
   const activeTagId = computed(() => tagStateManager.state.value.activeTagId)
   const isTagSwitching = computed(() => tagStateManager.state.value.isTagSwitching)
   const tagStats = computed(() => tagStateManager.state.value.tagStats)
-  
+
   // 计算标签组件数据
   const tabs = computed(() => {
     const allTab: TabData = {
@@ -110,20 +109,20 @@ export function useScrollAndTags(
       color: '#10b981',
       count: 0
     }
-    
-    const tagTabs: TabData[] = allTags.value.map(tag => ({
+
+    const tagTabs: TabData[] = allTags.value.map((tag) => ({
       id: tag.id,
       label: tag.name,
       active: activeTagId.value === tag.id,
       color: tag.color,
       count: tagStats.value[tag.id] || 0
     }))
-    
+
     return [allTab, ...tagTabs]
   })
-  
+
   // ==================== 滚动管理 ====================
-  
+
   /**
    * 初始化 smooth-scrollbar 实例
    * 注意：滚动条隐藏样式已在 overlay.vue 的 CSS 中直接定义
@@ -151,7 +150,7 @@ export function useScrollAndTags(
       scrollbarInstance = null
     }
   }
-  
+
   const destroyScrollbar = () => {
     if (scrollbarInstance) {
       try {
@@ -163,12 +162,17 @@ export function useScrollAndTags(
       }
     }
   }
-  
+
   const scrollToSelectedItem = useRafThrottle(() => {
-    if (!clipboardScrollRef.value || clipboardHistory.value.length === 0 || selectedIndex.value < 0) return
+    if (!clipboardScrollRef.value || clipboardHistory.value.length === 0 || selectedIndex.value < 0)
+      return
 
     // 检查 scrollbar 实例是否有效，如果无效则重新初始化
-    if (!scrollbarInstance || !scrollbarInstance.containerEl || !scrollbarInstance.containerEl.parentNode) {
+    if (
+      !scrollbarInstance ||
+      !scrollbarInstance.containerEl ||
+      !scrollbarInstance.containerEl.parentNode
+    ) {
       initializeScrollbar()
     }
 
@@ -183,7 +187,10 @@ export function useScrollAndTags(
     if (scrollbarInstance) {
       containerScrollLeft = scrollbarInstance.scrollLeft
       containerWidth = scrollbarInstance.size.container.width
-      maxScrollLeft = Math.max(0, scrollbarInstance.size.content.width - scrollbarInstance.size.container.width)
+      maxScrollLeft = Math.max(
+        0,
+        scrollbarInstance.size.content.width - scrollbarInstance.size.container.width
+      )
     } else {
       const container = clipboardScrollRef.value
       containerScrollLeft = container.scrollLeft
@@ -218,7 +225,7 @@ export function useScrollAndTags(
       // })
     }
   })
-  
+
   const scrollToPosition = (targetLeft: number) => {
     // 程序化滚动时也隐藏菜单
     hideContextMenu()
@@ -248,7 +255,11 @@ export function useScrollAndTags(
 
   // 辅助方法：检查选中项是否在可视区域内
   const isSelectedItemVisible = (): boolean => {
-    if (!clipboardScrollRef.value || clipboardHistory.value.length === 0 || selectedIndex.value < 0) {
+    if (
+      !clipboardScrollRef.value ||
+      clipboardHistory.value.length === 0 ||
+      selectedIndex.value < 0
+    ) {
       return false
     }
 
@@ -270,10 +281,12 @@ export function useScrollAndTags(
     const containerScrollRight = containerScrollLeft + containerWidth
 
     // 检查是否完全在可视区域内（包含边距）
-    return selectedCardLeft >= containerScrollLeft + SCROLL_MARGIN &&
-           selectedCardRight <= containerScrollRight - SCROLL_MARGIN
+    return (
+      selectedCardLeft >= containerScrollLeft + SCROLL_MARGIN &&
+      selectedCardRight <= containerScrollRight - SCROLL_MARGIN
+    )
   }
-  
+
   const handleWheelThrottled = useThrottle((event: WheelEvent) => {
     // console.log('[滚动标签管理] 收到滚轮事件:', {
     //   animationState: currentAnimationState.value,
@@ -284,15 +297,21 @@ export function useScrollAndTags(
     // })
 
     // 只有在活跃状态且有剪贴板历史时才响应滚轮事件
-    if (currentAnimationState.value !== AnimationState.ACTIVE ||
-        !clipboardScrollRef.value ||
-        clipboardHistory.value.length === 0) {
+    if (
+      currentAnimationState.value !== AnimationState.ACTIVE ||
+      !clipboardScrollRef.value ||
+      clipboardHistory.value.length === 0
+    ) {
       // console.log('[滚动标签管理] 滚轮事件被忽略，条件不满足')
       return
     }
 
     // 检查 scrollbar 实例是否有效，如果无效则重新初始化
-    if (!scrollbarInstance || !scrollbarInstance.containerEl || !scrollbarInstance.containerEl.parentNode) {
+    if (
+      !scrollbarInstance ||
+      !scrollbarInstance.containerEl ||
+      !scrollbarInstance.containerEl.parentNode
+    ) {
       initializeScrollbar()
     }
 
@@ -311,8 +330,12 @@ export function useScrollAndTags(
     if (scrollbarInstance) {
       try {
         const currentScrollLeft = scrollbarInstance.scrollLeft
-        const maxScrollLeft = scrollbarInstance.size.content.width - scrollbarInstance.size.container.width
-        const targetScrollLeft = Math.max(0, Math.min(maxScrollLeft, currentScrollLeft + scrollAmount))
+        const maxScrollLeft =
+          scrollbarInstance.size.content.width - scrollbarInstance.size.container.width
+        const targetScrollLeft = Math.max(
+          0,
+          Math.min(maxScrollLeft, currentScrollLeft + scrollAmount)
+        )
 
         if (targetScrollLeft !== currentScrollLeft) {
           scrollbarInstance.scrollTo(targetScrollLeft, 0, 0)
@@ -325,8 +348,11 @@ export function useScrollAndTags(
       const container = clipboardScrollRef.value
       const currentScrollLeft = container.scrollLeft
       const maxScrollLeft = container.scrollWidth - container.clientWidth
-      const targetScrollLeft = Math.max(0, Math.min(maxScrollLeft, currentScrollLeft + scrollAmount))
-      
+      const targetScrollLeft = Math.max(
+        0,
+        Math.min(maxScrollLeft, currentScrollLeft + scrollAmount)
+      )
+
       if (targetScrollLeft !== currentScrollLeft) {
         container.scrollTo({
           left: targetScrollLeft,
@@ -342,7 +368,7 @@ export function useScrollAndTags(
     hideContextMenu()
     handleWheelThrottled(event)
   }
-  
+
   const ensureSelectedItemVisible = () => {
     nextTick(() => {
       // 只有在选中项不可见时才滚动
@@ -351,29 +377,29 @@ export function useScrollAndTags(
       }
     })
   }
-  
+
   // ==================== 标签管理 ====================
-  
+
   const loadAllTags = async () => {
     try {
       const tagList = await tags.getAllTags()
-      tagStateManager.setState(prev => ({
+      tagStateManager.setState((prev) => ({
         ...prev,
         allTags: tagList
       }))
       // console.log('[滚动标签管理] 标签数据加载完成:', tagList)
-      
+
       // 加载标签统计数据
       await loadTagStats()
     } catch (error) {
       console.error('[滚动标签管理] 加载标签数据失败:', error)
-      tagStateManager.setState(prev => ({
+      tagStateManager.setState((prev) => ({
         ...prev,
         allTags: []
       }))
     }
   }
-  
+
   const loadTagStats = async () => {
     try {
       // 从后端获取标签统计数据
@@ -385,24 +411,24 @@ export function useScrollAndTags(
         stats[stat.tagId] = stat.recordCount
       }
 
-      tagStateManager.setState(prev => ({
+      tagStateManager.setState((prev) => ({
         ...prev,
         tagStats: stats
       }))
       // console.log('[滚动标签管理] 标签统计数据加载完成:', stats)
     } catch (error) {
       console.error('[滚动标签管理] 加载标签统计数据失败:', error)
-      tagStateManager.setState(prev => ({
+      tagStateManager.setState((prev) => ({
         ...prev,
         tagStats: {}
       }))
     }
   }
-  
+
   const switchTag = async (tagId: string) => {
     if (activeTagId.value === tagId || isTagSwitching.value) return
 
-    tagStateManager.setState(prev => ({
+    tagStateManager.setState((prev) => ({
       ...prev,
       isTagSwitching: true,
       activeTagId: tagId
@@ -430,13 +456,13 @@ export function useScrollAndTags(
     } catch (error) {
       console.error('[滚动标签管理] 切换标签失败:', error)
     } finally {
-      tagStateManager.setState(prev => ({
+      tagStateManager.setState((prev) => ({
         ...prev,
         isTagSwitching: false
       }))
     }
   }
-  
+
   const reloadTags = async () => {
     try {
       await loadAllTags()
@@ -444,15 +470,15 @@ export function useScrollAndTags(
       console.warn('[滚动标签管理] 重新加载标签数据失败:', error)
     }
   }
-  
+
   // ==================== 清理 ====================
-  
+
   onUnmounted(() => {
     destroyScrollbar()
   })
-  
+
   // ==================== 返回接口 ====================
-  
+
   return {
     // 滚动状态
     isScrolling: readonly(isScrolling),

@@ -168,6 +168,8 @@ export function useKeyboardNavigation(
   return {
     isKeyboardNavigation: readonly(isKeyboardNavigation),
     handleKeyNavigation,
-    _setKeyboardNavigation: (value: boolean) => { isKeyboardNavigation.value = value }
+    _setKeyboardNavigation: (value: boolean) => {
+      isKeyboardNavigation.value = value
+    }
   }
 }

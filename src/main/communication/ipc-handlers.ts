@@ -25,7 +25,7 @@ export class IPCHandlerManager {
    */
   static initialize(): void {
     logger.debug('[主进程] 开始注册 IPC 事件处理器')
-    
+
     this.setupOverlayWindowHandlers()
     this.setupAutoStartHandlers()
     this.setupMainWindowHandlers()
@@ -33,7 +33,7 @@ export class IPCHandlerManager {
     this.setupAnimationHandlers()
     this.setupScheduledSyncHandlers()
     this.setupAppRestartHandlers()
-    
+
     logger.debug('[主进程] IPC 事件处理器注册完成')
   }
 
@@ -181,8 +181,6 @@ export class IPCHandlerManager {
     })
   }
 
-
-
   /**
    * 处理特殊配置更新
    */
@@ -191,10 +189,10 @@ export class IPCHandlerManager {
       // 如果更新的是全局快捷键配置，重新初始化快捷键
       if (key === STORE_KEY.SETTINGS_GLOBAL_SHORTCUT) {
         logger.debug('[主进程] 全局快捷键配置已更新，重新初始化')
-        
+
         // 先取消所有已注册的快捷键
         globalShortcutManager.unregisterAll()
-        
+
         // 重新注册快捷键
         const shortcutKey = value as string
         if (shortcutKey && shortcutKey.trim() !== '') {
@@ -320,18 +318,21 @@ export class IPCHandlerManager {
    */
   private static setupScheduledSyncHandlers(): void {
     // 初始化定时同步
-    ipcMain.handle('scheduled-sync:initialize', async (_, config: Omit<ScheduledSyncConfig, 'userDataPath'>) => {
-      try {
-        const syncConfig: ScheduledSyncConfig = {
-          ...config,
-          userDataPath: app.getPath('userData')
+    ipcMain.handle(
+      'scheduled-sync:initialize',
+      async (_, config: Omit<ScheduledSyncConfig, 'userDataPath'>) => {
+        try {
+          const syncConfig: ScheduledSyncConfig = {
+            ...config,
+            userDataPath: app.getPath('userData')
+          }
+          return await scheduledSyncManager.initialize(syncConfig)
+        } catch (error) {
+          logger.error('[主进程] 初始化定时同步失败:', error)
+          return false
         }
-        return await scheduledSyncManager.initialize(syncConfig)
-      } catch (error) {
-        logger.error('[主进程] 初始化定时同步失败:', error)
-        return false
       }
-    })
+    )
 
     // 启动定时同步
     ipcMain.handle('scheduled-sync:start', async () => {
@@ -368,42 +369,48 @@ export class IPCHandlerManager {
     })
 
     // 使用指定配置手动同步
-    ipcMain.handle('scheduled-sync:manual-sync-with-config', async (_, config: Omit<ScheduledSyncConfig, 'userDataPath'>) => {
-      try {
-        const syncConfig: ScheduledSyncConfig = {
-          ...config,
-          userDataPath: app.getPath('userData')
-        }
-        return await scheduledSyncManager.manualSyncWithConfig(syncConfig)
-      } catch (error) {
-        logger.error('[主进程] 使用指定配置手动同步失败:', error)
-        return {
-          success: false,
-          message: error instanceof Error ? error.message : '未知错误',
-          errors: [error instanceof Error ? error.message : '未知错误']
-        }
-      }
-    })
-
-    // 测试连接
-    ipcMain.handle('scheduled-sync:test-connection', async (_, config?: Omit<ScheduledSyncConfig, 'userDataPath'>) => {
-      try {
-        if (config) {
-          // 如果传入了配置，使用传入的配置进行测试
+    ipcMain.handle(
+      'scheduled-sync:manual-sync-with-config',
+      async (_, config: Omit<ScheduledSyncConfig, 'userDataPath'>) => {
+        try {
           const syncConfig: ScheduledSyncConfig = {
             ...config,
             userDataPath: app.getPath('userData')
           }
-          return await scheduledSyncManager.testConnectionWithConfig(syncConfig)
-        } else {
-          // 如果没有传入配置，使用当前配置进行测试
-          return await scheduledSyncManager.testConnection()
+          return await scheduledSyncManager.manualSyncWithConfig(syncConfig)
+        } catch (error) {
+          logger.error('[主进程] 使用指定配置手动同步失败:', error)
+          return {
+            success: false,
+            message: error instanceof Error ? error.message : '未知错误',
+            errors: [error instanceof Error ? error.message : '未知错误']
+          }
         }
-      } catch (error) {
-        logger.error('[主进程] 测试同步连接失败:', error)
-        return false
       }
-    })
+    )
+
+    // 测试连接
+    ipcMain.handle(
+      'scheduled-sync:test-connection',
+      async (_, config?: Omit<ScheduledSyncConfig, 'userDataPath'>) => {
+        try {
+          if (config) {
+            // 如果传入了配置，使用传入的配置进行测试
+            const syncConfig: ScheduledSyncConfig = {
+              ...config,
+              userDataPath: app.getPath('userData')
+            }
+            return await scheduledSyncManager.testConnectionWithConfig(syncConfig)
+          } else {
+            // 如果没有传入配置，使用当前配置进行测试
+            return await scheduledSyncManager.testConnection()
+          }
+        } catch (error) {
+          logger.error('[主进程] 测试同步连接失败:', error)
+          return false
+        }
+      }
+    )
 
     // 获取同步状态
     ipcMain.handle('scheduled-sync:get-status', async () => {
@@ -432,18 +439,21 @@ export class IPCHandlerManager {
     })
 
     // 更新配置
-    ipcMain.handle('scheduled-sync:update-config', async (_, config: Omit<ScheduledSyncConfig, 'userDataPath'>) => {
-      try {
-        const syncConfig: ScheduledSyncConfig = {
-          ...config,
-          userDataPath: app.getPath('userData')
+    ipcMain.handle(
+      'scheduled-sync:update-config',
+      async (_, config: Omit<ScheduledSyncConfig, 'userDataPath'>) => {
+        try {
+          const syncConfig: ScheduledSyncConfig = {
+            ...config,
+            userDataPath: app.getPath('userData')
+          }
+          return await scheduledSyncManager.updateConfig(syncConfig)
+        } catch (error) {
+          logger.error('[主进程] 更新定时同步配置失败:', error)
+          return false
         }
-        return await scheduledSyncManager.updateConfig(syncConfig)
-      } catch (error) {
-        logger.error('[主进程] 更新定时同步配置失败:', error)
-        return false
       }
-    })
+    )
 
     // 刷新计划同步任务
     ipcMain.handle('scheduled-sync:refresh', async () => {
@@ -489,13 +499,13 @@ export class IPCHandlerManager {
     ipcMain.handle('app:restart', async () => {
       try {
         logger.info('[主进程] 收到应用重启请求')
-        
+
         // 延迟重启，给前端时间处理通知
         setTimeout(() => {
           app.relaunch()
           app.exit()
         }, 1000)
-        
+
         return { success: true }
       } catch (error) {
         logger.error('[主进程] 应用重启失败:', error)

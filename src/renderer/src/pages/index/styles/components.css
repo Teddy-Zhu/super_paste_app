@@ -216,8 +216,6 @@
   box-shadow: 0 4px 12px rgba(0, 122, 255, 0.25);
 }
 
-
-
 .keep-time-slider-compact {
   position: relative;
   padding: 12px 8px 8px 8px;
@@ -444,7 +442,9 @@
 .shortcut-field.listening {
   border-color: #ff9500;
   background: linear-gradient(135deg, #fff8f0 0%, #fffbf5 100%);
-  box-shadow: 0 0 0 4px rgba(255, 149, 0, 0.15), 0 2px 8px rgba(255, 149, 0, 0.2);
+  box-shadow:
+    0 0 0 4px rgba(255, 149, 0, 0.15),
+    0 2px 8px rgba(255, 149, 0, 0.2);
   animation: pulse 2s infinite;
 }
 
@@ -460,11 +460,16 @@
 }
 
 @keyframes pulse {
-  0%, 100% {
-    box-shadow: 0 0 0 4px rgba(255, 149, 0, 0.15), 0 2px 8px rgba(255, 149, 0, 0.2);
+  0%,
+  100% {
+    box-shadow:
+      0 0 0 4px rgba(255, 149, 0, 0.15),
+      0 2px 8px rgba(255, 149, 0, 0.2);
   }
   50% {
-    box-shadow: 0 0 0 4px rgba(255, 149, 0, 0.25), 0 4px 16px rgba(255, 149, 0, 0.3);
+    box-shadow:
+      0 0 0 4px rgba(255, 149, 0, 0.25),
+      0 4px 16px rgba(255, 149, 0, 0.3);
   }
 }
 
@@ -612,7 +617,9 @@
 .shortcut-field.listening {
   border-color: #ff9500;
   background: linear-gradient(135deg, #fff8f0 0%, #fffbf5 100%);
-  box-shadow: 0 0 0 4px rgba(255, 149, 0, 0.15), 0 2px 8px rgba(255, 149, 0, 0.2);
+  box-shadow:
+    0 0 0 4px rgba(255, 149, 0, 0.15),
+    0 2px 8px rgba(255, 149, 0, 0.2);
   animation: pulse 2s infinite;
 }
 
@@ -628,11 +635,16 @@
 }
 
 @keyframes pulse {
-  0%, 100% {
-    box-shadow: 0 0 0 4px rgba(255, 149, 0, 0.15), 0 2px 8px rgba(255, 149, 0, 0.2);
+  0%,
+  100% {
+    box-shadow:
+      0 0 0 4px rgba(255, 149, 0, 0.15),
+      0 2px 8px rgba(255, 149, 0, 0.2);
   }
   50% {
-    box-shadow: 0 0 0 4px rgba(255, 149, 0, 0.25), 0 4px 16px rgba(255, 149, 0, 0.3);
+    box-shadow:
+      0 0 0 4px rgba(255, 149, 0, 0.25),
+      0 4px 16px rgba(255, 149, 0, 0.3);
   }
 }
 

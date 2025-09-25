@@ -12,7 +12,11 @@ import type { TabData } from '@renderer/composables/useScrollAndTags'
 import type { Ref, ComputedRef } from 'vue'
 
 // 重新导出动画相关类型
-export { AnimationState, type AnimationConfig, type AnimationControls } from '@renderer/composables/useAnimation'
+export {
+  AnimationState,
+  type AnimationConfig,
+  type AnimationControls
+} from '@renderer/composables/useAnimation'
 
 // 导入 AnimationControls 类型用于接口定义
 import type { AnimationControls } from '@renderer/composables/useAnimation'

@@ -18,7 +18,7 @@ const openOverlayWindow = (): void => {
 const toggleClipboardListening = async () => {
   try {
     const newState = !props.settingsStore.clipboardListening
-    
+
     if (newState) {
       const success = await clipboard.startListening()
       if (success) {
@@ -106,7 +106,11 @@ onMounted(() => {
         </div>
         <div class="setting-control">
           <label class="toggle-switch">
-            <input type="checkbox" :checked="settingsStore.clipboardListening" @change="toggleClipboardListening">
+            <input
+              type="checkbox"
+              :checked="settingsStore.clipboardListening"
+              @change="toggleClipboardListening"
+            />
             <span class="toggle-slider"></span>
           </label>
         </div>
@@ -119,9 +123,7 @@ onMounted(() => {
           <p class="setting-description">打开覆盖层窗口进行测试</p>
         </div>
         <div class="setting-control">
-          <button class="test-button" @click="openOverlayWindow">
-            打开测试
-          </button>
+          <button class="test-button" @click="openOverlayWindow">打开测试</button>
         </div>
       </div>
 
@@ -132,9 +134,7 @@ onMounted(() => {
           <p class="setting-description">导出当前应用的内存快照文件到桌面，用于内存分析和调试</p>
         </div>
         <div class="setting-control">
-          <button class="test-button" @click="exportHeapdump">
-            导出 Heapdump
-          </button>
+          <button class="test-button" @click="exportHeapdump">导出 Heapdump</button>
         </div>
       </div>
     </div>

@@ -122,17 +122,23 @@ export class MainWindowManager {
     // HMR for renderer base on electron-vite cli.
     // Load the remote URL for development or the local html file for production.
     if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
-      this.mainWindow.loadURL(process.env['ELECTRON_RENDERER_URL']).then(() => {
-        logger.debug('[主进程] 主窗口加载完成 (开发模式)')
-      }).catch(error => {
-        logger.error('[主进程] 主窗口加载失败 (开发模式):', error)
-      })
+      this.mainWindow
+        .loadURL(process.env['ELECTRON_RENDERER_URL'])
+        .then(() => {
+          logger.debug('[主进程] 主窗口加载完成 (开发模式)')
+        })
+        .catch((error) => {
+          logger.error('[主进程] 主窗口加载失败 (开发模式):', error)
+        })
     } else {
-      this.mainWindow.loadFile(join(__dirname, '../renderer/index.html')).then(() => {
-        logger.debug('[主进程] 主窗口加载完成 (生产模式)')
-      }).catch(error => {
-        logger.error('[主进程] 主窗口加载失败 (生产模式):', error)
-      })
+      this.mainWindow
+        .loadFile(join(__dirname, '../renderer/index.html'))
+        .then(() => {
+          logger.debug('[主进程] 主窗口加载完成 (生产模式)')
+        })
+        .catch((error) => {
+          logger.error('[主进程] 主窗口加载失败 (生产模式):', error)
+        })
     }
   }
 
@@ -149,7 +155,7 @@ export class MainWindowManager {
 
       // 如果窗口存在但被隐藏，则显示它
       WindowUtils.safelyShowWindow(this.mainWindow)
-      
+
       // 确保窗口获得焦点
       WindowUtils.safelyFocusWindow(this.mainWindow)
     } catch (error) {
@@ -243,7 +249,7 @@ export class OverlayWindowManager {
         minimizable: false,
         maximizable: false,
         closable: true,
-        roundedCorners:false,
+        roundedCorners: false,
         focusable: true,
         show: false,
         type: 'utility',

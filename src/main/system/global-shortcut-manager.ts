@@ -22,7 +22,10 @@ export class GlobalShortcutManager {
   registerEscapeKey(): void {
     if (!globalShortcut.isRegistered('Escape')) {
       globalShortcut.register('Escape', () => {
-        if (WindowUtils.isWindowValidAndVisible(this.overlayWindow) && windowStateManager.canCloseOverlay()) {
+        if (
+          WindowUtils.isWindowValidAndVisible(this.overlayWindow) &&
+          windowStateManager.canCloseOverlay()
+        ) {
           WindowUtils.safelyEmitToWindow(this.overlayWindow, 'trigger-close-window')
         }
       })

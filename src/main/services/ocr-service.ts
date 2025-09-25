@@ -227,7 +227,7 @@ export class OCRService {
     // 检查是否是 base64 格式
     if (imageData.startsWith('data:image/')) {
       const supportedFormats = ['png', 'jpg', 'jpeg', 'gif', 'bmp', 'webp']
-      return supportedFormats.some(format => imageData.includes(`image/${format}`))
+      return supportedFormats.some((format) => imageData.includes(`image/${format}`))
     }
 
     // 检查是否是文件路径

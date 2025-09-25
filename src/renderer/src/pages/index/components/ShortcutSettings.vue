@@ -35,42 +35,51 @@ const hasShortcut = computed(() => {
 // Electron Accelerator 键盘按键映射
 const electronKeyMap: Record<string, string> = {
   // 修饰键
-  'Control': 'CommandOrControl',
-  'Meta': 'CommandOrControl', // Mac 上的 Cmd 键，Windows/Linux 上的 Ctrl 键
-  'Alt': 'Alt',
-  'Shift': 'Shift',
+  Control: 'CommandOrControl',
+  Meta: 'CommandOrControl', // Mac 上的 Cmd 键，Windows/Linux 上的 Ctrl 键
+  Alt: 'Alt',
+  Shift: 'Shift',
 
   // 特殊键
   ' ': 'Space',
-  'Enter': 'Return',
-  'Escape': 'Escape',
-  'Backspace': 'Backspace',
-  'Delete': 'Delete',
-  'Tab': 'Tab',
-  'CapsLock': 'CapsLock',
+  Enter: 'Return',
+  Escape: 'Escape',
+  Backspace: 'Backspace',
+  Delete: 'Delete',
+  Tab: 'Tab',
+  CapsLock: 'CapsLock',
 
   // 方向键
-  'ArrowUp': 'Up',
-  'ArrowDown': 'Down',
-  'ArrowLeft': 'Left',
-  'ArrowRight': 'Right',
+  ArrowUp: 'Up',
+  ArrowDown: 'Down',
+  ArrowLeft: 'Left',
+  ArrowRight: 'Right',
 
   // 功能键
-  'F1': 'F1', 'F2': 'F2', 'F3': 'F3', 'F4': 'F4',
-  'F5': 'F5', 'F6': 'F6', 'F7': 'F7', 'F8': 'F8',
-  'F9': 'F9', 'F10': 'F10', 'F11': 'F11', 'F12': 'F12',
+  F1: 'F1',
+  F2: 'F2',
+  F3: 'F3',
+  F4: 'F4',
+  F5: 'F5',
+  F6: 'F6',
+  F7: 'F7',
+  F8: 'F8',
+  F9: 'F9',
+  F10: 'F10',
+  F11: 'F11',
+  F12: 'F12',
 
   // 数字键盘
-  'Insert': 'Insert',
-  'Home': 'Home',
-  'End': 'End',
-  'PageUp': 'PageUp',
-  'PageDown': 'PageDown',
+  Insert: 'Insert',
+  Home: 'Home',
+  End: 'End',
+  PageUp: 'PageUp',
+  PageDown: 'PageDown',
 
   // 其他特殊键
-  'PrintScreen': 'PrintScreen',
-  'ScrollLock': 'ScrollLock',
-  'Pause': 'Pause'
+  PrintScreen: 'PrintScreen',
+  ScrollLock: 'ScrollLock',
+  Pause: 'Pause'
 }
 
 // 格式化按键名称为 Electron Accelerator 格式
@@ -98,8 +107,16 @@ const formatKeyForElectron = (key: string): string => {
     ',': 'comma',
     '.': 'period',
     '/': 'slash',
-    '1': '1', '2': '2', '3': '3', '4': '4', '5': '5',
-    '6': '6', '7': '7', '8': '8', '9': '9', '0': '0'
+    '1': '1',
+    '2': '2',
+    '3': '3',
+    '4': '4',
+    '5': '5',
+    '6': '6',
+    '7': '7',
+    '8': '8',
+    '9': '9',
+    '0': '0'
   }
 
   return symbolMap[key] || key.toUpperCase()
@@ -108,20 +125,20 @@ const formatKeyForElectron = (key: string): string => {
 // 用于显示的格式化函数（用户友好的显示）
 const formatKeyForDisplay = (key: string): string => {
   const displayMap: Record<string, string> = {
-    'Control': 'Ctrl',
-    'Meta': window.electron.process.platform === 'darwin' ? 'Cmd' : 'Ctrl',
-    'Alt': 'Alt',
-    'Shift': 'Shift',
+    Control: 'Ctrl',
+    Meta: window.electron.process.platform === 'darwin' ? 'Cmd' : 'Ctrl',
+    Alt: 'Alt',
+    Shift: 'Shift',
     ' ': 'Space',
-    'Enter': 'Enter',
-    'Escape': 'Esc',
-    'Backspace': 'Backspace',
-    'Delete': 'Del',
-    'Tab': 'Tab',
-    'ArrowUp': '↑',
-    'ArrowDown': '↓',
-    'ArrowLeft': '←',
-    'ArrowRight': '→'
+    Enter: 'Enter',
+    Escape: 'Esc',
+    Backspace: 'Backspace',
+    Delete: 'Del',
+    Tab: 'Tab',
+    ArrowUp: '↑',
+    ArrowDown: '↓',
+    ArrowLeft: '←',
+    ArrowRight: '→'
   }
 
   return displayMap[key] || key.toUpperCase()
@@ -132,26 +149,26 @@ const convertElectronAcceleratorToDisplay = (accelerator: string): string => {
   if (!accelerator) return ''
 
   const electronToDisplayMap: Record<string, string> = {
-    'CommandOrControl': window.electron.process.platform === 'darwin' ? 'Cmd' : 'Ctrl',
-    'Control': 'Ctrl',
-    'Meta': window.electron.process.platform === 'darwin' ? 'Cmd' : 'Ctrl',
-    'Alt': 'Alt',
-    'Shift': 'Shift',
-    'Space': 'Space',
-    'Return': 'Enter',
-    'Escape': 'Esc',
-    'Backspace': 'Backspace',
-    'Delete': 'Del',
-    'Tab': 'Tab',
-    'Up': '↑',
-    'Down': '↓',
-    'Left': '←',
-    'Right': '→'
+    CommandOrControl: window.electron.process.platform === 'darwin' ? 'Cmd' : 'Ctrl',
+    Control: 'Ctrl',
+    Meta: window.electron.process.platform === 'darwin' ? 'Cmd' : 'Ctrl',
+    Alt: 'Alt',
+    Shift: 'Shift',
+    Space: 'Space',
+    Return: 'Enter',
+    Escape: 'Esc',
+    Backspace: 'Backspace',
+    Delete: 'Del',
+    Tab: 'Tab',
+    Up: '↑',
+    Down: '↓',
+    Left: '←',
+    Right: '→'
   }
 
   return accelerator
     .split('+')
-    .map(key => electronToDisplayMap[key] || key)
+    .map((key) => electronToDisplayMap[key] || key)
     .join('+')
 }
 
@@ -248,7 +265,14 @@ const handleKeyDown = (event: KeyboardEvent): void => {
   // 添加按键到集合
   pressedKeys.value.add(normalizedKey)
 
-  console.log('按键按下:', event.key, '标准化后:', normalizedKey, '当前按键集合:', Array.from(pressedKeys.value))
+  console.log(
+    '按键按下:',
+    event.key,
+    '标准化后:',
+    normalizedKey,
+    '当前按键集合:',
+    Array.from(pressedKeys.value)
+  )
 
   // 更新预览
   updateShortcutPreview()
@@ -271,8 +295,11 @@ const validateShortcut = (keys: Set<string>): { valid: boolean; error: string } 
 
   // 检查是否包含至少一个修饰键（Ctrl、Cmd、Alt、Shift）
   const modifierKeys = ['Control', 'Meta', 'Alt', 'Shift']
-  const hasModifier = keyArray.some(key => modifierKeys.includes(key))
-  console.log('修饰键检查，找到的修饰键:', keyArray.filter(key => modifierKeys.includes(key)))
+  const hasModifier = keyArray.some((key) => modifierKeys.includes(key))
+  console.log(
+    '修饰键检查，找到的修饰键:',
+    keyArray.filter((key) => modifierKeys.includes(key))
+  )
 
   if (!hasModifier) {
     console.log('验证失败：缺少修饰键')
@@ -280,7 +307,7 @@ const validateShortcut = (keys: Set<string>): { valid: boolean; error: string } 
   }
 
   // 检查是否至少有一个非修饰键
-  const nonModifierKeys = keyArray.filter(key => !modifierKeys.includes(key))
+  const nonModifierKeys = keyArray.filter((key) => !modifierKeys.includes(key))
   console.log('非修饰键:', nonModifierKeys)
 
   if (nonModifierKeys.length === 0) {
@@ -299,7 +326,14 @@ const handleKeyUp = (event: KeyboardEvent): void => {
 
   if (!isListeningForShortcut.value) return
 
-  console.log('按键释放:', event.key, '当前按键集合:', Array.from(pressedKeys.value), '有效快捷键已检测:', validShortcutDetected.value)
+  console.log(
+    '按键释放:',
+    event.key,
+    '当前按键集合:',
+    Array.from(pressedKeys.value),
+    '有效快捷键已检测:',
+    validShortcutDetected.value
+  )
 
   // 如果已经检测到有效快捷键，直接保存
   if (validShortcutDetected.value) {
@@ -451,9 +485,20 @@ onUnmounted(() => {
         <div class="setting-control">
           <div class="shortcut-input">
             <div class="shortcut-display">
-              <input type="text" :value="displayShortcut" readonly
+              <input
+                type="text"
+                :value="displayShortcut"
+                readonly
                 :placeholder="isListeningForShortcut ? '请按下快捷键组合...' : '点击设置快捷键'"
-                :class="['shortcut-field', { 'listening': isListeningForShortcut, 'preview': shortcutPreview, 'empty': !hasShortcut }]">
+                :class="[
+                  'shortcut-field',
+                  {
+                    listening: isListeningForShortcut,
+                    preview: shortcutPreview,
+                    empty: !hasShortcut
+                  }
+                ]"
+              />
             </div>
             <div class="shortcut-buttons">
               <template v-if="!isListeningForShortcut">

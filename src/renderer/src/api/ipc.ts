@@ -138,8 +138,6 @@ export function sendSync<T = any>(channel: string, ...args: any[]): T {
   return ipcRenderer.sendSync(channel, ...args)
 }
 
-
-
 // 默认导出实际使用的方法
 export default {
   on,

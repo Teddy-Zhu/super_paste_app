@@ -1,7 +1,12 @@
 import { app } from 'electron'
 import store from '../config/store'
 import { STORE_KEY } from '../config/common'
-import { SyncProviderType, SyncDirection, type ScheduledSyncConfig, type WebDAVConfig } from './types'
+import {
+  SyncProviderType,
+  SyncDirection,
+  type ScheduledSyncConfig,
+  type WebDAVConfig
+} from './types'
 import logger from '../utils/logger'
 
 /**
@@ -24,7 +29,10 @@ export class SyncConfigUtils {
     let providerConfig: WebDAVConfig
 
     if (provider === 'webdav') {
-      const webdavParams = store.get<any>(STORE_KEY.SYNC_PROVIDER_PARAMS.replace('%s', 'webdav'), {})
+      const webdavParams = store.get<any>(
+        STORE_KEY.SYNC_PROVIDER_PARAMS.replace('%s', 'webdav'),
+        {}
+      )
       logger.debug('[同步配置工具] WebDAV 配置参数:', webdavParams)
       providerConfig = {
         syncDirection: this.parseSyncDirection(direction),
@@ -82,7 +90,10 @@ export class SyncConfigUtils {
 
       if (provider === 'webdav') {
         // 读取 WebDAV 配置参数
-        const webdavParams = store.get<any>(STORE_KEY.SYNC_PROVIDER_PARAMS.replace('%s', 'webdav'), {})
+        const webdavParams = store.get<any>(
+          STORE_KEY.SYNC_PROVIDER_PARAMS.replace('%s', 'webdav'),
+          {}
+        )
 
         if (!webdavParams.serverUrl || !webdavParams.username || !webdavParams.password) {
           logger.warn('[同步配置工具] WebDAV 配置参数不完整')

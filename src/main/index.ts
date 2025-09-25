@@ -104,7 +104,7 @@ class SuperPasteApp {
    */
   private handleSecondInstance(): void {
     const mainWindow = mainWindowManager.getWindow()
-    
+
     if (mainWindow) {
       if (mainWindowManager.isMinimized()) {
         mainWindowManager.restore()
@@ -276,8 +276,6 @@ class SuperPasteApp {
     logger.debug('[主进程] Overlay 窗口创建完成')
   }
 
-
-
   /**
    * 初始化定时同步服务
    */
@@ -339,7 +337,7 @@ class SuperPasteApp {
       if (!this.isInitialized) {
         return
       }
-      
+
       if (BrowserWindow.getAllWindows().length === 0) {
         mainWindowManager.createWindow()
       } else if (mainWindowManager.isValid()) {
@@ -419,7 +417,7 @@ if (process.platform === 'darwin' && is.dev) {
 
 // 创建并启动应用
 const superPasteApp = new SuperPasteApp()
-superPasteApp.start().catch(error => {
+superPasteApp.start().catch((error) => {
   logger.error('[主进程] 应用启动失败:', error)
   process.exit(1)
 })

@@ -16,7 +16,6 @@ export interface IpcChannels {
   'close-overlay-window': void
   'open-overlay-finished': void
 
-
   // 动画相关
   'trigger-slide-in-animation': void
   'trigger-slide-out-animation': void
@@ -32,6 +31,7 @@ export interface IpcChannels {
   'clipboard-restore': { itemId: string }
   'clipboard-restore-as-text': { itemId: string }
   'clipboard-restore-ocr-text': { itemId: string }
+  'clipboard-parse-qrcode': { itemId: string }
   'clipboard-delete-item': { itemId: string }
   'clipboard-clear-history': void
   'clipboard-get-status': void
@@ -51,7 +51,6 @@ export interface IpcChannels {
   // 应用信息相关
   'get-all-apps': void
   'get-app-cache-stats': void
-
 }
 
 // IPC 响应类型
@@ -81,7 +80,6 @@ export interface IpcResponses {
   // 应用信息相关响应
   'get-all-apps': { success: boolean; data?: AppInfo[]; error?: string }
   'get-app-cache-stats': { success: boolean; data?: AppCacheStats; error?: string }
-
 }
 
 // 类型安全的 IPC 方法接口
@@ -91,37 +89,37 @@ export interface TypedIpcRenderer {
     channel: K,
     listener: (event: IpcRendererEvent, data: IpcChannels[K]) => void
   ): () => void
-  
+
   onSimple<K extends keyof IpcChannels>(
     channel: K,
     listener: (data: IpcChannels[K]) => void
   ): () => void
-  
+
   once<K extends keyof IpcChannels>(
     channel: K,
     listener: (event: IpcRendererEvent, data: IpcChannels[K]) => void
   ): () => void
-  
+
   onceSimple<K extends keyof IpcChannels>(
     channel: K,
     listener: (data: IpcChannels[K]) => void
   ): () => void
-  
+
   // 发送方法
   send<K extends keyof IpcChannels>(channel: K, data: IpcChannels[K]): void
-  
+
   // 调用方法
   invoke<K extends keyof IpcResponses>(
     channel: K,
     data: K extends keyof IpcChannels ? IpcChannels[K] : any
   ): Promise<IpcResponses[K]>
-  
+
   // 同步调用
   sendSync<K extends keyof IpcResponses>(
     channel: K,
     data: K extends keyof IpcChannels ? IpcChannels[K] : any
   ): IpcResponses[K]
-  
+
   // 移除监听器
   removeListener(channel: string, listener: (...args: any[]) => void): void
   removeAllListeners(channel: string): void
@@ -180,7 +178,18 @@ export interface TagStats {
 export interface ClipboardItem {
   id: string
   content: ClipboardContent
-  primaryType: 'text' | 'html' | 'image' | 'rtf' | 'files' | 'url' | 'email' | 'phone' | 'code' | 'color' | 'empty'
+  primaryType:
+    | 'text'
+    | 'html'
+    | 'image'
+    | 'rtf'
+    | 'files'
+    | 'url'
+    | 'email'
+    | 'phone'
+    | 'code'
+    | 'color'
+    | 'empty'
   availableFormats: string[]
   timestamp: number
   lastUsed: number
@@ -223,8 +232,6 @@ export interface ClipboardIpcResponse<T = any> {
   error?: string
 }
 
-
-
 // 剪贴板历史查询结果类型
 export interface ClipboardHistoryResult {
   items: ClipboardItem[]
@@ -238,6 +245,7 @@ export interface ClipboardOperations {
   restore(itemId: string): Promise<boolean>
   restoreAsText(itemId: string): Promise<boolean>
   restoreOcrText(itemId: string): Promise<boolean>
+  parseQRCode(itemId: string): Promise<boolean>
   deleteItem(itemId: string): Promise<boolean>
   clearHistory(): Promise<boolean>
   getStatus(): Promise<ClipboardStatus>
@@ -250,7 +258,10 @@ export interface ClipboardOperations {
 export interface TagOperations {
   getAllTags(): Promise<TagGroup[]>
   createTag(name: string, color: string, description?: string): Promise<string>
-  updateTag(tagId: string, updates: { name?: string; color?: string; description?: string }): Promise<boolean>
+  updateTag(
+    tagId: string,
+    updates: { name?: string; color?: string; description?: string }
+  ): Promise<boolean>
   deleteTag(tagId: string): Promise<boolean>
   getTagStats(): Promise<TagStats[]>
   bindTagToRecord(contentId: string, tagId: string): Promise<boolean>
@@ -269,9 +280,7 @@ export interface AppControlOperations {
 }
 
 // 完整的 API 接口
-export interface RendererAPI extends
-  StoreOperations {
-
+export interface RendererAPI extends StoreOperations {
   // 原始 IPC 方法
   ipc: TypedIpcRenderer
 
@@ -286,5 +295,4 @@ export interface RendererAPI extends
 
   // 应用控制操作
   app: AppControlOperations
-
 }

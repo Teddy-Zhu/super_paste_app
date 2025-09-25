@@ -1,6 +1,6 @@
 import { createRouter, createWebHashHistory } from 'vue-router'
-import { setupLayouts } from "virtual:meta-layouts";
-import { routes } from "vue-router/auto-routes"; // 引入文件路由表
+import { setupLayouts } from 'virtual:meta-layouts'
+import { routes } from 'vue-router/auto-routes' // 引入文件路由表
 
 // 应用布局系统到路由
 const layoutRoutes = setupLayouts(routes)

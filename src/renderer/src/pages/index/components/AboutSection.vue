@@ -1,5 +1,4 @@
-<script setup lang="ts">
-</script>
+<script setup lang="ts"></script>
 
 <template>
   <div class="content-section">
@@ -14,7 +13,6 @@
         <p class="app-version">版本 1.0.0</p>
         <p class="app-description">基于 Electron + Vue 的智能粘贴工具</p>
       </div>
-
     </div>
   </div>
 </template>

@@ -1,22 +1,23 @@
 import { parentPort } from 'node:worker_threads'
 import { HashUtils } from '../utils/common'
 import { BaseWorker } from './base-worker'
-import { ClipboardManager as TeddyClipboardManager, ClipboardListener, ClipboardData } from '@teddyzhu/clipboard'
+import {
+  ClipboardManager as TeddyClipboardManager,
+  ClipboardListener,
+  ClipboardData
+} from '@teddyzhu/clipboard'
 import type {
   WorkerMessage,
   WorkerRequest,
   WorkerResponse,
   WorkerEvent
 } from '../types/worker-types'
-import type {
-  ClipboardContent,
-  ClipboardManagerConfig,
-  AppInfo
-} from '../types/clipboard-types'
+import type { ClipboardContent, ClipboardManagerConfig, AppInfo } from '../types/clipboard-types'
 import { ClipboardDataConverter } from '../types/clipboard-types'
 import ActiveWindow from '@paymoapp/active-window'
 import logger from '../utils/logger'
 import { ocrService, OCRServiceOptions } from '../services/ocr-service'
+import { qrCodeService } from '../services/qrcode-service'
 import path from 'path'
 
 class ClipboardManagerWorker extends BaseWorker {
@@ -35,7 +36,7 @@ class ClipboardManagerWorker extends BaseWorker {
   private isDev: boolean = false
 
   // 历史记录缓存：hash -> { id, hash }
-  private historyCache: Map<string, { id: string, hash: string }> = new Map()
+  private historyCache: Map<string, { id: string; hash: string }> = new Map()
   // 反向索引：id -> hash，用于根据 ID 快速查找和删除
   private idToHashIndex: Map<string, string> = new Map()
   private maxCacheSize: number = 10000 // 最大缓存条目数
@@ -234,7 +235,16 @@ class ClipboardManagerWorker extends BaseWorker {
     logger.debug('[剪贴板管理器 Worker] OCR 服务初始化成功')
   }
 
-  public async initialize(params?: { config?: Partial<ClipboardManagerConfig>, userDataPath?: string, isPackaged?: boolean, appPath?: string } | Partial<ClipboardManagerConfig>): Promise<void> {
+  public async initialize(
+    params?:
+      | {
+          config?: Partial<ClipboardManagerConfig>
+          userDataPath?: string
+          isPackaged?: boolean
+          appPath?: string
+        }
+      | Partial<ClipboardManagerConfig>
+  ): Promise<void> {
     // 处理参数兼容性
     let config: Partial<ClipboardManagerConfig> | undefined
     let userDataPath: string | undefined
@@ -327,7 +337,10 @@ class ClipboardManagerWorker extends BaseWorker {
         this.onOperationSuccess()
         return
       }
-      logger.debug('[剪贴板管理器 Worker] 快速检查失败，进行完整哈希检查:', new Date().toDateString())
+      logger.debug(
+        '[剪贴板管理器 Worker] 快速检查失败，进行完整哈希检查:',
+        new Date().toDateString()
+      )
 
       // 生成完整内容哈希
       const currentHash = await this.generateClipboardHashFromData(clipboardData)
@@ -404,11 +417,11 @@ class ClipboardManagerWorker extends BaseWorker {
         // 包含文件的基本信息用于区分不同的文件列表
         filesInfo: clipboardData.filesInfo || undefined
       }
-      if(quickContent.hasImage) {
+      if (quickContent.hasImage) {
         logger.debug('[剪贴板管理器 Worker] 检测到图片:', quickContent.imageInfo)
       }
       const quickHash = this.generateQuickHash(quickContent)
-      if(quickContent.hasImage) {
+      if (quickContent.hasImage) {
         logger.debug('[剪贴板管理器 Worker] 快速哈希变化:', quickHash, this.lastQuickHash)
       }
       if (!this.lastQuickHash) {
@@ -586,7 +599,7 @@ class ClipboardManagerWorker extends BaseWorker {
    * 从缓存中查找记录
    * 替代 database-getRecordByHash 查询
    */
-  private getRecordFromCache(hash: string): { id: string, hash: string } | null {
+  private getRecordFromCache(hash: string): { id: string; hash: string } | null {
     return this.historyCache.get(hash) || null
   }
 
@@ -756,7 +769,6 @@ class ClipboardManagerWorker extends BaseWorker {
     }
   }
 
-
   public getConfig(): ClipboardManagerConfig {
     return { ...this.config }
   }
@@ -776,9 +788,7 @@ class ClipboardManagerWorker extends BaseWorker {
         const clipboardData = this.readClipboardDirect()
         this.lastClipboardHash = await this.generateClipboardHashFromData(clipboardData)
         this.checkQuickClipboardChange(clipboardData)
-      } catch (error) {
-
-      }
+      } catch (error) {}
       this.resetErrorState()
     } catch (error) {
       // 静默处理错误
@@ -843,7 +853,7 @@ class ClipboardManagerWorker extends BaseWorker {
         try {
           // 构建 ImageData 对象，使用 Buffer 数据
           clipboardData.image = {
-            width: 0,  // 宽度信息可能不可用，设为0
+            width: 0, // 宽度信息可能不可用，设为0
             height: 0, // 高度信息可能不可用，设为0
             size: content.image.length,
             data: content.image // 现在使用 Buffer 数据
@@ -874,7 +884,10 @@ class ClipboardManagerWorker extends BaseWorker {
 
       // 直接使用 setContents API 设置剪贴板内容
       this.clipboard.setContents(clipboardData)
-      console.log('[剪贴板管理器 Worker] 已使用 setContents 设置剪贴板内容，格式:', clipboardData.availableFormats)
+      console.log(
+        '[剪贴板管理器 Worker] 已使用 setContents 设置剪贴板内容，格式:',
+        clipboardData.availableFormats
+      )
 
       return true
     } catch (error) {
@@ -882,8 +895,6 @@ class ClipboardManagerWorker extends BaseWorker {
       return false
     }
   }
-
-
 
   /**
    * 还原剪贴板内容为纯文本
@@ -943,15 +954,15 @@ class ClipboardManagerWorker extends BaseWorker {
         // 移除 HTML 标签，保留文本内容
         const textFromHtml = content.html
           .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '') // 移除 script 标签及内容
-          .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')   // 移除 style 标签及内容
-          .replace(/<[^>]*>/g, '')                          // 移除所有 HTML 标签
-          .replace(/&nbsp;/g, ' ')                          // 替换 HTML 空格实体
-          .replace(/&lt;/g, '<')                            // 替换 HTML 实体
+          .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '') // 移除 style 标签及内容
+          .replace(/<[^>]*>/g, '') // 移除所有 HTML 标签
+          .replace(/&nbsp;/g, ' ') // 替换 HTML 空格实体
+          .replace(/&lt;/g, '<') // 替换 HTML 实体
           .replace(/&gt;/g, '>')
           .replace(/&amp;/g, '&')
           .replace(/&quot;/g, '"')
           .replace(/&#39;/g, "'")
-          .replace(/\s+/g, ' ')                             // 合并多个空白字符
+          .replace(/\s+/g, ' ') // 合并多个空白字符
           .trim()
 
         if (textFromHtml) {
@@ -968,11 +979,11 @@ class ClipboardManagerWorker extends BaseWorker {
       try {
         // 简单的 RTF 转文本：移除 RTF 控制字符和格式代码
         const textFromRtf = content.rtf
-          .replace(/\\[a-z]+\d*\s?/g, '')                   // 移除 RTF 控制字符
-          .replace(/[{}]/g, '')                             // 移除大括号
-          .replace(/\\\\/g, '\\')                           // 处理转义的反斜杠
-          .replace(/\\'/g, "'")                             // 处理转义的单引号
-          .replace(/\s+/g, ' ')                             // 合并多个空白字符
+          .replace(/\\[a-z]+\d*\s?/g, '') // 移除 RTF 控制字符
+          .replace(/[{}]/g, '') // 移除大括号
+          .replace(/\\\\/g, '\\') // 处理转义的反斜杠
+          .replace(/\\'/g, "'") // 处理转义的单引号
+          .replace(/\s+/g, ' ') // 合并多个空白字符
           .trim()
 
         if (textFromRtf) {
@@ -1004,7 +1015,9 @@ class ClipboardManagerWorker extends BaseWorker {
   /**
    * 从数据库获取内容并还原剪贴板（完整还原）
    */
-  public async restoreClipboardFromDatabase(itemId: string): Promise<{ success: boolean; message?: string }> {
+  public async restoreClipboardFromDatabase(
+    itemId: string
+  ): Promise<{ success: boolean; message?: string }> {
     try {
       // 参数验证
       if (!itemId || typeof itemId !== 'string') {
@@ -1012,7 +1025,9 @@ class ClipboardManagerWorker extends BaseWorker {
       }
 
       // 从数据库获取记录
-      const targetRecord = await this.callMainThread('database-getRecordByContentId', { contentId: itemId })
+      const targetRecord = await this.callMainThread('database-getRecordByContentId', {
+        contentId: itemId
+      })
 
       if (!targetRecord) {
         return { success: false, message: '未找到指定的剪贴板项' }
@@ -1058,7 +1073,9 @@ class ClipboardManagerWorker extends BaseWorker {
    * 从数据库获取内容并还原剪贴板为纯文本
    * 支持从其他格式转换为文本
    */
-  public async restoreClipboardFromDatabaseAsText(itemId: string): Promise<{ success: boolean; message?: string }> {
+  public async restoreClipboardFromDatabaseAsText(
+    itemId: string
+  ): Promise<{ success: boolean; message?: string }> {
     try {
       // 参数验证
       if (!itemId || typeof itemId !== 'string') {
@@ -1066,7 +1083,9 @@ class ClipboardManagerWorker extends BaseWorker {
       }
 
       // 从数据库获取记录
-      const targetRecord = await this.callMainThread('database-getRecordByContentId', { contentId: itemId })
+      const targetRecord = await this.callMainThread('database-getRecordByContentId', {
+        contentId: itemId
+      })
 
       if (!targetRecord) {
         return { success: false, message: '未找到指定的剪贴板项' }
@@ -1113,7 +1132,9 @@ class ClipboardManagerWorker extends BaseWorker {
    * 从数据库获取内容并还原剪贴板为OCR文本
    * 专门用于图片的OCR识别文本
    */
-  public async restoreClipboardFromDatabaseAsOcrText(itemId: string): Promise<{ success: boolean; message?: string }> {
+  public async restoreClipboardFromDatabaseAsOcrText(
+    itemId: string
+  ): Promise<{ success: boolean; message?: string }> {
     try {
       // 参数验证
       if (!itemId || typeof itemId !== 'string') {
@@ -1121,7 +1142,9 @@ class ClipboardManagerWorker extends BaseWorker {
       }
 
       // 从数据库获取记录
-      const targetRecord = await this.callMainThread('database-getRecordByContentId', { contentId: itemId })
+      const targetRecord = await this.callMainThread('database-getRecordByContentId', {
+        contentId: itemId
+      })
 
       if (!targetRecord) {
         return { success: false, message: '未找到指定的剪贴板项' }
@@ -1141,14 +1164,75 @@ class ClipboardManagerWorker extends BaseWorker {
 
       console.log('[剪贴板管理器 Worker] OCR文本已还原到剪贴板')
 
-
       return {
         success: true,
-        message: 'OCR文本已还原到剪贴板' 
+        message: 'OCR文本已还原到剪贴板'
       }
     } catch (error) {
       console.error('[剪贴板管理器 Worker] 从数据库还原剪贴板为OCR文本失败:', error)
       return { success: false, message: '还原剪贴板为OCR文本失败' }
+    }
+  }
+
+  /**
+   * 解析剪贴板项目中的二维码并复制到剪贴板
+   * @param itemId 剪贴板项目ID
+   */
+  public async parseQRCodeFromItem(
+    itemId: string
+  ): Promise<{ success: boolean; message?: string }> {
+    try {
+      // 参数验证
+      if (!itemId || typeof itemId !== 'string') {
+        return { success: false, message: '无效的项目ID' }
+      }
+
+      // 从数据库获取记录
+      const targetRecord = await this.callMainThread('database-getRecordByContentId', {
+        contentId: itemId
+      })
+      if (!targetRecord) {
+        return { success: false, message: '未找到指定的剪贴板项' }
+      }
+
+      // 检查是否有图片内容
+      if (!targetRecord.content_image) {
+        return { success: false, message: '该项目不是图片类型' }
+      }
+
+      try {
+        // 将 base64 图片数据转换为 Buffer
+        const imageBuffer = Buffer.from(targetRecord.content_image, 'base64')
+
+        // 使用二维码服务解析图片
+        const qrText = await qrCodeService.parseFromBuffer(imageBuffer)
+
+        if (qrText && qrText.trim()) {
+          // 使用 TeddyClipboardManager 设置剪贴板内容
+          const clipboardData = {
+            availableFormats: ['text'],
+            text: qrText
+          }
+          this.clipboard.setContents(clipboardData)
+
+          console.log('[剪贴板管理器 Worker] 二维码解析成功并已复制到剪贴板')
+          return {
+            success: true,
+            message: '二维码解析成功，内容已复制到剪贴板'
+          }
+        } else {
+          return {
+            success: false,
+            message: '图片中未发现二维码或解析失败'
+          }
+        }
+      } catch (error) {
+        console.error('[剪贴板管理器 Worker] 二维码解析过程出错:', error)
+        return { success: false, message: '二维码解析过程出错' }
+      }
+    } catch (error) {
+      console.error('[剪贴板管理器 Worker] 解析二维码失败:', error)
+      return { success: false, message: '解析二维码失败' }
     }
   }
 
@@ -1173,7 +1257,12 @@ class ClipboardManagerWorker extends BaseWorker {
       const ocrResult = await ocrService.recognizeText(imageBuffer)
 
       if (ocrResult.success && ocrResult.text && ocrResult.text.trim()) {
-        logger.debug('[剪贴板管理器 Worker] OCR识别成功:', contentId, '识别文本长度:', ocrResult.text.length)
+        logger.debug(
+          '[剪贴板管理器 Worker] OCR识别成功:',
+          contentId,
+          '识别文本长度:',
+          ocrResult.text.length
+        )
 
         // 更新数据库中的OCR字段
         const updateSuccess = await this.callMainThread('database-updateOCR', {
@@ -1287,6 +1376,9 @@ class ClipboardManagerWorker extends BaseWorker {
           break
         case 'restoreClipboardFromDatabaseAsOcrText':
           result = await this.restoreClipboardFromDatabaseAsOcrText(request.params)
+          break
+        case 'parseQRCodeFromItem':
+          result = await this.parseQRCodeFromItem(request.params)
           break
         case 'getCurrentClipboard':
           result = await this.getCurrentClipboard()

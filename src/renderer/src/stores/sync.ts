@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 
-export const useSyncStore = defineStore('sync',{
+export const useSyncStore = defineStore('sync', {
   state: () => ({
     enabled: false,
     provider: '',
@@ -8,7 +8,7 @@ export const useSyncStore = defineStore('sync',{
     direction: 'bidirectional',
     configOnly: false,
     params: {
-      webdav :{
+      webdav: {
         serverUrl: '',
         username: '',
         password: '',
@@ -18,11 +18,7 @@ export const useSyncStore = defineStore('sync',{
       }
     }
   }),
-  getters: {
-
-  },
-  actions: {
-    
-  },
+  getters: {},
+  actions: {},
   persist: true
 })

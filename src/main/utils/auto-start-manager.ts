@@ -13,7 +13,10 @@ class AutoStartManager {
   private readonly packageName: string = 'super_paste_app'
 
   private readonly isUnix: boolean =
-    process.platform === 'linux' || process.platform === 'freebsd' || process.platform === 'openbsd' || process.platform === 'darwin'
+    process.platform === 'linux' ||
+    process.platform === 'freebsd' ||
+    process.platform === 'openbsd' ||
+    process.platform === 'darwin'
 
   constructor() {
     // 仅在 Linux 平台初始化 auto-launch
@@ -22,19 +25,17 @@ class AutoStartManager {
       console.log('appName', this.appName)
       this.autoLauncher = new AutoLaunch({
         options: {
-
           launchInBackground: true,
           mac: {
             useLaunchAgent: true
           },
           linux: {
             icon: this.packageName
-          },
+          }
         },
 
         name: this.appName,
-        path: process.execPath,
-
+        path: process.execPath
       })
       // this.autoLauncher.opts.appName = this.appName
     }
@@ -90,10 +91,9 @@ class AutoStartManager {
           })
         } else {
           app.setLoginItemSettings({
-            openAtLogin: false,
+            openAtLogin: false
           })
         }
-
       }
 
       logger.info(`[自启管理器] 自动启动设置已更新: ${enabled} (平台: ${process.platform})`)
@@ -138,4 +138,4 @@ class AutoStartManager {
 }
 
 // 导出单例实例
-export default new AutoStartManager() 
+export default new AutoStartManager()

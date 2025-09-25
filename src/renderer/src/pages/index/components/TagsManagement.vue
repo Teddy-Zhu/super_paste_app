@@ -27,7 +27,7 @@ const presetColors = [
   '#84cc16', // 柠檬绿
   '#f97316', // 深橙色
   '#ec4899', // 粉色
-  '#6366f1'  // 靛蓝色
+  '#6366f1' // 靛蓝色
 ]
 
 // 加载所有标签
@@ -149,8 +149,19 @@ onMounted(() => {
 
     <!-- 创建新标签按钮 -->
     <div class="tag-actions">
-      <button class="create-tag-button" @click="startCreateTag" :disabled="isCreatingTag || isEditingTag">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+      <button
+        class="create-tag-button"
+        @click="startCreateTag"
+        :disabled="isCreatingTag || isEditingTag"
+      >
+        <svg
+          width="16"
+          height="16"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+        >
           <line x1="12" y1="5" x2="12" y2="19"></line>
           <line x1="5" y1="12" x2="19" y2="12"></line>
         </svg>
@@ -168,7 +179,13 @@ onMounted(() => {
         <!-- 标签名称 -->
         <div class="form-group">
           <label class="form-label">标签名称</label>
-          <input type="text" v-model="tagForm.name" class="form-input" placeholder="请输入标签名称" maxlength="20" />
+          <input
+            type="text"
+            v-model="tagForm.name"
+            class="form-input"
+            placeholder="请输入标签名称"
+            maxlength="20"
+          />
         </div>
 
         <!-- 标签颜色 -->
@@ -176,9 +193,14 @@ onMounted(() => {
           <label class="form-label">标签颜色</label>
           <div class="color-picker">
             <div class="color-options">
-              <div v-for="color in presetColors" :key="color" class="color-option"
-                :class="{ active: tagForm.color === color }" :style="{ backgroundColor: color }"
-                @click="tagForm.color = color"></div>
+              <div
+                v-for="color in presetColors"
+                :key="color"
+                class="color-option"
+                :class="{ active: tagForm.color === color }"
+                :style="{ backgroundColor: color }"
+                @click="tagForm.color = color"
+              ></div>
             </div>
             <input type="color" v-model="tagForm.color" class="color-input" />
           </div>
@@ -187,8 +209,13 @@ onMounted(() => {
         <!-- 标签描述 -->
         <div class="form-group">
           <label class="form-label">描述（可选）</label>
-          <textarea v-model="tagForm.description" class="form-textarea" placeholder="请输入标签描述" maxlength="100"
-            rows="3"></textarea>
+          <textarea
+            v-model="tagForm.description"
+            class="form-textarea"
+            placeholder="请输入标签描述"
+            maxlength="100"
+            rows="3"
+          ></textarea>
         </div>
 
         <!-- 表单按钮 -->
@@ -196,9 +223,7 @@ onMounted(() => {
           <button class="form-button primary" @click="saveTag">
             {{ isCreatingTag ? '创建' : '保存' }}
           </button>
-          <button class="form-button secondary" @click="cancelEdit">
-            取消
-          </button>
+          <button class="form-button secondary" @click="cancelEdit">取消</button>
         </div>
       </div>
     </div>
@@ -225,16 +250,31 @@ onMounted(() => {
             </div>
             <div class="tag-actions-menu">
               <button class="tag-action-button" @click="startEditTag(tag)">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <svg
+                  width="14"
+                  height="14"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                >
                   <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
                   <path d="m18.5 2.5 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
                 </svg>
               </button>
               <button class="tag-action-button danger" @click="deleteTag(tag)">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <svg
+                  width="14"
+                  height="14"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                >
                   <polyline points="3,6 5,6 21,6"></polyline>
-                  <path d="m19,6v14a2,2 0 0,1 -2,2H7a2,2 0 0,1 -2,-2V6m3,0V4a2,2 0 0,1 2,-2h4a2,2 0 0,1 2,2v2">
-                  </path>
+                  <path
+                    d="m19,6v14a2,2 0 0,1 -2,2H7a2,2 0 0,1 -2,-2V6m3,0V4a2,2 0 0,1 2,-2h4a2,2 0 0,1 2,2v2"
+                  ></path>
                 </svg>
               </button>
             </div>

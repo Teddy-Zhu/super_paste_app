@@ -9,10 +9,7 @@ export class NotificationService {
   /**
    * 通知前端剪贴板历史已更新
    */
-  static notifyClipboardHistoryUpdate(data: {
-    timestamp: number
-    source?: string
-  }): void {
+  static notifyClipboardHistoryUpdate(data: { timestamp: number; source?: string }): void {
     try {
       const allWindows = BrowserWindow.getAllWindows()
 
@@ -21,8 +18,6 @@ export class NotificationService {
           window.webContents.send('clipboard-history-updated', data)
         }
       })
-
-
     } catch (error) {
       logger.error('[通知服务] 通知前端剪贴板历史更新失败:', error)
     }
@@ -31,9 +26,7 @@ export class NotificationService {
   /**
    * 通知前端剪贴板变化
    */
-  static notifyClipboardChange(data: {
-    timestamp: number
-  }): void {
+  static notifyClipboardChange(data: { timestamp: number }): void {
     try {
       const allWindows = BrowserWindow.getAllWindows()
 
@@ -42,8 +35,6 @@ export class NotificationService {
           window.webContents.send('clipboard-changed', data)
         }
       })
-
-
     } catch (error) {
       logger.error('[通知服务] 通知前端剪贴板变化失败:', error)
     }
@@ -52,10 +43,7 @@ export class NotificationService {
   /**
    * 通知前端标签更新
    */
-  static notifyTagsUpdate(data: {
-    timestamp: number
-    action?: string
-  }): void {
+  static notifyTagsUpdate(data: { timestamp: number; action?: string }): void {
     try {
       const allWindows = BrowserWindow.getAllWindows()
 
@@ -64,8 +52,6 @@ export class NotificationService {
           window.webContents.send('tags-updated', data)
         }
       })
-
-
     } catch (error) {
       logger.error('[通知服务] 通知前端标签更新失败:', error)
     }
@@ -106,8 +92,6 @@ export class NotificationService {
           window.webContents.send(eventName, data)
         }
       })
-
-
     } catch (error) {
       logger.error(`[通知服务] 发送前端事件 ${eventName} 失败:`, error)
     }
@@ -116,10 +100,7 @@ export class NotificationService {
   /**
    * 通知前端同步完成，需要重启应用
    */
-  static notifySyncRequiresRestart(data: {
-    downloadedFiles: string[]
-    message: string
-  }): void {
+  static notifySyncRequiresRestart(data: { downloadedFiles: string[]; message: string }): void {
     try {
       const allWindows = BrowserWindow.getAllWindows()
 

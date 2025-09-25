@@ -49,18 +49,23 @@ export const store: StoreOperations = {
     if (!result.success) {
       throw new Error(result.error || '设置存储值失败')
     }
-  },
+  }
 }
 
 /**
  * 剪贴板操作封装
  */
 export const clipboard: ClipboardOperations = {
-  async getHistory(options?: ClipboardHistoryQueryOptions | number): Promise<ClipboardHistoryResult> {
+  async getHistory(
+    options?: ClipboardHistoryQueryOptions | number
+  ): Promise<ClipboardHistoryResult> {
     // 向后兼容：如果传入的是数字，转换为 limit 参数
     const queryOptions = typeof options === 'number' ? { limit: options } : options
 
-    const result: ClipboardIpcResponse<ClipboardItem[]> = await invoke('clipboard-get-history', queryOptions)
+    const result: ClipboardIpcResponse<ClipboardItem[]> = await invoke(
+      'clipboard-get-history',
+      queryOptions
+    )
     if (result.success) {
       return {
         items: result.data || [],
@@ -87,6 +92,11 @@ export const clipboard: ClipboardOperations = {
 
   async restoreOcrText(itemId: string): Promise<boolean> {
     const result: ClipboardIpcResponse = await invoke('clipboard-restore-ocr-text', itemId)
+    return result.success
+  },
+
+  async parseQRCode(itemId: string): Promise<boolean> {
+    const result: ClipboardIpcResponse = await invoke('clipboard-parse-qrcode', itemId)
     return result.success
   },
 
@@ -121,16 +131,15 @@ export const clipboard: ClipboardOperations = {
   async updateConfig(config: Partial<ClipboardManagerConfig>): Promise<boolean> {
     const result: ClipboardIpcResponse = await invoke('clipboard-update-config', config)
     return result.success
-  },
+  }
 }
-
 
 /**
  * 工具函数：安全的 invoke 调用
  */
 export async function safeInvoke<T>(
-  channel: string, 
-  data?: any, 
+  channel: string,
+  data?: any,
   defaultValue?: T
 ): Promise<T | undefined> {
   try {
@@ -145,7 +154,8 @@ export async function safeInvoke<T>(
  */
 export const tags = {
   async getAllTags(): Promise<TagGroup[]> {
-    const result: { success: boolean; data?: TagGroup[]; error?: string } = await invoke('get-all-tags')
+    const result: { success: boolean; data?: TagGroup[]; error?: string } =
+      await invoke('get-all-tags')
     if (result.success) {
       return result.data || []
     }
@@ -153,15 +163,22 @@ export const tags = {
   },
 
   async createTag(name: string, color: string, description?: string): Promise<string> {
-    const result: { success: boolean; data?: { tagId: string }; message?: string; error?: string } = await invoke('create-tag', { name, color, description })
+    const result: { success: boolean; data?: { tagId: string }; message?: string; error?: string } =
+      await invoke('create-tag', { name, color, description })
     if (result.success && result.data) {
       return result.data.tagId
     }
     throw new Error(result.error || '创建标签失败')
   },
 
-  async updateTag(tagId: string, updates: { name?: string; color?: string; description?: string }): Promise<boolean> {
-    const result: { success: boolean; message?: string; error?: string } = await invoke('update-tag', { tagId, updates })
+  async updateTag(
+    tagId: string,
+    updates: { name?: string; color?: string; description?: string }
+  ): Promise<boolean> {
+    const result: { success: boolean; message?: string; error?: string } = await invoke(
+      'update-tag',
+      { tagId, updates }
+    )
     if (result.success) {
       return true
     }
@@ -169,7 +186,10 @@ export const tags = {
   },
 
   async deleteTag(tagId: string): Promise<boolean> {
-    const result: { success: boolean; message?: string; error?: string } = await invoke('delete-tag', tagId)
+    const result: { success: boolean; message?: string; error?: string } = await invoke(
+      'delete-tag',
+      tagId
+    )
     if (result.success) {
       return true
     }
@@ -177,7 +197,8 @@ export const tags = {
   },
 
   async getTagStats(): Promise<TagStats[]> {
-    const result: { success: boolean; data?: TagStats[]; error?: string } = await invoke('get-tag-stats')
+    const result: { success: boolean; data?: TagStats[]; error?: string } =
+      await invoke('get-tag-stats')
     if (result.success) {
       return result.data || []
     }
@@ -185,7 +206,10 @@ export const tags = {
   },
 
   async bindTagToRecord(contentId: string, tagId: string): Promise<boolean> {
-    const result: { success: boolean; message?: string; error?: string } = await invoke('bind-tag-to-record', { contentId, tagId })
+    const result: { success: boolean; message?: string; error?: string } = await invoke(
+      'bind-tag-to-record',
+      { contentId, tagId }
+    )
     if (result.success) {
       return true
     }
@@ -193,7 +217,10 @@ export const tags = {
   },
 
   async unbindTagFromRecord(contentId: string, tagId: string): Promise<boolean> {
-    const result: { success: boolean; message?: string; error?: string } = await invoke('unbind-tag-from-record', { contentId, tagId })
+    const result: { success: boolean; message?: string; error?: string } = await invoke(
+      'unbind-tag-from-record',
+      { contentId, tagId }
+    )
     if (result.success) {
       return true
     }
@@ -206,7 +233,8 @@ export const tags = {
  */
 export const apps: AppOperations = {
   async getAllApps(): Promise<AppInfo[]> {
-    const result: { success: boolean; data?: AppInfo[]; error?: string } = await invoke('get-all-apps')
+    const result: { success: boolean; data?: AppInfo[]; error?: string } =
+      await invoke('get-all-apps')
     if (result.success) {
       return result.data || []
     }
@@ -214,7 +242,8 @@ export const apps: AppOperations = {
   },
 
   async getCacheStats(): Promise<AppCacheStats> {
-    const result: { success: boolean; data?: AppCacheStats; error?: string } = await invoke('get-app-cache-stats')
+    const result: { success: boolean; data?: AppCacheStats; error?: string } =
+      await invoke('get-app-cache-stats')
     if (result.success && result.data) {
       return result.data
     }
@@ -247,7 +276,7 @@ export async function invokeWithTimeout<T>(
 ): Promise<T> {
   return Promise.race([
     invoke<T>(channel, data),
-    new Promise<never>((_, reject) => 
+    new Promise<never>((_, reject) =>
       setTimeout(() => reject(new Error(`IPC 调用超时: ${channel}`)), timeout)
     )
   ])
@@ -257,7 +286,7 @@ export async function invokeWithTimeout<T>(
  * 工具函数：批量移除监听器
  */
 export function removeListeners(listeners: Array<() => void>): void {
-  listeners.forEach(remove => remove())
+  listeners.forEach((remove) => remove())
 }
 
 /**
@@ -290,7 +319,7 @@ export const rendererAPI: RendererAPI = {
     sendSync,
     removeListener,
     removeAllListeners
-  } as any,
+  } as any
 }
 
 // 默认导出

@@ -124,8 +124,13 @@ onUnmounted(() => {
       </div>
 
       <nav class="sidebar-nav">
-        <div v-for="section in settingSections" :key="section.id" class="nav-item"
-          :class="{ active: activeSection === section.id }" @click="setActiveSection(section.id)">
+        <div
+          v-for="section in settingSections"
+          :key="section.id"
+          class="nav-item"
+          :class="{ active: activeSection === section.id }"
+          @click="setActiveSection(section.id)"
+        >
           <component :is="section.icon" class="nav-icon" />
           <span class="nav-text">{{ section.name }}</span>
         </div>
@@ -159,17 +164,24 @@ onUnmounted(() => {
         <div class="restart-dialog-header">
           <h3 class="restart-dialog-title">同步完成</h3>
         </div>
-        
+
         <div class="restart-dialog-body">
           <div class="restart-icon">
-            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M1 4l6 6-6 6"/>
-              <path d="M11 4l6 6-6 6"/>
+            <svg
+              width="48"
+              height="48"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+            >
+              <path d="M1 4l6 6-6 6" />
+              <path d="M11 4l6 6-6 6" />
             </svg>
           </div>
-          
+
           <p class="restart-message">{{ restartDialogData?.message }}</p>
-          
+
           <div v-if="restartDialogData?.downloadedFiles?.length" class="downloaded-files">
             <p class="files-title">已下载的文件:</p>
             <ul class="files-list">
@@ -178,12 +190,12 @@ onUnmounted(() => {
               </li>
             </ul>
           </div>
-          
+
           <p class="restart-description">
             为了应用这些更改，需要重启应用。重启后所有新的数据和配置将生效。
           </p>
         </div>
-        
+
         <div class="restart-dialog-footer">
           <button type="button" @click="cancelRestart" class="restart-btn restart-btn-cancel">
             稍后重启

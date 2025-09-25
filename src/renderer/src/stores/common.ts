@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 
-export const useSettingsStore = defineStore('settings',{
+export const useSettingsStore = defineStore('settings', {
   state: () => ({
     autoStart: false,
     globalShortcut: '', // 默认为空，用户需要手动设置
@@ -9,11 +9,7 @@ export const useSettingsStore = defineStore('settings',{
     clipboardListening: true, // 剪贴板监听状态，默认开启
     enableLocalOCR: false // 是否启用本地OCR，默认关闭
   }),
-  getters: {
-
-  },
-  actions: {
-    
-  },
+  getters: {},
+  actions: {},
   persist: true
 })

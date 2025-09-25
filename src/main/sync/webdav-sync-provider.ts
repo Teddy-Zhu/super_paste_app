@@ -2,11 +2,7 @@ import { createClient, WebDAVClient, FileStat } from 'webdav'
 import { promises as fs } from 'fs'
 import { dirname } from 'path'
 import { BaseSyncProvider } from './base-sync-provider'
-import type {
-  SyncFileInfo,
-  SyncResult,
-  WebDAVConfig
-} from './types'
+import type { SyncFileInfo, SyncResult, WebDAVConfig } from './types'
 import { SyncProviderType } from './types'
 import logger from '../utils/logger'
 /**
@@ -200,7 +196,7 @@ export class WebDAVSyncProvider extends BaseSyncProvider {
     const targetPath = remotePath || this.webdavConfig.remotePath
 
     try {
-      const files = await this.client.getDirectoryContents(targetPath) as FileStat[]
+      const files = (await this.client.getDirectoryContents(targetPath)) as FileStat[]
       const fileInfos: SyncFileInfo[] = []
 
       for (const item of files) {
@@ -244,7 +240,7 @@ export class WebDAVSyncProvider extends BaseSyncProvider {
     }
 
     try {
-      const stat = await this.client.stat(remotePath) as FileStat
+      const stat = (await this.client.stat(remotePath)) as FileStat
       if (stat.type === 'file') {
         return {
           path: stat.filename,
@@ -289,7 +285,6 @@ export class WebDAVSyncProvider extends BaseSyncProvider {
         result.success = false
         result.message = `同步完成，但存在 ${result.errors.length} 个错误`
       }
-
     } catch (error) {
       result.success = false
       result.message = `同步失败: ${error instanceof Error ? error.message : '未知错误'}`
@@ -307,7 +302,7 @@ export class WebDAVSyncProvider extends BaseSyncProvider {
     // 这里需要根据具体需求实现数据库和配置文件的上传逻辑
     // 暂时先实现基础框架
     logger.info('[WebDAV同步] 执行上传同步')
-    
+
     // TODO: 实现具体的文件上传逻辑
     // 例如: 上传数据库文件、配置文件等
   }
@@ -318,7 +313,7 @@ export class WebDAVSyncProvider extends BaseSyncProvider {
   private async performDownloadSync(_result: SyncResult): Promise<void> {
     // 这里需要根据具体需求实现数据库和配置文件的下载逻辑
     logger.info('[WebDAV同步] 执行下载同步')
-    
+
     // TODO: 实现具体的文件下载逻辑
   }
 
@@ -328,7 +323,7 @@ export class WebDAVSyncProvider extends BaseSyncProvider {
   private async performBidirectionalSync(_result: SyncResult): Promise<void> {
     // 这里需要根据具体需求实现双向同步逻辑
     logger.info('[WebDAV同步] 执行双向同步')
-    
+
     // TODO: 实现具体的双向同步逻辑
     // 需要比较本地和远程文件的修改时间，决定同步方向
   }

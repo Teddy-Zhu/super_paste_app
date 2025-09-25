@@ -55,7 +55,8 @@ export abstract class BaseWorker {
     }
 
     const workerName = this.getWorkerName()
-    const fileName = config.logFileName || `${workerName.toLowerCase().replace(/\s+/g, '-')}-worker.log`
+    const fileName =
+      config.logFileName || `${workerName.toLowerCase().replace(/\s+/g, '-')}-worker.log`
     const scope = config.logScope || workerName.toLowerCase().replace(/\s+/g, '-')
 
     logger.initialize({
@@ -97,34 +98,40 @@ export abstract class BaseWorker {
   protected async callMainThread(method: string, params?: any): Promise<any> {
     const maxRetries = 3
     const baseDelay = 1000 // 1秒基础延迟
-    
+
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
       try {
         return await this.callMainThreadOnce(method, params, attempt)
       } catch (error) {
         const isTimeoutError = error instanceof Error && error.message.includes('超时')
         const isLastAttempt = attempt === maxRetries
-        
+
         if (isTimeoutError && !isLastAttempt) {
           // 如果是超时错误且不是最后一次尝试，则等待后重试
           const delay = baseDelay * Math.pow(2, attempt) // 指数退避
-          logger.warn(`[${this.getWorkerName()}] ${method} 调用超时，${delay}ms后进行第${attempt + 2}次尝试`)
+          logger.warn(
+            `[${this.getWorkerName()}] ${method} 调用超时，${delay}ms后进行第${attempt + 2}次尝试`
+          )
           await this.sleep(delay)
           continue
         }
-        
+
         // 如果不是超时错误或者是最后一次尝试，直接抛出错误
         throw error
       }
     }
-    
+
     throw new Error(`调用主线程方法失败: ${method}`)
   }
 
   /**
    * 单次调用主线程方法
    */
-  private async callMainThreadOnce(method: string, params?: any, attempt: number = 0): Promise<any> {
+  private async callMainThreadOnce(
+    method: string,
+    params?: any,
+    attempt: number = 0
+  ): Promise<any> {
     return new Promise((resolve, reject) => {
       const requestId = `worker-${Date.now()}-${Math.random()}`
 
@@ -183,7 +190,7 @@ export abstract class BaseWorker {
    * 睡眠指定毫秒数
    */
   protected sleep(ms: number): Promise<void> {
-    return new Promise(resolve => setTimeout(resolve, ms))
+    return new Promise((resolve) => setTimeout(resolve, ms))
   }
 
   /**
@@ -191,18 +198,22 @@ export abstract class BaseWorker {
    */
   protected handleCheckError(error: any, operation: string = '操作'): void {
     this.consecutiveErrors++
-    
+
     const isTimeoutError = error instanceof Error && error.message.includes('超时')
-    
+
     if (isTimeoutError) {
-      logger.warn(`[${this.getWorkerName()}] ${operation}超时 (连续错误: ${this.consecutiveErrors}/${this.maxConsecutiveErrors})`)
+      logger.warn(
+        `[${this.getWorkerName()}] ${operation}超时 (连续错误: ${this.consecutiveErrors}/${this.maxConsecutiveErrors})`
+      )
 
       // 如果连续超时错误过多，启用退避机制
       if (this.consecutiveErrors >= this.maxConsecutiveErrors) {
         const backoffDuration = Math.min(30000, 5000 * this.consecutiveErrors) // 最多30秒
         this.errorBackoffTime = Date.now() + backoffDuration
 
-        logger.warn(`[${this.getWorkerName()}] 连续超时错误过多，暂停${operation} ${backoffDuration}ms`)
+        logger.warn(
+          `[${this.getWorkerName()}] 连续超时错误过多，暂停${operation} ${backoffDuration}ms`
+        )
       }
     } else {
       logger.error(`[${this.getWorkerName()}] ${operation}失败:`, error)

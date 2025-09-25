@@ -38,56 +38,56 @@ export type WorkerMessage = WorkerRequest | WorkerResponse | WorkerEvent
 // 历史记录清理器 Worker 方法
 export interface ClipboardHistoryCleanerWorkerMethods {
   // 配置管理
-  'updateConfig': (config: { maxKeepTime: number; maxHistorySize?: number; enableCountBasedCleanup?: boolean }) => void
-  'getConfig': () => any
+  updateConfig: (config: {
+    maxKeepTime: number
+    maxHistorySize?: number
+    enableCountBasedCleanup?: boolean
+  }) => void
+  getConfig: () => any
 
   // 清理操作
-  'startAutoCleanup': () => void
-  'stopAutoCleanup': () => void
-  'performCleanup': () => Promise<any>
-  'checkCountBasedCleanup': (maxHistorySize: number) => Promise<void>
+  startAutoCleanup: () => void
+  stopAutoCleanup: () => void
+  performCleanup: () => Promise<any>
+  checkCountBasedCleanup: (maxHistorySize: number) => Promise<void>
 
   // 生命周期
-  'initialize': () => void
-  'destroy': () => void
+  initialize: () => void
+  destroy: () => void
 }
 
 // 剪贴板管理器 Worker 方法
 export interface ClipboardManagerWorkerMethods {
   // 初始化和配置
-  'initialize': (config?: any) => void
-  'updateConfig': (config: any) => void
-  'getConfig': () => any
-  
+  initialize: (config?: any) => void
+  updateConfig: (config: any) => void
+  getConfig: () => any
+
   // 监听控制
-  'startListening': () => void
-  'stopListening': () => void
-  'isListeningActive': () => boolean
-  
+  startListening: () => void
+  stopListening: () => void
+  isListeningActive: () => boolean
+
   // 剪贴板操作
-  'getCurrentClipboard': () => any
-  'syncClipboardHash': () => void
-  'resetErrorState': () => void
+  getCurrentClipboard: () => any
+  syncClipboardHash: () => void
+  resetErrorState: () => void
 
   // 历史记录管理
-  'deleteHistoryItem': (itemId: string) => boolean
-  'clearHistory': () => void
-  'searchHistory': (options: any) => any[]
-  
+  deleteHistoryItem: (itemId: string) => boolean
+  clearHistory: () => void
+  searchHistory: (options: any) => any[]
+
   // 标签管理
-  'createTagGroup': (name: string, color: string, description?: string) => string | null
-  'getAllTagGroups': () => any[]
-  'updateTagGroup': (tagId: string, updates: any) => boolean
-  'deleteTagGroup': (tagId: string) => boolean
-  'bindTagToRecord': (contentId: string, tagId: string) => boolean
-  'unbindTagFromRecord': (contentId: string, tagId: string) => boolean
-  'getRecordsByTags': (tagIds: string[]) => any[]
-  'getRecordsByParseType': (parseType: string) => any[]
-  'getTagStats': () => any[]
-  
-
-  
-
+  createTagGroup: (name: string, color: string, description?: string) => string | null
+  getAllTagGroups: () => any[]
+  updateTagGroup: (tagId: string, updates: any) => boolean
+  deleteTagGroup: (tagId: string) => boolean
+  bindTagToRecord: (contentId: string, tagId: string) => boolean
+  unbindTagFromRecord: (contentId: string, tagId: string) => boolean
+  getRecordsByTags: (tagIds: string[]) => any[]
+  getRecordsByParseType: (parseType: string) => any[]
+  getTagStats: () => any[]
 }
 
 // Worker 事件类型
@@ -98,7 +98,7 @@ export interface WorkerEvents {
 
   // 剪贴板管理器事件
   'clipboard-changed': { timestamp: number }
-  'history-updated': { timestamp: number, source?: string }
+  'history-updated': { timestamp: number; source?: string }
 
   // 定时同步事件
   'sync-scheduled-started': { interval: number; nextSyncTime: number }

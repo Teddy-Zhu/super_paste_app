@@ -35,14 +35,14 @@ export interface AnimationManager {
   // Overlay 动画状态
   readonly currentAnimationState: Ref<AnimationState>
   readonly isSlideInComplete: Ref<boolean>
-  
+
   // 搜索动画状态
   readonly isSearchVisible: Ref<boolean>
   readonly isSearchAnimating: Ref<boolean>
   readonly isOpeningSearch: Ref<boolean>
   readonly showSearchContainer: Ref<boolean>
   readonly showTabsContainer: Ref<boolean>
-  
+
   // Overlay 动画方法
   setAnimationState: (newState: AnimationState) => void
   canStartClosing: () => boolean
@@ -50,7 +50,7 @@ export interface AnimationManager {
   createSlideInAnimation: () => AnimationControls
   createSlideOutAnimation: () => AnimationControls
   resetOverlayState: () => void
-  
+
   // 搜索动画方法
   createSearchExpandAnimation: () => AnimationControls
   createSearchCollapseAnimation: () => AnimationControls
@@ -82,193 +82,206 @@ export function useAnimation(
   searchContainerRef: Ref<HTMLElement | undefined>,
   tabsContainerRef: Ref<HTMLElement | undefined>
 ): AnimationManager {
-  
   // ==================== 状态管理 ====================
-  
+
   // Overlay 动画状态
   const overlayStateManager = useStateManager<AnimationState>(AnimationState.IDLE)
-  const isSlideInComplete = computed(() => 
-    overlayStateManager.state.value === AnimationState.ACTIVE
+  const isSlideInComplete = computed(
+    () => overlayStateManager.state.value === AnimationState.ACTIVE
   )
-  
+
   // 搜索动画状态
   const isSearchVisible = ref(false)
   const isSearchAnimating = ref(false)
   const isOpeningSearch = ref(false)
-  
+
   // 计算属性：控制元素可见性
-  const showSearchContainer = computed(() => 
-    isSearchVisible.value || isSearchAnimating.value
-  )
-  const showTabsContainer = computed(() => 
-    !isSearchVisible.value || isSearchAnimating.value
-  )
-  
+  const showSearchContainer = computed(() => isSearchVisible.value || isSearchAnimating.value)
+  const showTabsContainer = computed(() => !isSearchVisible.value || isSearchAnimating.value)
+
   // ==================== Overlay 动画方法 ====================
-  
+
   const setAnimationState = (newState: AnimationState): void => {
     overlayStateManager.setState(newState)
   }
-  
+
   const canStartClosing = (): boolean => {
     return overlayStateManager.state.value === AnimationState.ACTIVE
   }
-  
+
   const isAnimating = (): boolean => {
     const state = overlayStateManager.state.value
     return state === AnimationState.SLIDING_IN || state === AnimationState.SLIDING_OUT
   }
-  
+
   const createSlideInAnimation = (): AnimationControls => {
-    return useAnimate(overlayContentRef, [
-      { transform: 'translateY(100%)' },
-      { transform: 'translateY(0%)' }
-    ], {
-      duration: ANIMATION_CONFIG.OVERLAY_DURATION,
-      easing: ANIMATION_CONFIG.SLIDE_IN_EASING,
-      fill: 'forwards'
-    })
+    return useAnimate(
+      overlayContentRef,
+      [{ transform: 'translateY(100%)' }, { transform: 'translateY(0%)' }],
+      {
+        duration: ANIMATION_CONFIG.OVERLAY_DURATION,
+        easing: ANIMATION_CONFIG.SLIDE_IN_EASING,
+        fill: 'forwards'
+      }
+    )
   }
-  
+
   const createSlideOutAnimation = (): AnimationControls => {
-    return useAnimate(overlayContentRef, [
-      { transform: 'translateY(0%)' },
-      { transform: 'translateY(100%)' }
-    ], {
-      duration: ANIMATION_CONFIG.OVERLAY_DURATION,
-      easing: ANIMATION_CONFIG.SLIDE_OUT_EASING,
-      fill: 'forwards'
-    })
+    return useAnimate(
+      overlayContentRef,
+      [{ transform: 'translateY(0%)' }, { transform: 'translateY(100%)' }],
+      {
+        duration: ANIMATION_CONFIG.OVERLAY_DURATION,
+        easing: ANIMATION_CONFIG.SLIDE_OUT_EASING,
+        fill: 'forwards'
+      }
+    )
   }
-  
+
   const resetOverlayState = () => {
     // console.log('[动画管理] 重置overlay状态')
     overlayStateManager.resetState()
-    
+
     // 重置元素位置到初始状态
     if (overlayContentRef.value) {
       overlayContentRef.value.style.transform = 'translateY(100%)'
     }
   }
-  
+
   // ==================== 搜索动画方法 ====================
-  
+
   const createSearchExpandAnimation = (): AnimationControls => {
-    return useAnimate(searchContainerRef, [
+    return useAnimate(
+      searchContainerRef,
+      [
+        {
+          width: '0px',
+          opacity: 0,
+          transform: 'scaleX(0)',
+          paddingLeft: '0px',
+          paddingRight: '0px'
+        },
+        // 添加中间关键帧，让动画更自然
+        {
+          width: ANIMATION_CONFIG.SEARCH_WIDTH,
+          opacity: 0.8,
+          transform: 'scaleX(0.95)',
+          paddingLeft: '6px',
+          paddingRight: '6px',
+          offset: 0.7
+        },
+        {
+          width: ANIMATION_CONFIG.SEARCH_WIDTH,
+          opacity: 1,
+          transform: 'scaleX(1)',
+          paddingLeft: '8px',
+          paddingRight: '8px'
+        }
+      ],
       {
-        width: '0px',
-        opacity: 0,
-        transform: 'scaleX(0)',
-        paddingLeft: '0px',
-        paddingRight: '0px'
-      },
-      // 添加中间关键帧，让动画更自然
-      {
-        width: ANIMATION_CONFIG.SEARCH_WIDTH,
-        opacity: 0.8,
-        transform: 'scaleX(0.95)',
-        paddingLeft: '6px',
-        paddingRight: '6px',
-        offset: 0.7
-      },
-      {
-        width: ANIMATION_CONFIG.SEARCH_WIDTH,
-        opacity: 1,
-        transform: 'scaleX(1)',
-        paddingLeft: '8px',
-        paddingRight: '8px'
+        duration: ANIMATION_CONFIG.SEARCH_DURATION,
+        easing: ANIMATION_CONFIG.SEARCH_EASING,
+        fill: 'forwards'
       }
-    ], {
-      duration: ANIMATION_CONFIG.SEARCH_DURATION,
-      easing: ANIMATION_CONFIG.SEARCH_EASING,
-      fill: 'forwards'
-    })
+    )
   }
 
   const createSearchCollapseAnimation = (): AnimationControls => {
-    return useAnimate(searchContainerRef, [
+    return useAnimate(
+      searchContainerRef,
+      [
+        {
+          width: ANIMATION_CONFIG.COLLAPSE_WIDTH,
+          opacity: 1,
+          transform: 'scaleX(1)',
+          paddingLeft: '8px',
+          paddingRight: '8px'
+        },
+        // 添加中间关键帧，让收缩更平滑
+        {
+          width: '100px',
+          opacity: 0.3,
+          transform: 'scaleX(0.3)',
+          paddingLeft: '2px',
+          paddingRight: '2px',
+          offset: 0.6
+        },
+        {
+          width: '0px',
+          opacity: 0,
+          transform: 'scaleX(0)',
+          paddingLeft: '0px',
+          paddingRight: '0px'
+        }
+      ],
       {
-        width: ANIMATION_CONFIG.COLLAPSE_WIDTH,
-        opacity: 1,
-        transform: 'scaleX(1)',
-        paddingLeft: '8px',
-        paddingRight: '8px'
-      },
-      // 添加中间关键帧，让收缩更平滑
-      {
-        width: '100px',
-        opacity: 0.3,
-        transform: 'scaleX(0.3)',
-        paddingLeft: '2px',
-        paddingRight: '2px',
-        offset: 0.6
-      },
-      {
-        width: '0px',
-        opacity: 0,
-        transform: 'scaleX(0)',
-        paddingLeft: '0px',
-        paddingRight: '0px'
+        duration: ANIMATION_CONFIG.SEARCH_DURATION,
+        easing: ANIMATION_CONFIG.SEARCH_EASING,
+        fill: 'forwards'
       }
-    ], {
-      duration: ANIMATION_CONFIG.SEARCH_DURATION,
-      easing: ANIMATION_CONFIG.SEARCH_EASING,
-      fill: 'forwards'
-    })
+    )
   }
-  
+
   const createTabsHideAnimation = (): AnimationControls => {
-    return useAnimate(tabsContainerRef, [
+    return useAnimate(
+      tabsContainerRef,
+      [
+        {
+          opacity: 1,
+          transform: 'scaleX(1)',
+          maxWidth: '100%'
+        },
+        // 添加中间关键帧，让隐藏更自然
+        {
+          opacity: 0.4,
+          transform: 'scaleX(0.6)',
+          maxWidth: '30%',
+          offset: 0.5
+        },
+        {
+          opacity: 0,
+          transform: 'scaleX(0)',
+          maxWidth: '0px'
+        }
+      ],
       {
-        opacity: 1,
-        transform: 'scaleX(1)',
-        maxWidth: '100%'
-      },
-      // 添加中间关键帧，让隐藏更自然
-      {
-        opacity: 0.4,
-        transform: 'scaleX(0.6)',
-        maxWidth: '30%',
-        offset: 0.5
-      },
-      {
-        opacity: 0,
-        transform: 'scaleX(0)',
-        maxWidth: '0px'
+        duration: ANIMATION_CONFIG.SEARCH_DURATION,
+        easing: ANIMATION_CONFIG.SEARCH_EASING,
+        fill: 'forwards'
       }
-    ], {
-      duration: ANIMATION_CONFIG.SEARCH_DURATION,
-      easing: ANIMATION_CONFIG.SEARCH_EASING,
-      fill: 'forwards'
-    })
+    )
   }
 
   const createTabsShowAnimation = (): AnimationControls => {
-    return useAnimate(tabsContainerRef, [
+    return useAnimate(
+      tabsContainerRef,
+      [
+        {
+          opacity: 0,
+          transform: 'scaleX(0)',
+          maxWidth: '0px'
+        },
+        // 添加中间关键帧，让显示更自然
+        {
+          opacity: 0.6,
+          transform: 'scaleX(0.7)',
+          maxWidth: '70%',
+          offset: 0.4
+        },
+        {
+          opacity: 1,
+          transform: 'scaleX(1)',
+          maxWidth: '100%'
+        }
+      ],
       {
-        opacity: 0,
-        transform: 'scaleX(0)',
-        maxWidth: '0px'
-      },
-      // 添加中间关键帧，让显示更自然
-      {
-        opacity: 0.6,
-        transform: 'scaleX(0.7)',
-        maxWidth: '70%',
-        offset: 0.4
-      },
-      {
-        opacity: 1,
-        transform: 'scaleX(1)',
-        maxWidth: '100%'
+        duration: ANIMATION_CONFIG.SEARCH_DURATION,
+        easing: ANIMATION_CONFIG.SEARCH_EASING,
+        fill: 'forwards'
       }
-    ], {
-      duration: ANIMATION_CONFIG.SEARCH_DURATION,
-      easing: ANIMATION_CONFIG.SEARCH_EASING,
-      fill: 'forwards'
-    })
+    )
   }
-  
+
   const resetSearchStyles = () => {
     nextTick(() => {
       if (searchContainerRef.value) {
@@ -288,39 +301,39 @@ export function useAnimation(
       }
     })
   }
-  
+
   const initializeStyles = () => {
     resetSearchStyles()
   }
-  
+
   // ==================== 状态设置方法 ====================
-  
+
   const setSearchVisible = (visible: boolean) => {
     isSearchVisible.value = visible
   }
-  
+
   const setSearchAnimating = (animating: boolean) => {
     isSearchAnimating.value = animating
   }
-  
+
   const setOpeningSearch = (opening: boolean) => {
     isOpeningSearch.value = opening
   }
-  
+
   // ==================== 返回接口 ====================
-  
+
   return {
     // Overlay 动画状态
     currentAnimationState: readonly(overlayStateManager.state),
     isSlideInComplete: readonly(isSlideInComplete),
-    
+
     // 搜索动画状态
     isSearchVisible: readonly(isSearchVisible),
     isSearchAnimating: readonly(isSearchAnimating),
     isOpeningSearch: readonly(isOpeningSearch),
     showSearchContainer: readonly(showSearchContainer),
     showTabsContainer: readonly(showTabsContainer),
-    
+
     // Overlay 动画方法
     setAnimationState,
     canStartClosing,
@@ -328,7 +341,7 @@ export function useAnimation(
     createSlideInAnimation,
     createSlideOutAnimation,
     resetOverlayState,
-    
+
     // 搜索动画方法
     createSearchExpandAnimation,
     createSearchCollapseAnimation,

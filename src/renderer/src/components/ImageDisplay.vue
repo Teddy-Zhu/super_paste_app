@@ -7,9 +7,7 @@
     @load="handleLoad"
     @error="handleError"
   />
-  <div v-else-if="isLoading" :class="loadingClass">
-    Loading...
-  </div>
+  <div v-else-if="isLoading" :class="loadingClass">Loading...</div>
   <div v-else-if="hasError" :class="errorClass">
     {{ errorMessage }}
   </div>
@@ -79,7 +77,7 @@ const processImage = async () => {
       // 小图片使用 base64
       try {
         const binaryString = Array.from(props.imageData)
-          .map(byte => String.fromCharCode(byte))
+          .map((byte) => String.fromCharCode(byte))
           .join('')
         const base64String = btoa(binaryString)
         imageSrc.value = `data:image/png;base64,${base64String}`
@@ -116,13 +114,13 @@ const cleanupObjectURL = () => {
 const handleLoad = (event: Event) => {
   isLoading.value = false
   hasError.value = false
-  
+
   // 如果使用的是 Object URL，可以在这里清理（可选）
   // 注意：立即清理可能导致图片无法显示，所以这里注释掉
   // if (isLargeImage.value) {
   //   cleanupObjectURL()
   // }
-  
+
   emit('load', event)
 }
 
@@ -174,4 +172,4 @@ onUnmounted(() => {
   text-align: center;
   padding: 16px;
 }
-</style> 
+</style>

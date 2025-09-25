@@ -1,14 +1,9 @@
 import { BaseWorkerManager } from './base-worker-manager'
 import type { WorkerConfig, WorkerRequest } from '../types/worker-types'
-import type {
-  SyncResult,
-  ScheduledSyncConfig,
-  ScheduledSyncStatus
-} from '../sync/types'
+import type { SyncResult, ScheduledSyncConfig, ScheduledSyncStatus } from '../sync/types'
 import logger from '../utils/logger'
 import scheduledSyncWorkerPath from './scheduled-sync.worker?modulePath'
 import { BrowserWindow } from 'electron'
-
 
 /**
  * 定时同步任务 Worker 管理器
@@ -66,7 +61,10 @@ export class ScheduledSyncManager extends BaseWorkerManager {
               logger.warn(`[${this.config.name}] 定时同步自动启动失败，但 Worker 基础功能正常`)
             }
           } catch (startError) {
-            logger.warn(`[${this.config.name}] 定时同步启动异常，但 Worker 基础功能正常:`, startError)
+            logger.warn(
+              `[${this.config.name}] 定时同步启动异常，但 Worker 基础功能正常:`,
+              startError
+            )
           }
         } else {
           logger.info(`[${this.config.name}] 配置不完整或未启用，仅 Worker 基础功能可用`)
@@ -130,7 +128,7 @@ export class ScheduledSyncManager extends BaseWorkerManager {
   public async startScheduledSync(): Promise<boolean> {
     try {
       const result = await this.call<boolean>('startScheduledSync')
-      
+
       if (result) {
         logger.info(`[${this.config.name}] 定时同步已启动`)
       } else {
@@ -150,7 +148,7 @@ export class ScheduledSyncManager extends BaseWorkerManager {
   public async stopScheduledSync(): Promise<boolean> {
     try {
       const result = await this.call<boolean>('stopScheduledSync')
-      
+
       if (result) {
         logger.info(`[${this.config.name}] 定时同步已停止`)
       } else {
@@ -211,8 +209,6 @@ export class ScheduledSyncManager extends BaseWorkerManager {
       }
     }
   }
-
-
 
   /**
    * 测试同步连接
@@ -278,7 +274,7 @@ export class ScheduledSyncManager extends BaseWorkerManager {
   public async updateConfig(config: ScheduledSyncConfig): Promise<boolean> {
     try {
       const result = await this.call<boolean>('updateConfig', config)
-      
+
       if (result) {
         logger.info(`[${this.config.name}] 配置更新成功`)
       } else {
@@ -319,16 +315,24 @@ export class ScheduledSyncManager extends BaseWorkerManager {
     } catch (error) {
       logger.error(`[${this.config.name}] 处理 Worker 请求失败:`, error)
       // 发送错误响应
-      this.sendWorkerResponse(request.id, false, undefined, error instanceof Error ? error.message : '处理请求失败')
+      this.sendWorkerResponse(
+        request.id,
+        false,
+        undefined,
+        error instanceof Error ? error.message : '处理请求失败'
+      )
     }
   }
-
-
 
   /**
    * 向 Worker 发送响应
    */
-  private sendWorkerResponse(requestId: string, success: boolean, data?: any, error?: string): void {
+  private sendWorkerResponse(
+    requestId: string,
+    success: boolean,
+    data?: any,
+    error?: string
+  ): void {
     if (!this.worker) {
       return
     }

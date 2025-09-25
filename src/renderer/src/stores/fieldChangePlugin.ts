@@ -24,31 +24,35 @@ export function createFieldChangePlugin(callback: FieldChangeCallback) {
       }
     }
 
-    if (!store.$persist){
+    if (!store.$persist) {
       console.log('persisted store, skip field change plugin', store.$id)
       return
     }
     for (const key in stateRefs) {
       let oldVal = stateRefs[key].value
-      watch(stateRefs[key], (newVal) => {
-        const flag = `${store.$id}.${key}`
-        if (silentFlags.has(flag)) {
-          silentFlags.delete(flag)
-          oldVal = newVal
-          console.log('skip field change', flag)
-          return // 👈 跳过本次回调
-        }
+      watch(
+        stateRefs[key],
+        (newVal) => {
+          const flag = `${store.$id}.${key}`
+          if (silentFlags.has(flag)) {
+            silentFlags.delete(flag)
+            oldVal = newVal
+            console.log('skip field change', flag)
+            return // 👈 跳过本次回调
+          }
 
-        callback({
-          storeId: store.$id,
-          key,
-          oldValue: oldVal,
-          newValue: newVal,
-        })
-        oldVal = newVal
-      },{
-        deep: true
-      })
+          callback({
+            storeId: store.$id,
+            key,
+            oldValue: oldVal,
+            newValue: newVal
+          })
+          oldVal = newVal
+        },
+        {
+          deep: true
+        }
+      )
     }
   }
 }

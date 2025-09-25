@@ -18,12 +18,15 @@ export abstract class BaseWorkerManager extends EventEmitter implements WorkerMa
   protected worker: Worker | null = null
   protected config: WorkerConfig
   protected isInitialized: boolean = false
-  protected pendingRequests: Map<string, {
-    resolve: (value: any) => void
-    reject: (error: Error) => void
-    timeout: NodeJS.Timeout
-  }> = new Map()
-  
+  protected pendingRequests: Map<
+    string,
+    {
+      resolve: (value: any) => void
+      reject: (error: Error) => void
+      timeout: NodeJS.Timeout
+    }
+  > = new Map()
+
   private requestTimeout: number = 30000 // 30秒超时
   private messageIdCounter: number = 0
 
@@ -41,7 +44,6 @@ export abstract class BaseWorkerManager extends EventEmitter implements WorkerMa
     }
 
     try {
-
       this.worker = new Worker(this.config.workerPath, this.config.options)
 
       // 设置消息监听
@@ -72,8 +74,6 @@ export abstract class BaseWorkerManager extends EventEmitter implements WorkerMa
     }
 
     try {
-
-
       // 清理所有待处理的请求
       this.clearPendingRequests()
 
@@ -81,8 +81,6 @@ export abstract class BaseWorkerManager extends EventEmitter implements WorkerMa
       await this.worker.terminate()
       this.worker = null
       this.isInitialized = false
-
-
     } catch (error) {
       logger.error(`[${this.config.name}] 停止 Worker 失败:`, error)
       throw error
@@ -99,7 +97,7 @@ export abstract class BaseWorkerManager extends EventEmitter implements WorkerMa
 
     return new Promise((resolve, reject) => {
       const requestId = this.generateRequestId()
-      
+
       const request: WorkerRequest = {
         id: requestId,
         type: 'request',

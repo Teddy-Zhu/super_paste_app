@@ -46,7 +46,7 @@ export class PowerMonitorManager {
     logger.debug('[主进程] 系统进入休眠状态')
 
     // 暂停剪贴板监听以避免在休眠期间的错误
-    clipboardManager.stopListening().catch(error => {
+    clipboardManager.stopListening().catch((error) => {
       logger.error('[主进程] 停止剪贴板监听失败:', error)
     })
   }

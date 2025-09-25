@@ -44,8 +44,6 @@ class IpcManager {
           })
         }
       })
-
-
     } catch (error) {
       logger.error('[IPC管理器] 通知前端标签更新失败:', error)
     }
@@ -65,7 +63,6 @@ class IpcManager {
           })
         }
       })
-
     } catch (error) {
       logger.error('[IPC管理器] 通知前端剪贴板历史更新失败:', error)
     }
@@ -94,31 +91,37 @@ class IpcManager {
    */
   private registerClipboardHandlers(): void {
     // 获取剪贴板历史记录
-    ipcMain.handle('clipboard-get-history', async (_, options?: {
-      limit?: number
-      offset?: number
-      tagIds?: string[]
-      parseType?: string
-      searchText?: string
-      orderBy?: 'timestamp' | 'last_used'
-      orderDirection?: 'ASC' | 'DESC'
-    }) => {
-      try {
-        // 统一使用搜索方法
-        const result = await clipboardHistoryService.searchHistory(options || {})
-        return {
-          success: true,
-          data: result.items,
-          apps: result.apps
+    ipcMain.handle(
+      'clipboard-get-history',
+      async (
+        _,
+        options?: {
+          limit?: number
+          offset?: number
+          tagIds?: string[]
+          parseType?: string
+          searchText?: string
+          orderBy?: 'timestamp' | 'last_used'
+          orderDirection?: 'ASC' | 'DESC'
         }
-      } catch (error) {
-        logger.error('[IPC管理器] 获取剪贴板历史失败:', error)
-        return {
-          success: false,
-          error: (error as Error).message || '获取剪贴板历史失败'
+      ) => {
+        try {
+          // 统一使用搜索方法
+          const result = await clipboardHistoryService.searchHistory(options || {})
+          return {
+            success: true,
+            data: result.items,
+            apps: result.apps
+          }
+        } catch (error) {
+          logger.error('[IPC管理器] 获取剪贴板历史失败:', error)
+          return {
+            success: false,
+            error: (error as Error).message || '获取剪贴板历史失败'
+          }
         }
       }
-    })
+    )
 
     // 还原剪贴板内容
     ipcMain.handle('clipboard-restore', async (_, itemId: string) => {
@@ -165,12 +168,27 @@ class IpcManager {
       }
     })
 
+    // 解析二维码并复制到剪贴板
+    ipcMain.handle('clipboard-parse-qrcode', async (_, itemId: string) => {
+      try {
+        // 直接调用worker中的解析方法，包含数据库查询和二维码解析
+        const result = await clipboardManager.call('parseQRCodeFromItem', itemId)
+        return result
+      } catch (error) {
+        logger.error('[IPC管理器] 解析二维码失败:', error)
+        return {
+          success: false,
+          error: (error as Error).message || '解析二维码失败'
+        }
+      }
+    })
+
     // 删除剪贴板历史项
     ipcMain.handle('clipboard-delete-item', async (_, itemId: string) => {
       try {
         // 1. 先删除绑定的标签
         await clipboardTagService.unbindAllTagsFromRecord(itemId)
-        
+
         // 2. 删除剪贴板历史项
         const success = await clipboardHistoryService.deleteHistoryItem(itemId)
         if (success) {
@@ -198,14 +216,14 @@ class IpcManager {
       try {
         // 清空剪贴板历史（数据库中的clearAllRecords已经包含了标签绑定的清理）
         await clipboardHistoryService.clearHistory()
-        
+
         // 通知 clipboard-manager 同步清空状态
         await clipboardManager.syncDeletedRecords(['*'])
-        
+
         // 通知前端更新（包括标签和历史）
         this.notifyClipboardHistoryUpdated()
         this.notifyTagsUpdated()
-        
+
         return {
           success: true,
           message: '剪贴板历史已清空'
@@ -279,21 +297,24 @@ class IpcManager {
     })
 
     // 更新剪贴板管理器配置
-    ipcMain.handle('clipboard-update-config', async (_, config: Partial<ClipboardManagerConfig>) => {
-      try {
-        await clipboardManager.updateConfig(config)
-        return {
-          success: true,
-          message: '剪贴板配置已更新'
-        }
-      } catch (error) {
-        logger.error('[IPC管理器] 更新剪贴板配置失败:', error)
-        return {
-          success: false,
-          error: (error as Error).message || '更新剪贴板配置失败'
+    ipcMain.handle(
+      'clipboard-update-config',
+      async (_, config: Partial<ClipboardManagerConfig>) => {
+        try {
+          await clipboardManager.updateConfig(config)
+          return {
+            success: true,
+            message: '剪贴板配置已更新'
+          }
+        } catch (error) {
+          logger.error('[IPC管理器] 更新剪贴板配置失败:', error)
+          return {
+            success: false,
+            error: (error as Error).message || '更新剪贴板配置失败'
+          }
         }
       }
-    })
+    )
 
     // 获取所有标签
     ipcMain.handle('get-all-tags', async () => {
@@ -313,52 +334,65 @@ class IpcManager {
     })
 
     // 创建标签
-    ipcMain.handle('create-tag', async (_, data: { name: string; color: string; description?: string }) => {
-      try {
-        const tagId = await clipboardTagService.createTagGroup(data.name, data.color, data.description)
-        if (tagId) {
-          // 通知前端标签数据已更新
-          this.notifyTagsUpdated()
-          return {
-            success: true,
-            data: { tagId },
-            message: '标签创建成功'
+    ipcMain.handle(
+      'create-tag',
+      async (_, data: { name: string; color: string; description?: string }) => {
+        try {
+          const tagId = await clipboardTagService.createTagGroup(
+            data.name,
+            data.color,
+            data.description
+          )
+          if (tagId) {
+            // 通知前端标签数据已更新
+            this.notifyTagsUpdated()
+            return {
+              success: true,
+              data: { tagId },
+              message: '标签创建成功'
+            }
+          } else {
+            return {
+              success: false,
+              error: '创建标签失败'
+            }
           }
-        } else {
+        } catch (error) {
+          logger.error('[IPC管理器] 创建标签失败:', error)
           return {
             success: false,
-            error: '创建标签失败'
+            error: (error as Error).message || '创建标签失败'
           }
         }
-      } catch (error) {
-        logger.error('[IPC管理器] 创建标签失败:', error)
-        return {
-          success: false,
-          error: (error as Error).message || '创建标签失败'
-        }
       }
-    })
+    )
 
     // 更新标签
-    ipcMain.handle('update-tag', async (_, data: { tagId: string; updates: { name?: string; color?: string; description?: string } }) => {
-      try {
-        const success = await clipboardTagService.updateTagGroup(data.tagId, data.updates)
-        if (success) {
-          // 通知前端标签数据已更新
-          this.notifyTagsUpdated()
-        }
-        return {
-          success,
-          message: success ? '标签更新成功' : '更新标签失败'
-        }
-      } catch (error) {
-        logger.error('[IPC管理器] 更新标签失败:', error)
-        return {
-          success: false,
-          error: (error as Error).message || '更新标签失败'
+    ipcMain.handle(
+      'update-tag',
+      async (
+        _,
+        data: { tagId: string; updates: { name?: string; color?: string; description?: string } }
+      ) => {
+        try {
+          const success = await clipboardTagService.updateTagGroup(data.tagId, data.updates)
+          if (success) {
+            // 通知前端标签数据已更新
+            this.notifyTagsUpdated()
+          }
+          return {
+            success,
+            message: success ? '标签更新成功' : '更新标签失败'
+          }
+        } catch (error) {
+          logger.error('[IPC管理器] 更新标签失败:', error)
+          return {
+            success: false,
+            error: (error as Error).message || '更新标签失败'
+          }
         }
       }
-    })
+    )
 
     // 删除标签
     ipcMain.handle('delete-tag', async (_, tagId: string) => {
@@ -421,26 +455,29 @@ class IpcManager {
     })
 
     // 解除标签绑定
-    ipcMain.handle('unbind-tag-from-record', async (_, data: { contentId: string; tagId: string }) => {
-      try {
-        const success = await clipboardTagService.unbindTagFromRecord(data.contentId, data.tagId)
-        if (success) {
-          // 通知前端剪贴板历史已更新
-          this.notifyClipboardHistoryUpdated()
-          this.notifyTagsUpdated()
-        }
-        return {
-          success,
-          message: success ? '标签解绑成功' : '解除标签绑定失败'
-        }
-      } catch (error) {
-        logger.error('[IPC管理器] 解除标签绑定失败:', error)
-        return {
-          success: false,
-          error: (error as Error).message || '解除标签绑定失败'
+    ipcMain.handle(
+      'unbind-tag-from-record',
+      async (_, data: { contentId: string; tagId: string }) => {
+        try {
+          const success = await clipboardTagService.unbindTagFromRecord(data.contentId, data.tagId)
+          if (success) {
+            // 通知前端剪贴板历史已更新
+            this.notifyClipboardHistoryUpdated()
+            this.notifyTagsUpdated()
+          }
+          return {
+            success,
+            message: success ? '标签解绑成功' : '解除标签绑定失败'
+          }
+        } catch (error) {
+          logger.error('[IPC管理器] 解除标签绑定失败:', error)
+          return {
+            success: false,
+            error: (error as Error).message || '解除标签绑定失败'
+          }
         }
       }
-    })
+    )
 
     // 导出 heapdump
     ipcMain.handle('export-heapdump', async () => {
@@ -472,9 +509,10 @@ class IpcManager {
         // 等待所有 Worker heapdump 导出完成
         await Promise.all(workerPromises)
 
-        const message = exportedFiles.length > 1
-          ? `内存快照已导出到桌面 (${exportedFiles.length} 个文件)`
-          : `内存快照已导出到桌面: ${mainFilename}`
+        const message =
+          exportedFiles.length > 1
+            ? `内存快照已导出到桌面 (${exportedFiles.length} 个文件)`
+            : `内存快照已导出到桌面: ${mainFilename}`
 
         return {
           success: true,
@@ -490,7 +528,6 @@ class IpcManager {
         }
       }
     })
-
   }
 
   /**
@@ -506,6 +543,8 @@ class IpcManager {
       'clipboard-get-history',
       'clipboard-restore',
       'clipboard-restore-as-text',
+      'clipboard-restore-ocr-text',
+      'clipboard-parse-qrcode',
       'clipboard-delete-item',
       'clipboard-clear-history',
       'clipboard-get-status',
@@ -522,7 +561,7 @@ class IpcManager {
       'export-heapdump'
     ]
 
-    clipboardChannels.forEach(channel => {
+    clipboardChannels.forEach((channel) => {
       ipcMain.removeAllListeners(channel)
     })
 

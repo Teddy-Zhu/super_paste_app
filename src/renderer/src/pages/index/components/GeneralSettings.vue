@@ -121,7 +121,7 @@ const clearHistory = async () => {
         </div>
         <div class="setting-control">
           <label class="toggle-switch">
-            <input type="checkbox" :checked="settingsStore.autoStart" @change="toggleAutoStart">
+            <input type="checkbox" :checked="settingsStore.autoStart" @change="toggleAutoStart" />
             <span class="toggle-slider"></span>
           </label>
         </div>
@@ -135,7 +135,11 @@ const clearHistory = async () => {
         </div>
         <div class="setting-control">
           <label class="toggle-switch">
-            <input type="checkbox" :checked="settingsStore.enableLocalOCR" @change="toggleLocalOCR">
+            <input
+              type="checkbox"
+              :checked="settingsStore.enableLocalOCR"
+              @change="toggleLocalOCR"
+            />
             <span class="toggle-slider"></span>
           </label>
         </div>
@@ -149,9 +153,17 @@ const clearHistory = async () => {
         </div>
         <div class="setting-control">
           <div class="number-input-container">
-            <input type="number" :value="settingsStore.maxHistorySize"
-              @input="updateMaxHistorySize(parseInt(($event.target as HTMLInputElement).value) || 100)" min="10"
-              max="1000" step="10" class="number-input">
+            <input
+              type="number"
+              :value="settingsStore.maxHistorySize"
+              @input="
+                updateMaxHistorySize(parseInt(($event.target as HTMLInputElement).value) || 100)
+              "
+              min="10"
+              max="1000"
+              step="10"
+              class="number-input"
+            />
             <span class="number-unit">条</span>
           </div>
         </div>
@@ -171,7 +183,10 @@ const clearHistory = async () => {
               <button
                 v-for="preset in keepTimePresets"
                 :key="preset.value"
-                :class="['preset-button-compact', { active: settingsStore.maxKeepTime === preset.value }]"
+                :class="[
+                  'preset-button-compact',
+                  { active: settingsStore.maxKeepTime === preset.value }
+                ]"
                 @click="updateMaxKeepTime(preset.value)"
               >
                 {{ preset.label }}
@@ -183,15 +198,19 @@ const clearHistory = async () => {
               <input
                 type="number"
                 :value="settingsStore.maxKeepTime === -1 ? '' : settingsStore.maxKeepTime"
-                @input="updateMaxKeepTime(parseInt(($event.target as HTMLInputElement).value) || -1)"
+                @input="
+                  updateMaxKeepTime(parseInt(($event.target as HTMLInputElement).value) || -1)
+                "
                 :placeholder="settingsStore.maxKeepTime === -1 ? '不限制' : '输入天数'"
                 min="1"
                 max="365"
                 step="1"
                 class="number-input"
                 :disabled="settingsStore.maxKeepTime === -1"
-              >
-              <span class="number-unit">{{ settingsStore.maxKeepTime === -1 ? '不限制' : '天' }}</span>
+              />
+              <span class="number-unit">{{
+                settingsStore.maxKeepTime === -1 ? '不限制' : '天'
+              }}</span>
             </div>
           </div>
 
@@ -205,9 +224,14 @@ const clearHistory = async () => {
               max="365"
               step="1"
               class="keep-time-slider"
-            >
+            />
             <div class="slider-marks">
-              <div class="slider-mark" v-for="mark in sliderMarks" :key="mark.value" :style="{ left: `${getMarkPosition(mark.value)}%` }">
+              <div
+                class="slider-mark"
+                v-for="mark in sliderMarks"
+                :key="mark.value"
+                :style="{ left: `${getMarkPosition(mark.value)}%` }"
+              >
                 <span class="mark-label">{{ mark.label }}</span>
               </div>
             </div>
@@ -222,9 +246,7 @@ const clearHistory = async () => {
           <p class="setting-description">清除所有剪贴板历史记录，此操作不可撤销</p>
         </div>
         <div class="setting-control">
-          <button class="clear-history-button" @click="clearHistory">
-            清除历史
-          </button>
+          <button class="clear-history-button" @click="clearHistory">清除历史</button>
         </div>
       </div>
     </div>

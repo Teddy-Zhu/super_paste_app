@@ -1,8 +1,5 @@
 import databaseService from './database-service'
-import type {
-  TagGroup,
-  TagStats
-} from '../types/clipboard-types'
+import type { TagGroup, TagStats } from '../types/clipboard-types'
 import { ClipboardDataConverter } from '../types/clipboard-types'
 import log from 'electron-log'
 
@@ -14,7 +11,11 @@ class ClipboardTagService {
   /**
    * 创建新标签组
    */
-  public async createTagGroup(name: string, color: string, description?: string): Promise<string | null> {
+  public async createTagGroup(
+    name: string,
+    color: string,
+    description?: string
+  ): Promise<string | null> {
     try {
       const tagId = ClipboardDataConverter.generateTagId()
       const now = Date.now()
@@ -57,7 +58,10 @@ class ClipboardTagService {
   /**
    * 更新标签组
    */
-  public async updateTagGroup(tagId: string, updates: Partial<Omit<TagGroup, 'id' | 'createdAt'>>): Promise<boolean> {
+  public async updateTagGroup(
+    tagId: string,
+    updates: Partial<Omit<TagGroup, 'id' | 'createdAt'>>
+  ): Promise<boolean> {
     try {
       const updateData = {
         ...updates,

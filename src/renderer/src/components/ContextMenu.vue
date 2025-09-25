@@ -26,7 +26,7 @@ const menuStyle = computed(() => {
     position: 'fixed' as const,
     zIndex: 9999,
     left: `${contextMenuState.x}px`,
-    top: `${contextMenuState.y}px`,
+    top: `${contextMenuState.y}px`
   }
 })
 
@@ -38,7 +38,7 @@ const submenuStyle = computed(() => {
     position: 'fixed' as const,
     zIndex: 10000,
     left: `${submenuState.value.x}px`,
-    top: `${submenuState.value.y}px`,
+    top: `${submenuState.value.y}px`
   }
 })
 
@@ -171,8 +171,6 @@ const handleMenuItemMouseEnter = (item: any, event: MouseEvent) => {
     hideSubmenu()
   }
 }
-
-
 </script>
 
 <template>

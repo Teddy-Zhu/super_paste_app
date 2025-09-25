@@ -132,7 +132,8 @@ export function useScrollManagement(
       let maxScrollLeft: number
 
       if (scrollbarInstance) {
-        maxScrollLeft = scrollbarInstance.size.content.width - scrollbarInstance.size.container.width
+        maxScrollLeft =
+          scrollbarInstance.size.content.width - scrollbarInstance.size.container.width
       } else {
         const container = clipboardScrollRef.value!
         maxScrollLeft = container.scrollWidth - container.clientWidth

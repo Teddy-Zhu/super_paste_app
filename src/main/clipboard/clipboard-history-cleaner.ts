@@ -7,7 +7,7 @@ import type { CleanupConfig, CleanupStats } from '../types/clipboard-types'
 import type { WorkerConfig, WorkerRequest } from '../types/worker-types'
 import clipboardHistoryCleanerWorkerPath from '../workers/clipboard-history-cleaner.worker?modulePath'
 import logger from '../utils/logger'
-import {app } from 'electron'
+import { app } from 'electron'
 
 /**
  * 剪贴板历史记录清理器（主线程接口）
@@ -22,8 +22,6 @@ class ClipboardHistoryCleaner extends BaseWorkerManager {
       workerPath: clipboardHistoryCleanerWorkerPath
     }
     super(config)
-
-
 
     // 设置事件监听器
     this.setupEventListeners()
@@ -44,7 +42,7 @@ class ClipboardHistoryCleaner extends BaseWorkerManager {
     })
 
     // 监听清理完成事件（来自清理器 Worker）
-    this.on('cleanup-completed', (data: { stats: any, deletedRecordIds?: string[] }) => {
+    this.on('cleanup-completed', (data: { stats: any; deletedRecordIds?: string[] }) => {
       logger.info('[清理器管理器] 收到清理完成事件:', data.stats)
 
       // 通知前端更新
@@ -144,8 +142,6 @@ class ClipboardHistoryCleaner extends BaseWorkerManager {
     await this.call('initialize', { config: initialConfig, userDataPath })
   }
 
-
-
   /**
    * 通知前端剪贴板历史已更新
    */
@@ -159,8 +155,6 @@ class ClipboardHistoryCleaner extends BaseWorkerManager {
       logger.error('[历史记录清理器] 通知前端失败:', error)
     }
   }
-
-
 
   /**
    * 启动自动清理
@@ -217,18 +211,15 @@ class ClipboardHistoryCleaner extends BaseWorkerManager {
     }
   }
 
-
-
   /**
    * 获取当前配置
    */
   public getConfig(): CleanupConfig {
     if (this.isRunning()) {
       // 异步获取配置，但为了兼容性返回默认配置
-      this.call('getConfig')
-        .catch((error) => {
-          logger.error('[历史记录清理器] 获取配置失败:', error)
-        })
+      this.call('getConfig').catch((error) => {
+        logger.error('[历史记录清理器] 获取配置失败:', error)
+      })
     }
 
     // 返回默认配置以保持兼容性

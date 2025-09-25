@@ -55,7 +55,18 @@ export interface ClipboardContentForUI {
 export interface ClipboardItem {
   id: string
   content: ClipboardContent | ClipboardContentForUI
-  primaryType: 'text' | 'html' | 'image' | 'rtf' | 'files' | 'url' | 'email' | 'phone' | 'code' | 'color' | 'empty'
+  primaryType:
+    | 'text'
+    | 'html'
+    | 'image'
+    | 'rtf'
+    | 'files'
+    | 'url'
+    | 'email'
+    | 'phone'
+    | 'code'
+    | 'color'
+    | 'empty'
   availableFormats: string[]
   timestamp: number
   lastUsed: number
@@ -268,12 +279,15 @@ export class ClipboardDataConverter {
   /**
    * 检测主要内容类型（合并了原来的 parseType 逻辑）
    */
-  static detectPrimaryType(content: ClipboardContent, availableFormats?: string[]): ClipboardItem['primaryType'] {
+  static detectPrimaryType(
+    content: ClipboardContent,
+    availableFormats?: string[]
+  ): ClipboardItem['primaryType'] {
     const formats = availableFormats || ClipboardDataConverter.getAvailableFormats(content)
 
     // 文件类型优先级最高
     if (content.files && content.files.length > 0) return 'files'
-    
+
     // 图片类型
     if (content.image) return 'image'
 
@@ -286,40 +300,42 @@ export class ClipboardDataConverter {
     // 高优先级文本类型检测
     if (content.text) {
       const text = content.text.trim()
-      
+
       // 检测颜色值 (#xxxxxx 或 #xxxxxxxx)
       const colorRegex = /^#[0-9a-fA-F]{6}$|^#[0-9a-fA-F]{8}$/
       if (colorRegex.test(text)) {
         return 'color'
       }
-      
+
       // 检测URL
       const urlRegex = /^https?:\/\/[^\s]+$/i
       if (urlRegex.test(text)) {
         return 'url'
       }
-      
+
       // 检测邮箱
       const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
       if (emailRegex.test(text)) {
         return 'email'
       }
-      
+
       // 检测电话号码
       const phoneRegex = /^1[3-9]\d{9}$/
       if (phoneRegex.test(text.replace(/\s/g, ''))) {
         return 'phone'
       }
-      
+
       // 检测代码（简单检测）
-      if (text.includes('{') && text.includes('}') ||
-          text.includes('function') ||
-          text.includes('class ') ||
-          text.includes('import ') ||
-          text.includes('export ')) {
+      if (
+        (text.includes('{') && text.includes('}')) ||
+        text.includes('function') ||
+        text.includes('class ') ||
+        text.includes('import ') ||
+        text.includes('export ')
+      ) {
         return 'code'
       }
-      
+
       return 'text'
     }
 
@@ -343,7 +359,13 @@ export class ClipboardDataConverter {
    * 检查内容是否为空
    */
   static isEmptyContent(content: ClipboardContent): boolean {
-    return !content.text && !content.html && !content.image && !content.rtf && (!content.files || content.files.length === 0)
+    return (
+      !content.text &&
+      !content.html &&
+      !content.image &&
+      !content.rtf &&
+      (!content.files || content.files.length === 0)
+    )
   }
 
   /**
@@ -389,8 +411,8 @@ export class ClipboardDataConverter {
     // 2. 数据长度
     // 3. 每隔一定间隔采样
     // 4. 数据尾部
-    const head = imageData.subarray(0, 512).toString('base64')  // 头部512字节
-    const tail = imageData.subarray(dataLength - 512).toString('base64')  // 尾部512字节
+    const head = imageData.subarray(0, 512).toString('base64') // 头部512字节
+    const tail = imageData.subarray(dataLength - 512).toString('base64') // 尾部512字节
 
     // 中间部分采样：每隔1000字节取32字节
     let samples = ''
@@ -486,9 +508,11 @@ export class ClipboardDataConverter {
    * 批量转换数据库记录到剪贴板项
    * 统一处理标签转换逻辑
    */
-  static batchRecordsToItems(records: Array<ClipboardHistoryRecord & { tags?: TagGroupRecord[], appInfo?: AppInfoRecord }>): ClipboardItem[] {
-    return records.map(record => {
-      const tags = record.tags?.map(tag => this.tagRecordToTag(tag)) || []
+  static batchRecordsToItems(
+    records: Array<ClipboardHistoryRecord & { tags?: TagGroupRecord[]; appInfo?: AppInfoRecord }>
+  ): ClipboardItem[] {
+    return records.map((record) => {
+      const tags = record.tags?.map((tag) => this.tagRecordToTag(tag)) || []
       return this.recordToItem(record, tags)
     })
   }
@@ -510,6 +534,6 @@ export class ClipboardDataConverter {
     last_used: number
     source_app?: string
   }> {
-    return items.map(item => this.itemToRecordData(item))
+    return items.map((item) => this.itemToRecordData(item))
   }
 }

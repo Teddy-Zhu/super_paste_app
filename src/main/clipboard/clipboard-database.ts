@@ -51,7 +51,7 @@ class ClipboardDatabase {
     try {
       // 创建数据库连接
       this.db = new Database(this.dbPath)
-      
+
       // 设置数据库配置
       this.db.pragma('journal_mode = WAL') // 使用 WAL 模式提高并发性能
       this.db.pragma('synchronous = NORMAL') // 平衡性能和安全性
@@ -66,8 +66,6 @@ class ClipboardDatabase {
 
       // 预加载应用信息缓存
       this.preloadAppCache()
-
-
     } catch (error) {
       logger.error('[剪贴板数据库] 数据库初始化失败:', error)
       throw error
@@ -145,10 +143,7 @@ class ClipboardDatabase {
     this.db.exec(createClipboardHistoryTableSQL)
     this.db.exec(createTagGroupsTableSQL)
     this.db.exec(createClipboardHistoryTagsTableSQL)
-
   }
-
-
 
   /**
    * 创建数据库索引以优化查询性能
@@ -185,7 +180,7 @@ class ClipboardDatabase {
       'CREATE INDEX IF NOT EXISTS idx_clipboard_history_tags_created_at ON clipboard_history_tags(created_at)'
     ]
 
-    indexes.forEach(indexSQL => {
+    indexes.forEach((indexSQL) => {
       this.db!.exec(indexSQL)
     })
   }
@@ -373,7 +368,8 @@ class ClipboardDatabase {
     if (!this.db) throw new Error('数据库未初始化')
 
     try {
-      const querySQL = 'SELECT * FROM clipboard_history WHERE hash = ? ORDER BY last_used DESC LIMIT 1'
+      const querySQL =
+        'SELECT * FROM clipboard_history WHERE hash = ? ORDER BY last_used DESC LIMIT 1'
       const stmt = this.db.prepare(querySQL)
       return stmt.get(hash) as ClipboardHistoryRecord | null
     } catch (error) {
@@ -386,16 +382,13 @@ class ClipboardDatabase {
    * 轻量级查询：只获取记录的 content_id 和 hash
    * 用于缓存初始化，避免加载完整记录数据
    */
-  public queryRecordIdsAndHashes(options: QueryOptions = {}): Array<{ content_id: string, hash: string }> {
+  public queryRecordIdsAndHashes(
+    options: QueryOptions = {}
+  ): Array<{ content_id: string; hash: string }> {
     if (!this.db) throw new Error('数据库未初始化')
 
     try {
-      const {
-        limit = 10000,
-        offset = 0,
-        orderBy = 'last_used',
-        orderDirection = 'DESC'
-      } = options
+      const { limit = 10000, offset = 0, orderBy = 'last_used', orderDirection = 'DESC' } = options
 
       // 只查询 content_id 和 hash 字段
       let querySQL = 'SELECT content_id, hash FROM clipboard_history'
@@ -409,10 +402,10 @@ class ClipboardDatabase {
       params.push(limit, offset)
 
       const stmt = this.db.prepare(querySQL)
-      const results = stmt.all(...params) as Array<{ content_id: string, hash: string }>
+      const results = stmt.all(...params) as Array<{ content_id: string; hash: string }>
 
       // 过滤掉没有 hash 的记录
-      return results.filter(record => record.hash)
+      return results.filter((record) => record.hash)
     } catch (error) {
       logger.error('[剪贴板数据库] 查询记录ID和哈希失败:', error)
       return []
@@ -422,13 +415,14 @@ class ClipboardDatabase {
   /**
    * 轻量级查询：获取最后使用的记录的基本信息（content_id 和 hash）
    */
-  public getLastRecordInfo(): { content_id: string, hash: string } | null {
+  public getLastRecordInfo(): { content_id: string; hash: string } | null {
     if (!this.db) throw new Error('数据库未初始化')
 
     try {
-      const querySQL = 'SELECT content_id, hash FROM clipboard_history ORDER BY last_used DESC LIMIT 1'
+      const querySQL =
+        'SELECT content_id, hash FROM clipboard_history ORDER BY last_used DESC LIMIT 1'
       const stmt = this.db.prepare(querySQL)
-      const result = stmt.get() as { content_id: string, hash: string } | undefined
+      const result = stmt.get() as { content_id: string; hash: string } | undefined
 
       return result && result.hash ? result : null
     } catch (error) {
@@ -501,8 +495,6 @@ class ClipboardDatabase {
       const stmt = this.db.prepare(deleteSQL)
       const result = stmt.run(keepCount)
 
-
-
       return result.changes
     } catch (error) {
       logger.error('[剪贴板数据库] 删除旧记录失败:', error)
@@ -548,7 +540,6 @@ class ClipboardDatabase {
         this.db = null
         // 清空应用信息缓存
         this.clearAppCache()
-
       } catch (error) {
         logger.error('[剪贴板数据库] 关闭数据库连接失败:', error)
       }
@@ -586,8 +577,6 @@ class ClipboardDatabase {
       `
       const stmt = this.db.prepare(deleteSQL)
       const result = stmt.run(beforeTimestamp)
-
-
 
       return result.changes
     } catch (error) {
@@ -639,7 +628,7 @@ class ClipboardDatabase {
       const stmt = this.db.prepare(querySQL)
       const results = stmt.all(beforeTimestamp) as Array<{ content_id: string }>
 
-      return results.map(result => result.content_id)
+      return results.map((result) => result.content_id)
     } catch (error) {
       logger.error('[剪贴板数据库] 获取过期记录ID失败:', error)
       return []
@@ -1009,7 +998,9 @@ class ClipboardDatabase {
       `
 
       const stmt = this.db.prepare(selectSQL)
-      const results = stmt.all(...contentIds) as Array<TagGroupRecord & { content_id: string, tag_created_at: string }>
+      const results = stmt.all(...contentIds) as Array<
+        TagGroupRecord & { content_id: string; tag_created_at: string }
+      >
 
       // 按 content_id 分组
       for (const result of results) {
@@ -1060,7 +1051,8 @@ class ClipboardDatabase {
 
       if (result.count === 0) {
         // 没有标签了，更新时间戳
-        const updateSQL = 'UPDATE clipboard_history SET timestamp = ?, last_used = ? WHERE content_id = ?'
+        const updateSQL =
+          'UPDATE clipboard_history SET timestamp = ?, last_used = ? WHERE content_id = ?'
         const updateStmt = this.db.prepare(updateSQL)
         const now = Date.now()
         updateStmt.run(now, now, contentId)
@@ -1073,7 +1065,9 @@ class ClipboardDatabase {
   /**
    * 查询带标签信息的历史记录
    */
-  public queryRecordsWithTags(options: QueryOptions = {}): Array<ClipboardHistoryRecord & { tags: TagGroupRecord[], appInfo?: AppInfoRecord }> {
+  public queryRecordsWithTags(
+    options: QueryOptions = {}
+  ): Array<ClipboardHistoryRecord & { tags: TagGroupRecord[]; appInfo?: AppInfoRecord }> {
     if (!this.db) throw new Error('数据库未初始化')
 
     try {
@@ -1085,15 +1079,17 @@ class ClipboardDatabase {
       }
 
       // 批量查询所有记录的标签
-      const contentIds = records.map(record => record.content_id)
+      const contentIds = records.map((record) => record.content_id)
       const tagsMap = this.getBatchRecordTags(contentIds)
 
       // 批量查询应用信息
-      const appIds = [...new Set(records.map(record => record.source_app).filter(Boolean))] as string[]
+      const appIds = [
+        ...new Set(records.map((record) => record.source_app).filter(Boolean))
+      ] as string[]
       const appsMap = this.getBatchApps(appIds)
 
       // 为每个记录分配对应的标签和应用信息
-      const recordsWithTags = records.map(record => {
+      const recordsWithTags = records.map((record) => {
         return {
           ...record,
           tags: tagsMap.get(record.content_id) || [],
@@ -1119,7 +1115,7 @@ class ClipboardDatabase {
       const stmt = this.db.prepare(querySQL)
       const results = stmt.all() as Array<{ content_id: string }>
 
-      return results.map(result => result.content_id)
+      return results.map((result) => result.content_id)
     } catch (error) {
       logger.error('[剪贴板数据库] 获取有标签的记录ID失败:', error)
       return []
@@ -1150,8 +1146,6 @@ class ClipboardDatabase {
         this.appCache.delete(key)
         this.appCacheByAppPath.delete(this.generateAppCacheKey(app.application, app.path))
       }
-
-
     }
   }
 
@@ -1213,8 +1207,6 @@ class ClipboardDatabase {
       for (const app of apps) {
         this.addToAppCache(app)
       }
-
-
     } catch (error) {
       logger.error('[剪贴板数据库] 预加载应用缓存失败:', error)
     }
@@ -1311,7 +1303,10 @@ class ClipboardDatabase {
   /**
    * 根据应用名称和路径从数据库获取应用信息（不使用缓存）
    */
-  private getAppByApplicationAndPathFromDB(application: string, path: string): AppInfoRecord | null {
+  private getAppByApplicationAndPathFromDB(
+    application: string,
+    path: string
+  ): AppInfoRecord | null {
     if (!this.db) throw new Error('数据库未初始化')
 
     try {

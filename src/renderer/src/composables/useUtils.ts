@@ -57,12 +57,14 @@ export interface ThrottleFunction<T extends (...args: any[]) => any> {
  * 统一管理事件监听器，自动清理
  */
 export function useEventManager(): EventManager {
-  const listeners = ref<Array<{
-    element: EventTarget
-    event: string
-    handler: EventListener
-    cleanup: () => void
-  }>>([])
+  const listeners = ref<
+    Array<{
+      element: EventTarget
+      event: string
+      handler: EventListener
+      cleanup: () => void
+    }>
+  >([])
 
   const addEventListener = (
     element: EventTarget,
@@ -71,11 +73,11 @@ export function useEventManager(): EventManager {
     options?: AddEventListenerOptions
   ): EventListenerCleanup => {
     element.addEventListener(event, handler, options)
-    
+
     const cleanup = () => {
       element.removeEventListener(event, handler)
-      const index = listeners.value.findIndex(l => 
-        l.element === element && l.event === event && l.handler === handler
+      const index = listeners.value.findIndex(
+        (l) => l.element === element && l.event === event && l.handler === handler
       )
       if (index > -1) {
         listeners.value.splice(index, 1)
@@ -154,10 +156,10 @@ export function useTimerManager(): TimerManager {
   }
 
   const cleanup = () => {
-    timeouts.value.forEach(id => window.clearTimeout(id))
-    intervals.value.forEach(id => window.clearInterval(id))
-    rafs.value.forEach(id => window.cancelAnimationFrame(id))
-    
+    timeouts.value.forEach((id) => window.clearTimeout(id))
+    intervals.value.forEach((id) => window.clearInterval(id))
+    rafs.value.forEach((id) => window.cancelAnimationFrame(id))
+
     timeouts.value.clear()
     intervals.value.clear()
     rafs.value.clear()
@@ -195,7 +197,7 @@ export function useDebounce<T extends (...args: any[]) => any>(
     if (timeoutId !== null) {
       timerManager.clearTimeout(timeoutId)
     }
-    
+
     timeoutId = timerManager.setTimeout(() => {
       fn(...args)
       timeoutId = null
@@ -256,9 +258,7 @@ export function useThrottle<T extends (...args: any[]) => any>(
  * 创建 RAF 节流函数（用于动画和滚动）
  * @param fn 要节流的函数
  */
-export function useRafThrottle<T extends (...args: any[]) => any>(
-  fn: T
-): ThrottleFunction<T> {
+export function useRafThrottle<T extends (...args: any[]) => any>(fn: T): ThrottleFunction<T> {
   const timerManager = useTimerManager()
   let rafId: number | null = null
   let isScheduled = false
@@ -314,7 +314,7 @@ export function withTimeout<T>(
  * 等待 DOM 更新完成
  */
 export function waitForNextTick(): Promise<void> {
-  return new Promise(resolve => {
+  return new Promise((resolve) => {
     nextTick(() => resolve())
   })
 }
@@ -324,7 +324,7 @@ export function waitForNextTick(): Promise<void> {
  * @param ms 等待时间（毫秒）
  */
 export function sleep(ms: number): Promise<void> {
-  return new Promise(resolve => setTimeout(resolve, ms))
+  return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
 // ==================== 状态管理工具 ====================

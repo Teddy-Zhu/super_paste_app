@@ -14,13 +14,13 @@ export class DataInitializationService {
   static async createSampleTagsIfNeeded(): Promise<void> {
     try {
       logger.debug('[主进程] 检查示例标签数据')
-      
+
       // 检查是否已有标签数据
       const existingTags = databaseService.getAllTagGroups()
 
       if (existingTags.length === 0) {
         logger.debug('[主进程] 未找到标签数据，创建示例标签')
-        
+
         // 创建一些示例标签
         const sampleTags = [
           { name: 'Work', color: '#3b82f6', description: 'Work related content' },
@@ -32,12 +32,12 @@ export class DataInitializationService {
 
         for (const tag of sampleTags) {
           try {
-            const tagId = databaseService.createTagGroup({ 
-              name: tag.name, 
-              color: tag.color, 
-              description: tag.description 
+            const tagId = databaseService.createTagGroup({
+              name: tag.name,
+              color: tag.color,
+              description: tag.description
             })
-            
+
             if (!tagId) {
               logger.error(`[主进程] 创建标签失败: ${tag.name}`)
             } else {
@@ -47,7 +47,7 @@ export class DataInitializationService {
             logger.error(`[主进程] 创建标签失败: ${tag.name}`, error)
           }
         }
-        
+
         logger.debug('[主进程] 示例标签创建完成')
       } else {
         logger.debug(`[主进程] 已存在 ${existingTags.length} 个标签，跳过示例数据创建`)
@@ -69,7 +69,7 @@ export class SystemIntegrationService {
   static async syncAutoStartStatus(): Promise<void> {
     try {
       logger.debug('[主进程] 开始同步自启状态')
-      
+
       // 获取配置中的自启状态
       const configuredAutoStart = store.get(STORE_KEY.SETTINGS_AUTO_START, false) as boolean
 
@@ -103,13 +103,13 @@ export class SystemIntegrationService {
   static async initialize(): Promise<void> {
     try {
       logger.debug('[主进程] 开始初始化系统集成服务')
-      
+
       // 1. 创建示例标签数据
       await DataInitializationService.createSampleTagsIfNeeded()
-      
+
       // 2. 同步自启状态
       await this.syncAutoStartStatus()
-      
+
       logger.debug('[主进程] 系统集成服务初始化完成')
     } catch (error) {
       logger.error('[主进程] 系统集成服务初始化失败:', error)

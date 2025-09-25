@@ -167,8 +167,6 @@ export interface ScheduledSyncStatus {
   config: ScheduledSyncConfig | null
 }
 
-
-
 /**
  * IPC 消息类型定义
  */

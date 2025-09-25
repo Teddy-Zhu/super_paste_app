@@ -29,8 +29,6 @@ class ClipboardHistoryCleanerWorker extends BaseWorker {
       enableAutoCleanup: false,
       enableCountBasedCleanup: false
     }
-
-
   }
 
   /**
@@ -43,7 +41,9 @@ class ClipboardHistoryCleanerWorker extends BaseWorker {
   /**
    * 初始化清理器
    */
-  public initialize(params?: { config?: Partial<CleanupConfig>, userDataPath: string } | string): void {
+  public initialize(
+    params?: { config?: Partial<CleanupConfig>; userDataPath: string } | string
+  ): void {
     // 处理参数兼容性
     let config: Partial<CleanupConfig> | undefined
     let userDataPath: string | undefined
@@ -91,11 +91,10 @@ class ClipboardHistoryCleanerWorker extends BaseWorker {
     }
 
     // 如果关键配置发生变化，重新启动自动清理
-    const shouldRestart = (
+    const shouldRestart =
       oldConfig.maxKeepTime !== this.config.maxKeepTime ||
       oldConfig.enableAutoCleanup !== this.config.enableAutoCleanup ||
       oldConfig.cleanupInterval !== this.config.cleanupInterval
-    )
 
     if (shouldRestart) {
       this.stopAutoCleanup()
@@ -199,11 +198,15 @@ class ClipboardHistoryCleanerWorker extends BaseWorker {
       // 1. 基于时间的清理
       if (this.config.maxKeepTime > 0) {
         const expireTimestamp = this.calculateExpireTimestamp()
-        const expiredRecordIds = await this.callMainThread('database-getExpiredRecordIds', { expireTimestamp })
+        const expiredRecordIds = await this.callMainThread('database-getExpiredRecordIds', {
+          expireTimestamp
+        })
 
         if (expiredRecordIds.length > 0) {
           // 优化：直接删除，无需查询 hash
-          const timeBasedDeletedCount = await this.callMainThread('database-deleteExpiredRecords', { expireTimestamp })
+          const timeBasedDeletedCount = await this.callMainThread('database-deleteExpiredRecords', {
+            expireTimestamp
+          })
           deletedRecordIds.push(...expiredRecordIds)
           deletedCount += timeBasedDeletedCount
         }
@@ -227,7 +230,9 @@ class ClipboardHistoryCleanerWorker extends BaseWorker {
           // 删除这些记录
           for (const record of recordsToDelete) {
             // 1. 先删除该记录的所有标签绑定
-            await this.callMainThread('database-unbindAllTagsFromRecord', { contentId: record.content_id })
+            await this.callMainThread('database-unbindAllTagsFromRecord', {
+              contentId: record.content_id
+            })
 
             // 2. 然后删除记录本身
             await this.callMainThread('database-deleteRecord', { contentId: record.content_id })
@@ -269,7 +274,9 @@ class ClipboardHistoryCleanerWorker extends BaseWorker {
       return stats
     } catch (error) {
       this.handleCheckError(error, '历史记录清理')
-      this.sendEvent('cleanup-error', { error: error instanceof Error ? error.message : String(error) })
+      this.sendEvent('cleanup-error', {
+        error: error instanceof Error ? error.message : String(error)
+      })
       return {
         totalRecords: 0,
         expiredRecords: 0,
@@ -312,7 +319,9 @@ class ClipboardHistoryCleanerWorker extends BaseWorker {
         }
 
         if (deletedIds.length > 0) {
-          logger.info(`[历史记录清理器 Worker] 基于数量清理完成，删除了 ${deletedIds.length} 条记录`)
+          logger.info(
+            `[历史记录清理器 Worker] 基于数量清理完成，删除了 ${deletedIds.length} 条记录`
+          )
 
           // 通知清理完成，只传递删除的记录 ID
           this.sendEvent('cleanup-completed', {
@@ -331,8 +340,6 @@ class ClipboardHistoryCleanerWorker extends BaseWorker {
     }
   }
 
-
-
   /**
    * 销毁清理器
    */
@@ -350,10 +357,6 @@ class ClipboardHistoryCleanerWorker extends BaseWorker {
     const maxKeepTimeMs = this.config.maxKeepTime * 24 * 60 * 60 * 1000 // 转换为毫秒
     return now - maxKeepTimeMs
   }
-
-
-
-
 
   /**
    * 处理来自主线程的消息

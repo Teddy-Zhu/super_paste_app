@@ -1,8 +1,5 @@
 import databaseService from './database-service'
-import type {
-  ClipboardItem,
-  AppInfo
-} from '../types/clipboard-types'
+import type { ClipboardItem, AppInfo } from '../types/clipboard-types'
 import { ClipboardDataConverter } from '../types/clipboard-types'
 import log from 'electron-log'
 
@@ -11,10 +8,6 @@ import log from 'electron-log'
  * 负责历史记录的查询、管理和标签操作
  */
 class ClipboardHistoryService {
-
-
-
-
   /**
    * 删除指定的历史记录项
    */
@@ -47,21 +40,21 @@ class ClipboardHistoryService {
     }
   }
 
-
-
   /**
    * 搜索历史记录（支持标签和内容筛选）
    * 返回包含历史记录和所有应用信息的结构
    */
-  public async searchHistory(options: {
-    limit?: number
-    offset?: number
-    tagIds?: string[]
-    primaryType?: string
-    searchText?: string
-    orderBy?: 'timestamp' | 'last_used'
-    orderDirection?: 'ASC' | 'DESC'
-  } = {}): Promise<{
+  public async searchHistory(
+    options: {
+      limit?: number
+      offset?: number
+      tagIds?: string[]
+      primaryType?: string
+      searchText?: string
+      orderBy?: 'timestamp' | 'last_used'
+      orderDirection?: 'ASC' | 'DESC'
+    } = {}
+  ): Promise<{
     items: ClipboardItem[]
     apps: Record<string, AppInfo>
   }> {
@@ -93,8 +86,6 @@ class ClipboardHistoryService {
       return { items: [], apps: {} }
     }
   }
-
-
 }
 
 // 导出单例实例

@@ -135,12 +135,7 @@ const isConfigValid = computed(() => {
   if (!isWebDAVProvider.value) return false
 
   const webdav = localConfig.value.params.webdav
-  return !!(
-    webdav.serverUrl &&
-    isValidUrl(webdav.serverUrl) &&
-    webdav.username &&
-    webdav.password
-  )
+  return !!(webdav.serverUrl && isValidUrl(webdav.serverUrl) && webdav.username && webdav.password)
 })
 
 /**
@@ -180,7 +175,10 @@ const testConnection = async () => {
   }
 
   if (!isConfigValid.value) {
-    connectionTestResult.value = { success: false, message: '请填写完整的服务器信息并确保 URL 格式正确' }
+    connectionTestResult.value = {
+      success: false,
+      message: '请填写完整的服务器信息并确保 URL 格式正确'
+    }
     return
   }
 
@@ -259,9 +257,9 @@ const saveConfig = async () => {
     syncStore.direction = localConfig.value.direction
     syncStore.configOnly = localConfig.value.configOnly
     syncStore.params.webdav = { ...localConfig.value.params.webdav }
-    
+
     // 等待1秒后刷新计划同步任务
-    await new Promise(resolve => setTimeout(resolve, 1000))
+    await new Promise((resolve) => setTimeout(resolve, 1000))
     await invoke('scheduled-sync:refresh')
 
     hasUnsavedChanges.value = false
@@ -359,7 +357,8 @@ const handleSyncStatusUpdate = (data: any) => {
     case 'sync-started':
     case 'manual-sync-started':
       currentSyncStatus.value = 'syncing'
-      syncStatusMessage.value = data.type === 'sync-started' ? '正在执行定时同步...' : '正在执行手动同步...'
+      syncStatusMessage.value =
+        data.type === 'sync-started' ? '正在执行定时同步...' : '正在执行手动同步...'
       break
 
     case 'sync-completed':
@@ -446,7 +445,7 @@ onUnmounted(() => {
         </div>
         <div class="setting-control">
           <label class="toggle-switch">
-            <input type="checkbox" :checked="localConfig.enabled" @change="toggleSyncEnabled">
+            <input type="checkbox" :checked="localConfig.enabled" @change="toggleSyncEnabled" />
             <span class="toggle-slider"></span>
           </label>
         </div>
@@ -501,7 +500,7 @@ onUnmounted(() => {
               type="checkbox"
               :checked="localConfig.configOnly"
               @change="updateConfigOnly(($event.target as HTMLInputElement).checked)"
-            >
+            />
             <span class="toggle-slider"></span>
           </label>
         </div>
@@ -515,18 +514,14 @@ onUnmounted(() => {
         </div>
         <div class="setting-control">
           <div class="radio-group">
-            <label
-              v-for="option in directionOptions"
-              :key="option.value"
-              class="radio-option"
-            >
+            <label v-for="option in directionOptions" :key="option.value" class="radio-option">
               <input
                 type="radio"
                 :value="option.value"
                 :checked="localConfig.direction === option.value"
                 @change="updateDirection(option.value)"
                 class="radio-input"
-              >
+              />
               <span class="radio-label">
                 <strong>{{ option.label }}</strong>
                 <span class="radio-description">{{ option.description }}</span>
@@ -558,7 +553,7 @@ onUnmounted(() => {
               @input="updateWebDAVConfig('serverUrl', ($event.target as HTMLInputElement).value)"
               placeholder="https://example.com/webdav"
               class="text-input"
-            >
+            />
           </div>
         </div>
 
@@ -575,7 +570,7 @@ onUnmounted(() => {
               @input="updateWebDAVConfig('username', ($event.target as HTMLInputElement).value)"
               placeholder="输入用户名"
               class="text-input"
-            >
+            />
           </div>
         </div>
 
@@ -592,7 +587,7 @@ onUnmounted(() => {
               @input="updateWebDAVConfig('password', ($event.target as HTMLInputElement).value)"
               placeholder="输入密码"
               class="text-input"
-            >
+            />
           </div>
         </div>
 
@@ -609,7 +604,7 @@ onUnmounted(() => {
               @input="updateWebDAVConfig('remotePath', ($event.target as HTMLInputElement).value)"
               placeholder="/super-paste"
               class="text-input"
-            >
+            />
           </div>
         </div>
 
@@ -624,12 +619,17 @@ onUnmounted(() => {
               <input
                 type="number"
                 :value="localConfig.params.webdav.timeout"
-                @input="updateWebDAVConfig('timeout', parseInt(($event.target as HTMLInputElement).value) || 30000)"
+                @input="
+                  updateWebDAVConfig(
+                    'timeout',
+                    parseInt(($event.target as HTMLInputElement).value) || 30000
+                  )
+                "
                 min="5000"
                 max="120000"
                 step="1000"
                 class="number-input"
-              >
+              />
               <span class="number-unit">毫秒</span>
             </div>
           </div>
@@ -646,8 +646,10 @@ onUnmounted(() => {
               <input
                 type="checkbox"
                 :checked="localConfig.params.webdav.useHttps"
-                @change="updateWebDAVConfig('useHttps', ($event.target as HTMLInputElement).checked)"
-              >
+                @change="
+                  updateWebDAVConfig('useHttps', ($event.target as HTMLInputElement).checked)
+                "
+              />
               <span class="toggle-slider"></span>
             </label>
           </div>
@@ -673,12 +675,7 @@ onUnmounted(() => {
             {{ isManualSyncing ? '同步中...' : '手动同步' }}
           </button>
 
-          <button
-            @click="getSyncStatus"
-            class="shortcut-button secondary"
-          >
-            刷新状态
-          </button>
+          <button @click="getSyncStatus" class="shortcut-button secondary">刷新状态</button>
         </div>
 
         <!-- 配置验证提示 -->
@@ -687,7 +684,11 @@ onUnmounted(() => {
         </div>
 
         <!-- 连接测试结果 -->
-        <div v-if="connectionTestResult" class="connection-result" :class="{ success: connectionTestResult.success, error: !connectionTestResult.success }">
+        <div
+          v-if="connectionTestResult"
+          class="connection-result"
+          :class="{ success: connectionTestResult.success, error: !connectionTestResult.success }"
+        >
           {{ connectionTestResult.message }}
         </div>
       </div>
@@ -730,7 +731,13 @@ onUnmounted(() => {
         <div class="status-card">
           <div class="status-info">
             <h5 class="status-title">同步状态</h5>
-            <p class="status-value" :class="{ 'status-enabled': syncStore.enabled, 'status-disabled': !syncStore.enabled }">
+            <p
+              class="status-value"
+              :class="{
+                'status-enabled': syncStore.enabled,
+                'status-disabled': !syncStore.enabled
+              }"
+            >
               {{ syncStore.enabled ? '已启用' : '已禁用' }}
             </p>
           </div>
@@ -740,11 +747,14 @@ onUnmounted(() => {
         <div class="status-card" v-if="currentSyncStatus !== 'idle' || syncStatusMessage">
           <div class="status-info">
             <h5 class="status-title">实时状态</h5>
-            <p class="status-value" :class="{
-              'status-syncing': currentSyncStatus === 'syncing',
-              'status-success': currentSyncStatus === 'success',
-              'status-error': currentSyncStatus === 'error'
-            }">
+            <p
+              class="status-value"
+              :class="{
+                'status-syncing': currentSyncStatus === 'syncing',
+                'status-success': currentSyncStatus === 'success',
+                'status-error': currentSyncStatus === 'error'
+              }"
+            >
               <span v-if="currentSyncStatus === 'syncing'" class="sync-spinner">⟳</span>
               {{ syncStatusMessage || '空闲' }}
             </p>
@@ -754,14 +764,23 @@ onUnmounted(() => {
         <div class="status-card">
           <div class="status-info">
             <h5 class="status-title">同步间隔</h5>
-            <p class="status-value">{{ intervalOptions.find(opt => opt.value === Math.floor(syncStore.interval / 60000))?.label || '未设置' }}</p>
+            <p class="status-value">
+              {{
+                intervalOptions.find((opt) => opt.value === Math.floor(syncStore.interval / 60000))
+                  ?.label || '未设置'
+              }}
+            </p>
           </div>
         </div>
 
         <div class="status-card">
           <div class="status-info">
             <h5 class="status-title">同步方向</h5>
-            <p class="status-value">{{ directionOptions.find(opt => opt.value === syncStore.direction)?.label || '未设置' }}</p>
+            <p class="status-value">
+              {{
+                directionOptions.find((opt) => opt.value === syncStore.direction)?.label || '未设置'
+              }}
+            </p>
           </div>
         </div>
 
@@ -1016,7 +1035,11 @@ onUnmounted(() => {
 }
 
 @keyframes spin {
-  from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
 }
 </style>

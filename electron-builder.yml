@@ -19,7 +19,7 @@ extraResources:
   - from: resources/ocr/
     to: resources/ocr/
     filter:
-      - "**/*"
+      - '**/*'
 electronLanguages:
   - en-US
   - zh-CN

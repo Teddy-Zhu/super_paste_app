@@ -41,96 +41,112 @@ export function useSearchAnimation(
    * 搜索框展开动画
    */
   function createSearchExpandAnimation(): AnimationControls {
-    return useAnimate(searchContainerRef, [
+    return useAnimate(
+      searchContainerRef,
+      [
+        {
+          width: '0px',
+          opacity: 0,
+          transform: 'scaleX(0)',
+          paddingLeft: '0px',
+          paddingRight: '0px'
+        },
+        {
+          width: SEARCH_ANIMATION_CONFIG.SEARCH_WIDTH,
+          opacity: 1,
+          transform: 'scaleX(1)',
+          paddingLeft: '8px',
+          paddingRight: '8px'
+        }
+      ],
       {
-        width: '0px',
-        opacity: 0,
-        transform: 'scaleX(0)',
-        paddingLeft: '0px',
-        paddingRight: '0px'
-      },
-      {
-        width: SEARCH_ANIMATION_CONFIG.SEARCH_WIDTH,
-        opacity: 1,
-        transform: 'scaleX(1)',
-        paddingLeft: '8px',
-        paddingRight: '8px'
+        duration: SEARCH_ANIMATION_CONFIG.DURATION,
+        easing: SEARCH_ANIMATION_CONFIG.EASING,
+        fill: 'forwards'
       }
-    ], {
-      duration: SEARCH_ANIMATION_CONFIG.DURATION,
-      easing: SEARCH_ANIMATION_CONFIG.EASING,
-      fill: 'forwards'
-    })
+    )
   }
 
   /**
    * 搜索框缩回动画
    */
   function createSearchCollapseAnimation(): AnimationControls {
-    return useAnimate(searchContainerRef, [
+    return useAnimate(
+      searchContainerRef,
+      [
+        {
+          width: SEARCH_ANIMATION_CONFIG.COLLAPSE_WIDTH,
+          opacity: 1,
+          transform: 'scaleX(1)',
+          paddingLeft: '8px',
+          paddingRight: '8px'
+        },
+        {
+          width: '0px',
+          opacity: 0,
+          transform: 'scaleX(0)',
+          paddingLeft: '0px',
+          paddingRight: '0px'
+        }
+      ],
       {
-        width: SEARCH_ANIMATION_CONFIG.COLLAPSE_WIDTH,
-        opacity: 1,
-        transform: 'scaleX(1)',
-        paddingLeft: '8px',
-        paddingRight: '8px'
-      },
-      {
-        width: '0px',
-        opacity: 0,
-        transform: 'scaleX(0)',
-        paddingLeft: '0px',
-        paddingRight: '0px'
+        duration: SEARCH_ANIMATION_CONFIG.DURATION,
+        easing: SEARCH_ANIMATION_CONFIG.EASING,
+        fill: 'forwards'
       }
-    ], {
-      duration: SEARCH_ANIMATION_CONFIG.DURATION,
-      easing: SEARCH_ANIMATION_CONFIG.EASING,
-      fill: 'forwards'
-    })
+    )
   }
 
   /**
    * 标签组隐藏动画
    */
   function createTabsHideAnimation(): AnimationControls {
-    return useAnimate(tabsContainerRef, [
+    return useAnimate(
+      tabsContainerRef,
+      [
+        {
+          opacity: 1,
+          transform: 'scaleX(1)',
+          maxWidth: '100%'
+        },
+        {
+          opacity: 0,
+          transform: 'scaleX(0.8)',
+          maxWidth: '0px'
+        }
+      ],
       {
-        opacity: 1,
-        transform: 'scaleX(1)',
-        maxWidth: '100%'
-      },
-      {
-        opacity: 0,
-        transform: 'scaleX(0.8)',
-        maxWidth: '0px'
+        duration: SEARCH_ANIMATION_CONFIG.DURATION,
+        easing: SEARCH_ANIMATION_CONFIG.EASING,
+        fill: 'forwards'
       }
-    ], {
-      duration: SEARCH_ANIMATION_CONFIG.DURATION,
-      easing: SEARCH_ANIMATION_CONFIG.EASING,
-      fill: 'forwards'
-    })
+    )
   }
 
   /**
    * 标签组显示动画
    */
   function createTabsShowAnimation(): AnimationControls {
-    return useAnimate(tabsContainerRef, [
+    return useAnimate(
+      tabsContainerRef,
+      [
+        {
+          opacity: 0,
+          transform: 'scaleX(0.8)',
+          maxWidth: '0px'
+        },
+        {
+          opacity: 1,
+          transform: 'scaleX(1)',
+          maxWidth: '100%'
+        }
+      ],
       {
-        opacity: 0,
-        transform: 'scaleX(0.8)',
-        maxWidth: '0px'
-      },
-      {
-        opacity: 1,
-        transform: 'scaleX(1)',
-        maxWidth: '100%'
+        duration: SEARCH_ANIMATION_CONFIG.DURATION,
+        easing: SEARCH_ANIMATION_CONFIG.EASING,
+        fill: 'forwards'
       }
-    ], {
-      duration: SEARCH_ANIMATION_CONFIG.DURATION,
-      easing: SEARCH_ANIMATION_CONFIG.EASING,
-      fill: 'forwards'
-    })
+    )
   }
 
   /**
@@ -187,9 +203,15 @@ export function useSearchAnimation(
     showTabsContainer,
 
     // 内部状态修改方法（仅供内部使用）
-    _setSearchVisible: (value: boolean) => { isSearchVisible.value = value },
-    _setSearchAnimating: (value: boolean) => { isSearchAnimating.value = value },
-    _setOpeningSearch: (value: boolean) => { isOpeningSearch.value = value },
+    _setSearchVisible: (value: boolean) => {
+      isSearchVisible.value = value
+    },
+    _setSearchAnimating: (value: boolean) => {
+      isSearchAnimating.value = value
+    },
+    _setOpeningSearch: (value: boolean) => {
+      isOpeningSearch.value = value
+    },
 
     // 动画方法
     createSearchExpandAnimation,

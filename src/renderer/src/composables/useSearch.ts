@@ -7,9 +7,7 @@ import { ref, nextTick, readonly } from 'vue'
 import type { SearchManager } from '@renderer/types/overlay'
 import { useDebounce } from './usePerformanceOptimization'
 
-export function useSearch(
-  performSearchCallback: (text: string) => Promise<void>
-): SearchManager {
+export function useSearch(performSearchCallback: (text: string) => Promise<void>): SearchManager {
   // 搜索状态
   const searchText = ref('')
   const isSearching = ref(false)
@@ -20,10 +18,7 @@ export function useSearch(
   /**
    * 防抖搜索（使用性能优化的防抖函数）
    */
-  const debouncedSearchFn = useDebounce(
-    (text: string) => performSearchCallback(text),
-    300
-  )
+  const debouncedSearchFn = useDebounce((text: string) => performSearchCallback(text), 300)
 
   const debouncedSearch = debouncedSearchFn
   const cancelSearch = debouncedSearchFn.cancel
@@ -50,13 +45,39 @@ export function useSearch(
 
     // 排除特殊键
     const excludedKeys = [
-      'ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown',
-      'Home', 'End', 'PageUp', 'PageDown',
-      'Tab', 'Enter', 'Escape', 'Backspace', 'Delete',
-      'Insert', 'F1', 'F2', 'F3', 'F4', 'F5', 'F6',
-      'F7', 'F8', 'F9', 'F10', 'F11', 'F12',
-      'CapsLock', 'NumLock', 'ScrollLock',
-      'Shift', 'Control', 'Alt', 'Meta'
+      'ArrowLeft',
+      'ArrowRight',
+      'ArrowUp',
+      'ArrowDown',
+      'Home',
+      'End',
+      'PageUp',
+      'PageDown',
+      'Tab',
+      'Enter',
+      'Escape',
+      'Backspace',
+      'Delete',
+      'Insert',
+      'F1',
+      'F2',
+      'F3',
+      'F4',
+      'F5',
+      'F6',
+      'F7',
+      'F8',
+      'F9',
+      'F10',
+      'F11',
+      'F12',
+      'CapsLock',
+      'NumLock',
+      'ScrollLock',
+      'Shift',
+      'Control',
+      'Alt',
+      'Meta'
     ]
 
     if (excludedKeys.includes(event.key)) {
@@ -193,9 +214,15 @@ export function useSearch(
     inputBuffer: readonly(inputBuffer),
 
     // 内部状态修改方法
-    _setSearching: (value: boolean) => { isSearching.value = value },
-    _clearInputBuffer: () => { inputBuffer.value = '' },
-    _setSearchText: (value: string) => { searchText.value = value },
+    _setSearching: (value: boolean) => {
+      isSearching.value = value
+    },
+    _clearInputBuffer: () => {
+      inputBuffer.value = ''
+    },
+    _setSearchText: (value: string) => {
+      searchText.value = value
+    },
 
     // 方法
     debouncedSearch,

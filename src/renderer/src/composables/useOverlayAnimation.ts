@@ -12,10 +12,10 @@ import type {
 
 // 前端动画状态枚举
 export enum AnimationState {
-  IDLE = 'IDLE',                    // 空闲状态
-  SLIDING_IN = 'SLIDING_IN',        // 正在滑入
-  ACTIVE = 'ACTIVE',                // 活跃状态（可交互）
-  SLIDING_OUT = 'SLIDING_OUT'       // 正在滑出
+  IDLE = 'IDLE', // 空闲状态
+  SLIDING_IN = 'SLIDING_IN', // 正在滑入
+  ACTIVE = 'ACTIVE', // 活跃状态（可交互）
+  SLIDING_OUT = 'SLIDING_OUT' // 正在滑出
 }
 
 // 动画配置常量
@@ -34,7 +34,7 @@ export function useOverlayAnimation(
 ): OverlayAnimationManager {
   // 当前动画状态
   const currentAnimationState = ref<AnimationState>(AnimationState.IDLE)
-  
+
   // 标记载入动画是否完成（保持向后兼容）
   const isSlideInComplete = ref(false)
 
@@ -58,36 +58,40 @@ export function useOverlayAnimation(
    * 检查是否正在进行动画
    */
   function isAnimating(): boolean {
-    return currentAnimationState.value === AnimationState.SLIDING_IN ||
+    return (
+      currentAnimationState.value === AnimationState.SLIDING_IN ||
       currentAnimationState.value === AnimationState.SLIDING_OUT
+    )
   }
 
   /**
    * 创建滑入动画
    */
   function createSlideInAnimation(): AnimationControls {
-    return useAnimate(overlayContentRef, [
-      { transform: 'translateY(100%)' },
-      { transform: 'translateY(0%)' }
-    ], {
-      duration: ANIMATION_CONFIG.OVERLAY_DURATION,
-      easing: ANIMATION_CONFIG.SLIDE_IN_EASING,
-      fill: 'forwards'
-    })
+    return useAnimate(
+      overlayContentRef,
+      [{ transform: 'translateY(100%)' }, { transform: 'translateY(0%)' }],
+      {
+        duration: ANIMATION_CONFIG.OVERLAY_DURATION,
+        easing: ANIMATION_CONFIG.SLIDE_IN_EASING,
+        fill: 'forwards'
+      }
+    )
   }
 
   /**
    * 创建滑出动画
    */
   function createSlideOutAnimation(): AnimationControls {
-    return useAnimate(overlayContentRef, [
-      { transform: 'translateY(0%)' },
-      { transform: 'translateY(100%)' }
-    ], {
-      duration: ANIMATION_CONFIG.OVERLAY_DURATION,
-      easing: ANIMATION_CONFIG.SLIDE_OUT_EASING,
-      fill: 'forwards'
-    })
+    return useAnimate(
+      overlayContentRef,
+      [{ transform: 'translateY(0%)' }, { transform: 'translateY(100%)' }],
+      {
+        duration: ANIMATION_CONFIG.OVERLAY_DURATION,
+        easing: ANIMATION_CONFIG.SLIDE_OUT_EASING,
+        fill: 'forwards'
+      }
+    )
   }
 
   /**
@@ -95,10 +99,10 @@ export function useOverlayAnimation(
    */
   function resetState() {
     console.log('[前端] 重置overlay状态')
-    
+
     // 重置动画状态为空闲
     setAnimationState(AnimationState.IDLE)
-    
+
     // 重置元素位置到初始状态
     if (overlayContentRef.value) {
       overlayContentRef.value.style.transform = 'translateY(100%)'
@@ -109,7 +113,7 @@ export function useOverlayAnimation(
     // 状态
     currentAnimationState: readonly(currentAnimationState),
     isSlideInComplete: readonly(isSlideInComplete),
-    
+
     // 方法
     setAnimationState,
     canStartClosing,

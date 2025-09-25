@@ -14,7 +14,7 @@ export class WindowConfigCalculator {
   /**
    * 获取当前显示器的窗口位置信息
    */
-  static calculateWindowPosition(): { x: number, y: number, width: number, height: number } {
+  static calculateWindowPosition(): { x: number; y: number; width: number; height: number } {
     const cursorPoint = screen.getCursorScreenPoint()
     const currentDisplay = screen.getDisplayNearestPoint(cursorPoint)
     const { x: displayX, y: displayY, width, height } = currentDisplay.workArea
@@ -35,20 +35,20 @@ export class WindowConfigCalculator {
   /**
    * 根据屏幕大小计算最佳的主窗口尺寸
    */
-  static calculateMainWindowSize(): { width: number, height: number } {
+  static calculateMainWindowSize(): { width: number; height: number } {
     const primaryDisplay = screen.getPrimaryDisplay()
     const { width: screenWidth, height: screenHeight } = primaryDisplay.workArea
 
     // 根据屏幕尺寸计算最佳窗口大小
     let windowWidth = Math.floor(screenWidth * MAIN_WINDOW_CONFIG.WIDTH_RATIO)
     windowWidth = Math.max(
-      MAIN_WINDOW_CONFIG.MIN_WIDTH, 
+      MAIN_WINDOW_CONFIG.MIN_WIDTH,
       Math.min(MAIN_WINDOW_CONFIG.MAX_WIDTH, windowWidth)
     )
 
     let windowHeight = Math.floor(screenHeight * MAIN_WINDOW_CONFIG.HEIGHT_RATIO)
     windowHeight = Math.max(
-      MAIN_WINDOW_CONFIG.MIN_HEIGHT, 
+      MAIN_WINDOW_CONFIG.MIN_HEIGHT,
       Math.min(MAIN_WINDOW_CONFIG.MAX_HEIGHT, windowHeight)
     )
 

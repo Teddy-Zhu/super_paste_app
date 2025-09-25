@@ -5,10 +5,10 @@ import logger from '../../utils/logger'
  * 窗口状态枚举
  */
 export enum OverlayState {
-  CLOSED = 'CLOSED',    // 窗口已关闭/隐藏
-  OPENING = 'OPENING',  // 正在打开（显示窗口 + 滑入动画）
-  OPENED = 'OPENED',    // 已打开（动画完成，可以交互）
-  CLOSING = 'CLOSING'   // 正在关闭（滑出动画 + 隐藏窗口）
+  CLOSED = 'CLOSED', // 窗口已关闭/隐藏
+  OPENING = 'OPENING', // 正在打开（显示窗口 + 滑入动画）
+  OPENED = 'OPENED', // 已打开（动画完成，可以交互）
+  CLOSING = 'CLOSING' // 正在关闭（滑出动画 + 隐藏窗口）
 }
 
 /**
@@ -65,7 +65,11 @@ export class WindowUtils {
    * @param channel 消息通道
    * @param args 消息参数
    */
-  static safelyEmitToWindow(window: BrowserWindow | null, channel: string, ...args: unknown[]): void {
+  static safelyEmitToWindow(
+    window: BrowserWindow | null,
+    channel: string,
+    ...args: unknown[]
+  ): void {
     if (window && !window.isDestroyed() && window.webContents) {
       window.webContents.send(channel, ...args)
     }

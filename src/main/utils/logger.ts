@@ -37,7 +37,6 @@ class Logger {
       return
     }
 
-
     try {
       // 设置日志文件路径
       const fileName = options.fileName || 'main.log'

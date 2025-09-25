@@ -4,10 +4,7 @@ import databaseService from '../services/database-service'
 import clipboardHistoryCleaner from './clipboard-history-cleaner'
 import store from '../config/store'
 import { STORE_KEY } from '../config/common'
-import type {
-  ClipboardContent,
-  ClipboardManagerConfig
-} from '../types/clipboard-types'
+import type { ClipboardContent, ClipboardManagerConfig } from '../types/clipboard-types'
 import type { WorkerConfig, WorkerRequest } from '../types/worker-types'
 import { app } from 'electron'
 
@@ -43,16 +40,19 @@ class ClipboardManager extends BaseWorkerManager {
     })
 
     // 监听历史记录更新事件
-    this.on('history-updated', (_: { timestamp: number, source?: string }) => {
+    this.on('history-updated', (_: { timestamp: number; source?: string }) => {
       // 通知前端剪贴板历史更新
       // this.notifyFrontendUpdate('history-updated', data)
     })
 
     // 监听单条记录OCR更新事件
-    this.on('record-ocr-updated', (data: { contentId: string, ocrText: string, timestamp: number }) => {
-      // 通知前端单条记录OCR更新
-      NotificationService.notifyRecordOCRUpdate(data)
-    })
+    this.on(
+      'record-ocr-updated',
+      (data: { contentId: string; ocrText: string; timestamp: number }) => {
+        // 通知前端单条记录OCR更新
+        NotificationService.notifyRecordOCRUpdate(data)
+      }
+    )
 
     // 监听清理检查请求事件
     this.on('cleanup-check-required', (data: { reason: string; maxHistorySize: number }) => {
@@ -61,13 +61,16 @@ class ClipboardManager extends BaseWorkerManager {
     })
 
     // 监听清理完成事件，直接更新缓存
-    clipboardHistoryCleaner.on('cleanup-completed', (data: { stats: any, deletedRecordIds?: string[] }) => {
-      logger.info('[剪贴板管理器] 收到清理完成事件:', data.stats)
-      // 直接通知 clipboard-manager worker 更新缓存
-      if (data.deletedRecordIds && data.deletedRecordIds.length > 0) {
-        this.notifyWorkerCacheUpdate(data.deletedRecordIds)
+    clipboardHistoryCleaner.on(
+      'cleanup-completed',
+      (data: { stats: any; deletedRecordIds?: string[] }) => {
+        logger.info('[剪贴板管理器] 收到清理完成事件:', data.stats)
+        // 直接通知 clipboard-manager worker 更新缓存
+        if (data.deletedRecordIds && data.deletedRecordIds.length > 0) {
+          this.notifyWorkerCacheUpdate(data.deletedRecordIds)
+        }
       }
-    })
+    )
   }
 
   /**
@@ -156,8 +159,6 @@ class ClipboardManager extends BaseWorkerManager {
 
   // ==================== 剪贴板操作方法 ====================
 
-
-
   public async restoreClipboardContent(params: { content: ClipboardContent }): Promise<boolean> {
     try {
       return await this.call('restoreClipboardContent', params)
@@ -167,9 +168,9 @@ class ClipboardManager extends BaseWorkerManager {
     }
   }
 
-
-
-  public async restoreClipboardContentAsText(params: { content: ClipboardContent }): Promise<boolean> {
+  public async restoreClipboardContentAsText(params: {
+    content: ClipboardContent
+  }): Promise<boolean> {
     try {
       return await this.call('restoreClipboardContentAsText', params)
     } catch (error) {
@@ -267,8 +268,6 @@ class ClipboardManager extends BaseWorkerManager {
     }
   }
 
-
-
   /**
    * 获取监听状态
    */
@@ -333,7 +332,9 @@ class ClipboardManager extends BaseWorkerManager {
   /**
    * 从数据库还原剪贴板内容（完整还原）
    */
-  public async restoreClipboardFromDatabase(itemId: string): Promise<{ success: boolean; message?: string }> {
+  public async restoreClipboardFromDatabase(
+    itemId: string
+  ): Promise<{ success: boolean; message?: string }> {
     try {
       return await this.call('restoreClipboardFromDatabase', itemId)
     } catch (error) {
@@ -345,7 +346,9 @@ class ClipboardManager extends BaseWorkerManager {
   /**
    * 从数据库还原剪贴板内容为纯文本
    */
-  public async restoreClipboardFromDatabaseAsText(itemId: string): Promise<{ success: boolean; message?: string }> {
+  public async restoreClipboardFromDatabaseAsText(
+    itemId: string
+  ): Promise<{ success: boolean; message?: string }> {
     try {
       return await this.call('restoreClipboardFromDatabaseAsText', itemId)
     } catch (error) {
@@ -354,13 +357,22 @@ class ClipboardManager extends BaseWorkerManager {
     }
   }
 
-
+  /**
+   * 解析剪贴板项目中的二维码并复制到剪贴板
+   * @param itemId 剪贴板项目ID
+   */
+  public async parseQRCodeFromItem(
+    itemId: string
+  ): Promise<{ success: boolean; message?: string }> {
+    try {
+      return await this.call('parseQRCodeFromItem', itemId)
+    } catch (error) {
+      logger.error('[剪贴板管理器] 解析二维码失败:', error)
+      return { success: false, message: '解析二维码失败' }
+    }
+  }
 
   // ==================== 标签管理方法 ====================
-
-
-
-
 }
 
 // 导出单例实例

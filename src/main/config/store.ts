@@ -36,7 +36,7 @@ class EncryptedStore {
    * 基于应用信息生成一致的密钥
    */
   private generateEncryptionKey(): string {
-    return "super_paste_app_11"
+    return 'super_paste_app_11'
   }
 
   /**
@@ -89,7 +89,7 @@ class EncryptedStore {
     try {
       // 获取所有窗口并发送事件
       const allWindows = BrowserWindow.getAllWindows()
-      allWindows.forEach(window => {
+      allWindows.forEach((window) => {
         if (window && !window.isDestroyed()) {
           window.webContents.send('store-value-changed', {
             key,

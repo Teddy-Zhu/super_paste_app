@@ -1,17 +1,8 @@
 import { join } from 'path'
 import { BaseSyncProvider } from './base-sync-provider'
 import { WebDAVSyncProvider } from './webdav-sync-provider'
-import {
-  SyncStatus,
-  SyncDirection,
-  SyncProviderType
-} from './types'
-import type {
-  SyncProviderConfig,
-  SyncResult,
-  SyncEventListener,
-  WebDAVConfig
-} from './types'
+import { SyncStatus, SyncDirection, SyncProviderType } from './types'
+import type { SyncProviderConfig, SyncResult, SyncEventListener, WebDAVConfig } from './types'
 import logger from '../utils/logger'
 import { HashUtils } from '../utils/common'
 import { NotificationService } from '../services/notification-service'
@@ -39,7 +30,10 @@ export class SyncService {
    * 初始化同步提供者
    * 由外部直接传入配置，不再从存储加载
    */
-  async initialize(providerType: SyncProviderType, providerConfig: SyncProviderConfig): Promise<boolean> {
+  async initialize(
+    providerType: SyncProviderType,
+    providerConfig: SyncProviderConfig
+  ): Promise<boolean> {
     try {
       const success = await this.configureSyncProvider(providerType, providerConfig)
 
@@ -59,7 +53,10 @@ export class SyncService {
   /**
    * 配置同步提供者
    */
-  async configureSyncProvider(type: SyncProviderType, config: SyncProviderConfig): Promise<boolean> {
+  async configureSyncProvider(
+    type: SyncProviderType,
+    config: SyncProviderConfig
+  ): Promise<boolean> {
     try {
       // 销毁现有同步提供者
       if (this.syncProvider) {
@@ -125,7 +122,7 @@ export class SyncService {
 
     try {
       logger.info('[同步服务] 开始同步数据库和配置文件')
-      
+
       const result: SyncResult = {
         success: true,
         message: '同步完成',
@@ -183,7 +180,7 @@ export class SyncService {
     const config = this.syncProvider!.getConfig()
 
     // 上传数据库文件（除非设置了仅同步配置）
-    if (!config.configOnly && await this.fileExists(localDbPath)) {
+    if (!config.configOnly && (await this.fileExists(localDbPath))) {
       const uploaded = await this.syncProvider!.uploadFile(localDbPath, this.REMOTE_DB_PATH)
       if (uploaded) {
         result.uploadedFiles?.push(this.DATABASE_FILE_NAME)
@@ -231,7 +228,10 @@ export class SyncService {
     // 下载配置文件
     const configExists = await this.syncProvider!.fileExists(this.REMOTE_CONFIG_PATH)
     if (configExists) {
-      const downloaded = await this.syncProvider!.downloadFile(this.REMOTE_CONFIG_PATH, localConfigPath)
+      const downloaded = await this.syncProvider!.downloadFile(
+        this.REMOTE_CONFIG_PATH,
+        localConfigPath
+      )
       if (downloaded) {
         result.downloadedFiles?.push(this.CONFIG_FILE_NAME)
         // 配置文件已下载，在 worker 中无需重新加载配置
@@ -332,11 +332,11 @@ export class SyncService {
         }
       }
     } catch (error) {
-      result.errors?.push(`${fileName} 同步失败: ${error instanceof Error ? error.message : '未知错误'}`)
+      result.errors?.push(
+        `${fileName} 同步失败: ${error instanceof Error ? error.message : '未知错误'}`
+      )
     }
   }
-
-
 
   /**
    * 获取同步状态
@@ -362,8 +362,6 @@ export class SyncService {
       this.syncProvider.off(eventType, listener)
     }
   }
-
-
 
   /**
    * 获取本地数据库文件路径

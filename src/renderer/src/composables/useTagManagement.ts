@@ -15,7 +15,7 @@ export function useTagManagement(
   const allTags = ref<TagGroup[]>([])
   const activeTagId = ref<string>('all') // 默认选中'all'标签
   const isTagSwitching = ref(false)
-  
+
   // 标签统计数据
   const tagStats = ref<Record<string, number>>({})
 
@@ -28,7 +28,7 @@ export function useTagManagement(
       color: '#10b981',
       count: 0 // All标签不显示数量
     }
-    const tagTabs = allTags.value.map(tag => ({
+    const tagTabs = allTags.value.map((tag) => ({
       id: tag.id,
       label: tag.name,
       active: activeTagId.value === tag.id,

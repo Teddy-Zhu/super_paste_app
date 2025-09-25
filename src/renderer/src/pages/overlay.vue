@@ -3,11 +3,7 @@ import { ref, nextTick, watch, onMounted, onUnmounted } from 'vue'
 import { send, onSimple } from '@renderer/api'
 import { clipboard } from '@renderer/api/renderer-api'
 import type { ClipboardItem, ClipboardHistoryQueryOptions, AppInfo } from '@renderer/api/types'
-import {
-  OverlayError,
-  OverlayErrorCode,
-  isClipboardItem
-} from '@renderer/types/overlay'
+import { OverlayError, OverlayErrorCode, isClipboardItem } from '@renderer/types/overlay'
 
 // 导入优化后的 composables
 import { useAnimation, AnimationState } from '@renderer/composables/useAnimation'
@@ -50,11 +46,7 @@ let removeCloseListener: (() => void) | null = null
 let wheelHandler: ((event: WheelEvent) => void) | null = null
 
 // ==================== 初始化 Composables ====================
-const animationManager = useAnimation(
-  overlayContentRef,
-  searchContainerRef,
-  tabsContainerRef
-)
+const animationManager = useAnimation(overlayContentRef, searchContainerRef, tabsContainerRef)
 
 // ==================== 剪贴板历史加载 ====================
 
@@ -91,7 +83,6 @@ const loadClipboardHistory = async (options?: ClipboardHistoryQueryOptions): Pro
       scrollAndTagsManager.initializeScrollbar()
       scrollAndTagsManager.scrollToSelectedItem()
     })
-
   } catch (error) {
     console.error('获取剪贴板历史失败:', error)
     clipboardHistory.value = []
@@ -100,21 +91,17 @@ const loadClipboardHistory = async (options?: ClipboardHistoryQueryOptions): Pro
   }
 }
 
-const throttledLoadClipboardHistory = useThrottle(
-  () => {
-    console.log('history')
-    const currentTagIds = scrollAndTagsManager.activeTagId.value === 'all'
-      ? []
-      : [scrollAndTagsManager.activeTagId.value]
-    const currentSearchText = searchAndNavManager.searchText.value || ''
+const throttledLoadClipboardHistory = useThrottle(() => {
+  console.log('history')
+  const currentTagIds =
+    scrollAndTagsManager.activeTagId.value === 'all' ? [] : [scrollAndTagsManager.activeTagId.value]
+  const currentSearchText = searchAndNavManager.searchText.value || ''
 
-    loadClipboardHistory({
-      tagIds: currentTagIds,
-      searchText: currentSearchText
-    }).catch(console.error)
-  },
-  500
-)
+  loadClipboardHistory({
+    tagIds: currentTagIds,
+    searchText: currentSearchText
+  }).catch(console.error)
+}, 500)
 
 // ==================== 临时占位符，将在 searchAndNavManager 定义后重新定义 ====================
 let scrollAndTagsManager: any
@@ -141,14 +128,16 @@ const setupCloseEventListeners = () => {
 /**
  * 通用剪贴板还原函数
  */
-const restoreClipboard = async (itemId: string, restoreMethod: 'restore' | 'restoreAsText' | 'restoreOcrText'): Promise<void> => {
+const restoreClipboard = async (
+  itemId: string,
+  restoreMethod: 'restore' | 'restoreAsText' | 'restoreOcrText' | 'parseQRCode'
+): Promise<void> => {
   try {
     if (!itemId || typeof itemId !== 'string') {
-      throw new OverlayError(
-        '无效的剪贴板项目ID',
-        OverlayErrorCode.INVALID_STATE,
-        { itemId, type: typeof itemId }
-      )
+      throw new OverlayError('无效的剪贴板项目ID', OverlayErrorCode.INVALID_STATE, {
+        itemId,
+        type: typeof itemId
+      })
     }
 
     const success = await clipboard[restoreMethod](itemId)
@@ -156,18 +145,32 @@ const restoreClipboard = async (itemId: string, restoreMethod: 'restore' | 'rest
     if (success) {
       closeWindow()
     } else {
-      const methodName = restoreMethod === 'restoreAsText' ? '纯文本' :
-                        restoreMethod === 'restoreOcrText' ? 'OCR文字' : ''
+      const methodName =
+        restoreMethod === 'restoreAsText'
+          ? '纯文本'
+          : restoreMethod === 'restoreOcrText'
+            ? 'OCR文字'
+            : restoreMethod === 'parseQRCode'
+              ? '二维码'
+              : ''
+      const action = restoreMethod === 'parseQRCode' ? '解析' : '还原'
       throw new OverlayError(
-        `剪贴板${methodName}还原操作失败`,
+        `剪贴板${methodName}${action}操作失败`,
         OverlayErrorCode.CLIPBOARD_LOAD_FAILED,
         { itemId }
       )
     }
   } catch (error) {
-    const methodName = restoreMethod === 'restoreAsText' ? '为纯文本' :
-                      restoreMethod === 'restoreOcrText' ? '为OCR文字' : ''
-    console.error(`[前端] 还原剪贴板${methodName}失败:`, error)
+    const methodName =
+      restoreMethod === 'restoreAsText'
+        ? '为纯文本'
+        : restoreMethod === 'restoreOcrText'
+          ? '为OCR文字'
+          : restoreMethod === 'parseQRCode'
+            ? '二维码'
+            : ''
+    const action = restoreMethod === 'parseQRCode' ? '解析' : '还原'
+    console.error(`[前端] ${action}剪贴板${methodName}失败:`, error)
   }
 }
 
@@ -184,7 +187,13 @@ const restoreClipboardContentAsText = (itemId: string) => restoreClipboard(itemI
 /**
  * 还原剪贴板内容为OCR文字
  */
-const restoreClipboardContentAsOcrText = (itemId: string) => restoreClipboard(itemId, 'restoreOcrText')
+const restoreClipboardContentAsOcrText = (itemId: string) =>
+  restoreClipboard(itemId, 'restoreOcrText')
+
+/**
+ * 解析剪贴板项目中的二维码
+ */
+const parseQRCodeFromClipboardItem = (itemId: string) => restoreClipboard(itemId, 'parseQRCode')
 
 /**
  * 删除剪贴板项目
@@ -192,11 +201,10 @@ const restoreClipboardContentAsOcrText = (itemId: string) => restoreClipboard(it
 const deleteClipboardItem = async (itemId: string): Promise<void> => {
   try {
     if (!itemId || typeof itemId !== 'string') {
-      throw new OverlayError(
-        '无效的剪贴板项目ID',
-        OverlayErrorCode.INVALID_STATE,
-        { itemId, type: typeof itemId }
-      )
+      throw new OverlayError('无效的剪贴板项目ID', OverlayErrorCode.INVALID_STATE, {
+        itemId,
+        type: typeof itemId
+      })
     }
 
     // 删除项目后重新加载历史记录
@@ -301,7 +309,9 @@ const toggleSearch = async (withBuffer = false, force = false): Promise<void> =>
 
     const isCurrentlyVisible = animationManager.isSearchVisible.value
     console.log(`[搜索框] 当前状态: ${getSearchBoxStateDescription()}`)
-    console.log(`[搜索框] 切换操作: ${isCurrentlyVisible ? '隐藏' : '显示'}${withBuffer ? ' (带缓冲区)' : ''}`)
+    console.log(
+      `[搜索框] 切换操作: ${isCurrentlyVisible ? '隐藏' : '显示'}${withBuffer ? ' (带缓冲区)' : ''}`
+    )
 
     if (isCurrentlyVisible) {
       await hideSearchBox()
@@ -313,11 +323,11 @@ const toggleSearch = async (withBuffer = false, force = false): Promise<void> =>
     // 重置动画状态，防止卡死
     animationManager.setSearchAnimating(false)
     animationManager.setOpeningSearch(false)
-    throw new OverlayError(
-      '搜索框切换动画失败',
-      OverlayErrorCode.ANIMATION_FAILED,
-      { withBuffer, force, originalError: error }
-    )
+    throw new OverlayError('搜索框切换动画失败', OverlayErrorCode.ANIMATION_FAILED, {
+      withBuffer,
+      force,
+      originalError: error
+    })
   }
 }
 
@@ -335,8 +345,10 @@ const hideSearchBox = async (clearText = false): Promise<void> => {
 
   animationManager.setSearchAnimating(true)
 
-  const { play: playSearchCollapse, playState: searchCollapseState } = animationManager.createSearchCollapseAnimation()
-  const { play: playTabsShow, playState: tabsShowState } = animationManager.createTabsShowAnimation()
+  const { play: playSearchCollapse, playState: searchCollapseState } =
+    animationManager.createSearchCollapseAnimation()
+  const { play: playTabsShow, playState: tabsShowState } =
+    animationManager.createTabsShowAnimation()
 
   // 并行执行动画
   playSearchCollapse()
@@ -368,8 +380,10 @@ const showSearchBox = async (withBuffer: boolean): Promise<void> => {
 
   await nextTick()
 
-  const { play: playTabsHide, playState: tabsHideState } = animationManager.createTabsHideAnimation()
-  const { play: playSearchExpand, playState: searchExpandState } = animationManager.createSearchExpandAnimation()
+  const { play: playTabsHide, playState: tabsHideState } =
+    animationManager.createTabsHideAnimation()
+  const { play: playSearchExpand, playState: searchExpandState } =
+    animationManager.createSearchExpandAnimation()
 
   // 并行执行动画
   playTabsHide()
@@ -398,9 +412,10 @@ const showSearchBox = async (withBuffer: boolean): Promise<void> => {
 // ==================== 搜索回调函数 ====================
 const performSearchCallback = async (text: string): Promise<void> => {
   try {
-    const currentTagIds = scrollAndTagsManager.activeTagId.value === 'all'
-      ? []
-      : [scrollAndTagsManager.activeTagId.value]
+    const currentTagIds =
+      scrollAndTagsManager.activeTagId.value === 'all'
+        ? []
+        : [scrollAndTagsManager.activeTagId.value]
 
     const options: ClipboardHistoryQueryOptions = {
       searchText: text.trim(),
@@ -413,11 +428,10 @@ const performSearchCallback = async (text: string): Promise<void> => {
     await loadClipboardHistory(options)
   } catch (error) {
     console.error('[前端] 搜索执行失败:', error)
-    throw new OverlayError(
-      '搜索操作失败',
-      OverlayErrorCode.SEARCH_FAILED,
-      { searchText: text, originalError: error }
-    )
+    throw new OverlayError('搜索操作失败', OverlayErrorCode.SEARCH_FAILED, {
+      searchText: text,
+      originalError: error
+    })
   }
 }
 
@@ -492,11 +506,7 @@ const triggerSlideInAnimation = async (): Promise<void> => {
     playSlideIn()
 
     // 等待滑入动画完成（带超时）
-    await withTimeout(
-      waitForAnimationFinish(playState),
-      5000,
-      '滑入动画超时'
-    )
+    await withTimeout(waitForAnimationFinish(playState), 5000, '滑入动画超时')
 
     // 动画完成，设置为活动状态
     animationManager.setAnimationState(AnimationState.ACTIVE)
@@ -504,15 +514,12 @@ const triggerSlideInAnimation = async (): Promise<void> => {
     send('open-overlay-finished')
 
     console.log('[滑入动画] 滑入动画完成')
-
   } catch (error) {
     console.error('[滑入动画] 滑入动画失败:', error)
     animationManager.resetOverlayState()
-    throw new OverlayError(
-      '滑入动画执行失败',
-      OverlayErrorCode.ANIMATION_FAILED,
-      { originalError: error }
-    )
+    throw new OverlayError('滑入动画执行失败', OverlayErrorCode.ANIMATION_FAILED, {
+      originalError: error
+    })
   }
 }
 
@@ -578,7 +585,6 @@ const handleCloseWindow = async (force: boolean = false): Promise<void> => {
     // 情况3: 搜索框不可见 -> 关闭窗口
     console.log('[关闭窗口] 执行窗口关闭')
     await closeWindow()
-
   } catch (error) {
     console.error('[关闭窗口] 处理关闭窗口事件失败:', error)
 
@@ -643,8 +649,6 @@ const handleKeyboardUpEvent = (event: KeyboardEvent) => {
 
 // ==================== 样式初始化 ====================
 
-
-
 // ==================== 生命周期钩子 ====================
 
 /**
@@ -663,7 +667,8 @@ watch(selectedIndex, () => {
  * 监听 searchText 变化，自动触发搜索
  */
 watch(searchAndNavManager.searchText, (newValue) => {
-  const shouldTriggerSearch = animationManager.isSearchVisible.value &&
+  const shouldTriggerSearch =
+    animationManager.isSearchVisible.value &&
     !animationManager.isOpeningSearch.value &&
     newValue !== undefined
 
@@ -728,7 +733,10 @@ onMounted(async () => {
     nextTick(() => scrollAndTagsManager.initializeScrollbar())
 
     // 监听剪贴板历史更新通知
-    const removeClipboardUpdateListener = onSimple('clipboard-history-updated', throttledLoadClipboardHistory)
+    const removeClipboardUpdateListener = onSimple(
+      'clipboard-history-updated',
+      throttledLoadClipboardHistory
+    )
 
     // 监听标签数据更新通知
     const removeTagsUpdateListener = onSimple('tags-updated', () => {
@@ -736,14 +744,17 @@ onMounted(async () => {
     })
 
     // 监听单条记录OCR更新通知
-    const removeOCRUpdateListener = onSimple('record-ocr-updated', (data: { contentId: string, ocrText: string, timestamp: number }) => {
-      // 更新对应记录的OCR字段
-      const targetItem = clipboardHistory.value.find(item => item.id === data.contentId)
-      if (targetItem && targetItem.content) {
-        targetItem.content.ocr = data.ocrText
-        console.log('[前端] OCR更新:', data.contentId, '文本长度:', data.ocrText.length)
+    const removeOCRUpdateListener = onSimple(
+      'record-ocr-updated',
+      (data: { contentId: string; ocrText: string; timestamp: number }) => {
+        // 更新对应记录的OCR字段
+        const targetItem = clipboardHistory.value.find((item) => item.id === data.contentId)
+        if (targetItem && targetItem.content) {
+          targetItem.content.ocr = data.ocrText
+          console.log('[前端] OCR更新:', data.contentId, '文本长度:', data.ocrText.length)
+        }
       }
-    })
+    )
 
     // 将清理函数添加到事件管理器
     eventManager.addEventListener(window, 'beforeunload', () => {
@@ -753,14 +764,11 @@ onMounted(async () => {
       removeTagsUpdateListener()
       removeOCRUpdateListener()
     })
-
   } catch (error) {
     console.error('[前端] Overlay 组件初始化失败:', error)
-    throw new OverlayError(
-      'Overlay 组件初始化失败',
-      OverlayErrorCode.INVALID_STATE,
-      { originalError: error }
-    )
+    throw new OverlayError('Overlay 组件初始化失败', OverlayErrorCode.INVALID_STATE, {
+      originalError: error
+    })
   }
 })
 
@@ -777,7 +785,6 @@ onUnmounted(() => {
       document.removeEventListener('wheel', wheelHandler)
       wheelHandler = null
     }
-
   } catch (error) {
     console.error('[前端] Overlay 组件资源清理失败:', error)
   }
@@ -791,29 +798,57 @@ onUnmounted(() => {
       <div class="top-toolbar">
         <!-- 搜索图标 -->
         <button class="toolbar-icon search-icon" @click="() => toggleSearch(false)">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <svg
+            width="18"
+            height="18"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+          >
             <circle cx="11" cy="11" r="8"></circle>
             <path d="m21 21-4.35-4.35"></path>
           </svg>
         </button>
 
         <!-- 搜索输入框 -->
-        <div ref="searchContainerRef" v-show="animationManager.showSearchContainer.value" class="search-container">
-          <input type="text" class="search-input" placeholder="Search clipboard history..."
-            :value="searchAndNavManager.searchText.value" @input="searchAndNavManager.handleSearchInput"
-            @keydown.escape="() => toggleSearch(false)" />
+        <div
+          ref="searchContainerRef"
+          v-show="animationManager.showSearchContainer.value"
+          class="search-container"
+        >
+          <input
+            type="text"
+            class="search-input"
+            placeholder="Search clipboard history..."
+            :value="searchAndNavManager.searchText.value"
+            @input="searchAndNavManager.handleSearchInput"
+            @keydown.escape="() => toggleSearch(false)"
+          />
         </div>
 
         <!-- 标签组 -->
-        <div ref="tabsContainerRef" v-show="animationManager.showTabsContainer.value" class="tabs-container">
-          <div v-for="tab in scrollAndTagsManager.tabs.value" :key="tab.id" class="tab" :class="{
-            active: tab.active,
-            'has-count': tab.count > 0,
-            'switching': scrollAndTagsManager.isTagSwitching.value && tab.active
-          }" tabindex="0" role="button"
+        <div
+          ref="tabsContainerRef"
+          v-show="animationManager.showTabsContainer.value"
+          class="tabs-container"
+        >
+          <div
+            v-for="tab in scrollAndTagsManager.tabs.value"
+            :key="tab.id"
+            class="tab"
+            :class="{
+              active: tab.active,
+              'has-count': tab.count > 0,
+              switching: scrollAndTagsManager.isTagSwitching.value && tab.active
+            }"
+            tabindex="0"
+            role="button"
             :aria-label="`Switch to ${tab.label} tag${tab.count > 0 ? ` (${tab.count} items)` : ''}`"
-            @click="() => scrollAndTagsManager.switchTag(tab.id)" @keydown.enter="() => scrollAndTagsManager.switchTag(tab.id)"
-            @keydown.space.prevent="() => scrollAndTagsManager.switchTag(tab.id)">
+            @click="() => scrollAndTagsManager.switchTag(tab.id)"
+            @keydown.enter="() => scrollAndTagsManager.switchTag(tab.id)"
+            @keydown.space.prevent="() => scrollAndTagsManager.switchTag(tab.id)"
+          >
             <span class="tab-dot" :style="{ backgroundColor: tab.color }"></span>
             <span class="tab-label">{{ tab.label }}</span>
             <span v-if="tab.count > 0" class="tab-count">{{ tab.count }}</span>
@@ -828,7 +863,14 @@ onUnmounted(() => {
         <div class="toolbar-buttons">
           <div class="dropdown-container">
             <button class="toolbar-icon menu-icon" @click="toggleDropdownMenu">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <svg
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+              >
                 <circle cx="12" cy="12" r="1"></circle>
                 <circle cx="19" cy="12" r="1"></circle>
                 <circle cx="5" cy="12" r="1"></circle>
@@ -865,15 +907,22 @@ onUnmounted(() => {
         <!-- 剪贴板历史横向滚动 -->
         <div v-else ref="clipboardScrollRef" class="clipboard-scroll-container">
           <transition-group name="clipboard-list" tag="div" class="clipboard-list-wrapper">
-            <ClipboardCard v-for="(item, index) in clipboardHistory" :key="item.id" :item="item" :index="index"
-              :is-selected="index === selectedIndex" :is-quick-select-mode="isQuickSelectMode"
+            <ClipboardCard
+              v-for="(item, index) in clipboardHistory"
+              :key="item.id"
+              :item="item"
+              :index="index"
+              :is-selected="index === selectedIndex"
+              :is-quick-select-mode="isQuickSelectMode"
               :all-tags="scrollAndTagsManager.allTags.value"
               :active-tag-id="scrollAndTagsManager.activeTagId.value"
               :apps="clipboardApps"
               @click="() => restoreClipboardContent(item.id)"
               @restore-as-text="() => restoreClipboardContentAsText(item.id)"
               @restore-ocr-text="() => restoreClipboardContentAsOcrText(item.id)"
-              @delete="() => deleteClipboardItem(item.id)" />
+              @parse-q-r-code="() => parseQRCodeFromClipboardItem(item.id)"
+              @delete="() => deleteClipboardItem(item.id)"
+            />
           </transition-group>
         </div>
       </div>
@@ -908,7 +957,8 @@ onUnmounted(() => {
   overflow: hidden;
   position: relative;
   transform: translateY(100%);
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  font-family:
+    -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
 }
 
 /* 顶部工具栏样式 */
@@ -1186,7 +1236,6 @@ onUnmounted(() => {
 
 :global(.clipboard-scroll-container .scroll-content) {
   transition: transform 0.4s ease;
-
 }
 
 /* 主体区域样式 */

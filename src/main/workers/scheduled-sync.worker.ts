@@ -9,10 +9,7 @@ import type {
   WorkerResponse,
   WorkerEvent
 } from '../types/worker-types'
-import type {
-  SyncResult,
-  ScheduledSyncConfig
-} from '../sync/types'
+import type { SyncResult, ScheduledSyncConfig } from '../sync/types'
 import logger from '../utils/logger'
 import { SyncStatus } from '../sync/types'
 
@@ -81,10 +78,15 @@ class ScheduledSyncWorker extends BaseWorker {
           return true // Worker 基础功能仍然可用
         }
 
-        logger.info(`[${this.getWorkerName()}] 完整初始化成功，同步间隔: ${config.syncInterval} 分钟`)
+        logger.info(
+          `[${this.getWorkerName()}] 完整初始化成功，同步间隔: ${config.syncInterval} 分钟`
+        )
         return true
       } catch (syncError) {
-        logger.warn(`[${this.getWorkerName()}] 同步服务初始化异常，但 Worker 基础功能正常:`, syncError)
+        logger.warn(
+          `[${this.getWorkerName()}] 同步服务初始化异常，但 Worker 基础功能正常:`,
+          syncError
+        )
         // 清理失败的同步服务
         if (this.syncService) {
           try {
@@ -199,7 +201,9 @@ class ScheduledSyncWorker extends BaseWorker {
       this.isRunning = true
       this.scheduleNextSync()
 
-      logger.info(`[${this.getWorkerName()}] 定时同步已启动，间隔: ${this.config.syncInterval} 分钟`)
+      logger.info(
+        `[${this.getWorkerName()}] 定时同步已启动，间隔: ${this.config.syncInterval} 分钟`
+      )
       this.sendEvent('sync-scheduled-started', {
         interval: this.config.syncInterval,
         nextSyncTime: this.nextSyncTime
@@ -255,12 +259,10 @@ class ScheduledSyncWorker extends BaseWorker {
       await this.performSync()
     }, intervalMs)
 
-    logger.debug(`[${this.getWorkerName()}] 已安排下次同步时间: ${new Date(this.nextSyncTime).toLocaleString()}`)
+    logger.debug(
+      `[${this.getWorkerName()}] 已安排下次同步时间: ${new Date(this.nextSyncTime).toLocaleString()}`
+    )
   }
-
-
-
-
 
   /**
    * 执行同步任务
@@ -492,7 +494,9 @@ class ScheduledSyncWorker extends BaseWorker {
    */
   public async testConnectionWithConfig(config: ScheduledSyncConfig): Promise<boolean> {
     try {
-      logger.info(`[${this.getWorkerName()}] 开始使用指定配置测试同步连接，配置:${JSON.stringify(config)}`)
+      logger.info(
+        `[${this.getWorkerName()}] 开始使用指定配置测试同步连接，配置:${JSON.stringify(config)}`
+      )
 
       // 创建临时的同步服务实例进行测试
       const tempSyncService = new SyncService(config.userDataPath)

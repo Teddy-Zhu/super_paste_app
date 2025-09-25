@@ -105,14 +105,14 @@ export class OCRManager {
       // 设置 Node.js 环境的 canvas 支持
       setOCREnv({
         canvas: (w: number, h: number) => createCanvas(w, h),
-        imageData: createImageData,
+        imageData: createImageData
       })
 
       // 检查资源文件是否存在
       const detModelPath = path.join(this.resourcePath, 'ppocr_det.onnx')
       const recModelPath = path.join(this.resourcePath, 'ppocr_rec.onnx')
       const keysPath = path.join(this.resourcePath, 'ppocr_keys_v1.txt')
-      
+
       await this.checkResourceFiles([detModelPath, recModelPath, keysPath])
 
       // 读取字典文件
@@ -290,8 +290,6 @@ export class OCRManager {
 
     return result.parragraphs.map((item) => item.text).join('\n')
   }
-
-
 
   /**
    * 销毁 OCR 实例

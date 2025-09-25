@@ -26,21 +26,14 @@ const contextMenuState = reactive<ContextMenuState>({
   sourceId: undefined
 })
 
-
-
 /**
  * 全局上下文菜单管理器
  */
 export function useContextMenu() {
-  
   /**
    * 显示上下文菜单
    */
-  const showContextMenu = (
-    event: MouseEvent,
-    items: MenuItem[],
-    sourceId?: string
-  ) => {
+  const showContextMenu = (event: MouseEvent, items: MenuItem[], sourceId?: string) => {
     // 阻止默认右键菜单
     event.preventDefault()
     event.stopPropagation()
@@ -129,8 +122,6 @@ export function useContextMenu() {
     return { x, y }
   }
 
-
-
   /**
    * 检查菜单是否属于指定来源
    */
@@ -145,8 +136,6 @@ export function useContextMenu() {
     isMenuFromSource
   }
 }
-
-
 
 // 全局点击事件监听器
 document.addEventListener('click', (event) => {

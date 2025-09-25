@@ -26,12 +26,7 @@
 ### 1. 导入类型和服务
 
 ```typescript
-import { 
-  syncService, 
-  SyncProviderType, 
-  SyncDirection,
-  type WebDAVConfig 
-} from '../sync'
+import { syncService, SyncProviderType, SyncDirection, type WebDAVConfig } from '../sync'
 
 // 初始化同步服务
 await syncService.initialize()
@@ -53,10 +48,7 @@ const webdavConfig: WebDAVConfig = {
 }
 
 // 配置 WebDAV 同步提供者
-const success = await syncService.configureSyncProvider(
-  SyncProviderType.WEBDAV, 
-  webdavConfig
-)
+const success = await syncService.configureSyncProvider(SyncProviderType.WEBDAV, webdavConfig)
 
 if (success) {
   console.log('WebDAV 同步配置成功')
@@ -114,11 +106,7 @@ syncService.addSyncEventListener('file-synced', (event) => {
 
 ```typescript
 import { BaseSyncProvider } from '../sync'
-import type { 
-  SyncConfig, 
-  SyncResult, 
-  SyncFileInfo 
-} from '../sync'
+import type { SyncConfig, SyncResult, SyncFileInfo } from '../sync'
 
 interface CustomSyncConfig extends SyncConfig {
   customOption: string
@@ -150,7 +138,7 @@ class CustomSyncProvider extends BaseSyncProvider {
   }
 
   // 实现其他必需的方法...
-  
+
   protected async performSync(): Promise<SyncResult> {
     // 实现具体的同步逻辑
     return {
@@ -191,7 +179,6 @@ syncService.disableSync()
 1. **数据库文件** (`clipboard-history.db`)
    - 包含所有剪贴板历史记录
    - 包含标签和应用信息
-   
 2. **配置文件** (`super-paste-config.json`)
    - 应用设置和偏好
    - 用户自定义配置
@@ -209,7 +196,7 @@ syncService.disableSync()
 ```typescript
 const result = await syncService.sync()
 if (!result.success && result.errors) {
-  result.errors.forEach(error => {
+  result.errors.forEach((error) => {
     console.error('同步错误:', error)
   })
 }

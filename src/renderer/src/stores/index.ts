@@ -1,7 +1,7 @@
 import { createPinia } from 'pinia'
 import { createPersistedState } from 'pinia-plugin-persistedstate'
 import { createFieldChangePlugin } from './fieldChangePlugin'
-import { sendSync ,invoke, onSimple as on } from '@renderer/api/ipc'
+import { sendSync, invoke, onSimple as on } from '@renderer/api/ipc'
 import { isProxy, toRaw } from 'vue'
 const store = createPinia()
 // pinia持久化
@@ -21,14 +21,16 @@ store.use(
     }
   })
 )
-store.use(createFieldChangePlugin(({ storeId, key, oldValue, newValue }) => {
-  console.log(`[${storeId}] 字段 ${key} 变了:`, oldValue, '→', newValue)
-  // 也可以上传到服务器、日志记录等
+store.use(
+  createFieldChangePlugin(({ storeId, key, oldValue, newValue }) => {
+    console.log(`[${storeId}] 字段 ${key} 变了:`, oldValue, '→', newValue)
+    // 也可以上传到服务器、日志记录等
 
-  invoke('store-set', `${storeId}.${key}`, isProxy(newValue) ? toRaw(newValue) : newValue)
-}))
+    invoke('store-set', `${storeId}.${key}`, isProxy(newValue) ? toRaw(newValue) : newValue)
+  })
+)
 
-on('store-value-changed', ({key, value}) => {
+on('store-value-changed', ({ key, value }) => {
   const parsedKey = key.split('.')
   const storeId = parsedKey[0]
   const fieldKey = parsedKey[1]
@@ -36,7 +38,7 @@ on('store-value-changed', ({key, value}) => {
   //@ts-ignore
   const stores = Array.from(store._s.values())
   stores.forEach((store: any) => {
-    if(store.$id === storeId) {
+    if (store.$id === storeId) {
       console.log('store-value-changed set', storeId, fieldKey, value)
       store.$setSilent(fieldKey, value)
     }
