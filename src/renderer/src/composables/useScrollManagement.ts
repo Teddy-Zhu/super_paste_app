@@ -156,9 +156,11 @@ export function useScrollManagement(
    */
   const handleWheel = useThrottle((event: WheelEvent) => {
     // 只有在活跃状态且有剪贴板历史时才响应滚轮事件
-    if (currentAnimationState.value !== AnimationState.ACTIVE ||
+    if (
+      currentAnimationState.value !== AnimationState.ACTIVE ||
       !clipboardScrollRef.value ||
-      clipboardHistory.value.length === 0) {
+      clipboardHistory.value.length === 0
+    ) {
       return
     }
 
@@ -167,59 +169,46 @@ export function useScrollManagement(
       initializeScrollbar()
     }
 
-    // 阻止默认的滚动行为
-    event.preventDefault()
+    // 仅对触摸板（像素级滚动）且纵向滚动占主导时做处理：把纵向滚动转换为横向滚动
+    const isPixelMode = event.deltaMode === 0
+    const absDeltaX = Math.abs(event.deltaX)
+    const absDeltaY = Math.abs(event.deltaY)
 
-    // 检查是否为水平滚动（触摸板左右滑动）
-    const isHorizontalScroll = Math.abs(event.deltaX) > Math.abs(event.deltaY)
-
-    // 确定滚动方向和滚动量
-    let scrollAmount = 0
-
-    if (isHorizontalScroll && Math.abs(event.deltaX) > 3) {
-      // 触摸板水平滑动 - 进行水平滚动
-      scrollAmount = event.deltaX * 3 // 降低敏感度，smooth-scrollbar 会提供更好的滚动体验
-    } else {
-      // 垂直滚动 - 转换为水平滚动（保持原有行为）
-      scrollAmount = event.deltaY * 5 // 降低敏感度
+    if (!(isPixelMode && absDeltaY > absDeltaX && event.deltaY !== 0)) {
+      // 不是需要转换的情况：不拦截，交给默认/原有逻辑（包括横向滚动）
+      return
     }
 
+    // 拦截默认的纵向滚动，改用横向滚动
+    event.preventDefault()
+
+    const scrollAmount = event.deltaY // 1:1 转换，不做额外放大/缩小
+
     if (scrollbarInstance) {
-      // 使用 smooth-scrollbar 进行滚动
       const currentScrollLeft = scrollbarInstance.scrollLeft
-      const maxScrollLeft = scrollbarInstance.size.content.width - scrollbarInstance.size.container.width
-
-      // 边界检查，确保不会超出滚动范围
-      const targetScrollLeft = Math.max(0, Math.min(maxScrollLeft, currentScrollLeft + scrollAmount))
-
-      // 如果已经到达边界，不执行滚动
-      if (targetScrollLeft === currentScrollLeft) {
-        return
+      const maxScrollLeft =
+        scrollbarInstance.size.content.width - scrollbarInstance.size.container.width
+      const targetScrollLeft = Math.max(
+        0,
+        Math.min(maxScrollLeft, currentScrollLeft + scrollAmount)
+      )
+      if (targetScrollLeft !== currentScrollLeft) {
+        // 立即更新位置，不使用额外动画
+        scrollbarInstance.scrollTo(targetScrollLeft, 0, 0)
       }
-
-      // 使用 smooth-scrollbar 的平滑滚动，不使用动画时间以保持响应性
-      scrollbarInstance.scrollTo(targetScrollLeft, 0, 0)
     } else {
-      // 回退到原生滚动
       const container = clipboardScrollRef.value
       const currentScrollLeft = container.scrollLeft
       const maxScrollLeft = container.scrollWidth - container.clientWidth
-
-      // 边界检查，确保不会超出滚动范围
-      const targetScrollLeft = Math.max(0, Math.min(maxScrollLeft, currentScrollLeft + scrollAmount))
-
-      // 如果已经到达边界，不执行滚动
-      if (targetScrollLeft === currentScrollLeft) {
-        return
+      const targetScrollLeft = Math.max(
+        0,
+        Math.min(maxScrollLeft, currentScrollLeft + scrollAmount)
+      )
+      if (targetScrollLeft !== currentScrollLeft) {
+        container.scrollLeft = targetScrollLeft
       }
-
-      // 使用原生平滑滚动
-      container.scrollTo({
-        left: targetScrollLeft,
-        behavior: 'smooth'
-      })
     }
-  }, 16) // 使用固定的节流延迟（约一帧的时间）
+  }, 16) // 固定节流（约一帧），仅用于轻量防抖
 
   /**
    * 确保选中项目可见（延迟执行）

@@ -1,5 +1,5 @@
 appId: com.v2dawn.sp
-productName: Super Paste
+productName: SuperPaste
 directories:
   buildResources: build
 icon: build/icon/icons/icon
@@ -57,8 +57,8 @@ linux:
   category: Utility
   icon: build/icon/icons
   desktop:
-    StartupWMClass: Super Paste
-    Name: Super Paste
+    StartupWMClass: SuperPaste
+    Name: SuperPaste
     Comment: a clipboard manager tool
 appImage:
   artifactName: ${name}-${version}.${ext}

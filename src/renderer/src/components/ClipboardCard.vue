@@ -825,8 +825,8 @@ const shortcutLabel = computed(() => {
   line-height: 1.6;
   color: #475569;
   display: -webkit-box;
-  -webkit-line-clamp: 3;
-  line-clamp: 3;
+  -webkit-line-clamp: 6;
+  line-clamp: 6;
   -webkit-box-orient: vertical;
   overflow: hidden;
   font-weight: 500;

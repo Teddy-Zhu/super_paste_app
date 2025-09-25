@@ -26,12 +26,15 @@
     "@paymoapp/active-window": "^2.1.2",
     "@teddyzhu/auto-launch": "6.0.0-rc.8",
     "@teddyzhu/clipboard": "^0.0.5",
+    "@zxing/library": "^0.21.3",
     "better-sqlite3": "^12.2.0",
     "canvas": "^3.1.2",
     "electron-log": "^5.4.1",
     "electron-store": "^10.1.0",
-    "onnxruntime-node": "1.22.0-rev",
     "onnxruntime-common": "^1.22.0",
+    "onnxruntime-node": "1.22.0-rev",
+    "qrcode": "^1.5.4",
+    "sharp": "^0.34.4",
     "webdav": "^5.8.0"
   },
   "devDependencies": {
@@ -78,8 +81,9 @@
       "esbuild",
       "get-windows",
       "onnxruntime-node",
+      "sharp",
       "vue-demi"
     ]
   },
-  "packageManager": "pnpm@10.13.1+sha512.37ebf1a5c7a30d5fabe0c5df44ee8da4c965ca0c5af3dbab28c3a1681b70a256218d05c81c9c0dcf767ef6b8551eb5b960042b9ed4300c59242336377e01cfad"
+  "packageManager": "pnpm@10.17.0+sha512.fce8a3dd29a4ed2ec566fb53efbb04d8c44a0f05bc6f24a73046910fb9c3ce7afa35a0980500668fa3573345bd644644fa98338fa168235c80f4aa17aa17fbef"
 }
