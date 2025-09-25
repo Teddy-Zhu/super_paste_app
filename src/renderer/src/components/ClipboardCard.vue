@@ -31,6 +31,7 @@ const emit = defineEmits<{
   restoreAsText: [itemId: string]
   restoreOcrText: [itemId: string]
   parseQRCode: [itemId: string]
+  generateQRCode: [itemId: string]
   delete: [itemId: string]
 }>()
 
@@ -387,6 +388,16 @@ const handleContextMenu = (event: MouseEvent) => {
     })
   }
 
+  // 如果是文本、HTML或URL类型，添加生成二维码选项
+  if (props.item.primaryType === 'text' || props.item.primaryType === 'html' || props.item.primaryType === 'url') {
+    menuItems.push({
+      label: '生成二维码',
+      icon: IconTextBox,
+      action: () => handleGenerateQRCode(),
+      disabled: false
+    })
+  }
+
   // 添加标签相关菜单项
   if (props.allTags && props.allTags.length > 0) {
     // 获取当前项目已有的标签ID
@@ -467,6 +478,11 @@ const handleRestoreOcrText = () => {
 // 处理解析二维码
 const handleParseQRCode = () => {
   emit('parseQRCode', props.item.id)
+}
+
+// 处理生成二维码
+const handleGenerateQRCode = () => {
+  emit('generateQRCode', props.item.id)
 }
 
 // 处理删除项目

@@ -3,6 +3,7 @@ import clipboardManager from '../clipboard/clipboard-manager'
 import clipboardHistoryService from '../services/clipboard-history-service'
 import clipboardTagService from '../services/clipboard-tag-service'
 import clipboardHistoryCleaner from '../clipboard/clipboard-history-cleaner'
+import { qrCodeService } from '../services/qrcode-service'
 import type { ClipboardItem, ClipboardManagerConfig } from '../types/clipboard-types'
 import type { BaseWorkerManager } from '../workers/base-worker-manager'
 import logger from '../utils/logger'
@@ -179,6 +180,79 @@ class IpcManager {
         return {
           success: false,
           error: (error as Error).message || '解析二维码失败'
+        }
+      }
+    })
+
+    // 生成二维码
+    ipcMain.handle('clipboard-generate-qrcode', async (_, itemId: string) => {
+      try {
+        // 直接通过ID获取剪贴板项目
+        const records = await clipboardHistoryService.searchHistory({
+          limit: 100 // 获取更多记录以便查找
+        })
+
+        if (!records.items.length) {
+          return {
+            success: false,
+            error: '没有找到任何剪贴板项目'
+          }
+        }
+
+        const item = records.items.find(i => i.id === itemId)
+        if (!item) {
+          return {
+            success: false,
+            error: '未找到指定的剪贴板项目'
+          }
+        }
+
+        // 检查是否为文本类型
+        if (item.primaryType !== 'text' && item.primaryType !== 'html' && item.primaryType !== 'url') {
+          return {
+            success: false,
+            error: '只有文本类型的内容才能生成二维码'
+          }
+        }
+
+        // 获取文本内容
+        let textContent = ''
+        if (item.content.text) {
+          textContent = item.content.text
+        } else if (item.content.html) {
+          // 如果是HTML，提取纯文本
+          textContent = item.content.html.replace(/<[^>]*>/g, '')
+        }
+
+        if (!textContent.trim()) {
+          return {
+            success: false,
+            error: '文本内容为空，无法生成二维码'
+          }
+        }
+
+        // 生成二维码Buffer
+        const qrCodeBuffer = await qrCodeService.generateQRCodeBuffer(textContent)
+
+        // 直接通过剪贴板管理器设置到系统剪贴板
+        const success = await clipboardManager.call('setImageToClipboard', qrCodeBuffer)
+
+        if (success) {
+          return {
+            success: true,
+            message: '二维码已生成并复制到剪贴板'
+          }
+        } else {
+          return {
+            success: false,
+            error: '设置二维码到剪贴板失败'
+          }
+        }
+      } catch (error) {
+        logger.error('[IPC管理器] 生成二维码失败:', error)
+        return {
+          success: false,
+          error: (error as Error).message || '生成二维码失败'
         }
       }
     })
@@ -545,6 +619,7 @@ class IpcManager {
       'clipboard-restore-as-text',
       'clipboard-restore-ocr-text',
       'clipboard-parse-qrcode',
+      'clipboard-generate-qrcode',
       'clipboard-delete-item',
       'clipboard-clear-history',
       'clipboard-get-status',

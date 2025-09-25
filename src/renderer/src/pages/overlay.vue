@@ -130,7 +130,7 @@ const setupCloseEventListeners = () => {
  */
 const restoreClipboard = async (
   itemId: string,
-  restoreMethod: 'restore' | 'restoreAsText' | 'restoreOcrText' | 'parseQRCode'
+  restoreMethod: 'restore' | 'restoreAsText' | 'restoreOcrText' | 'parseQRCode' | 'generateQRCode'
 ): Promise<void> => {
   try {
     if (!itemId || typeof itemId !== 'string') {
@@ -140,25 +140,40 @@ const restoreClipboard = async (
       })
     }
 
-    const success = await clipboard[restoreMethod](itemId)
-
-    if (success) {
-      closeWindow()
+    if (restoreMethod === 'generateQRCode') {
+      // 生成二维码需要特殊处理
+      const result = await clipboard.generateQRCode(itemId)
+      if (result.success) {
+        // 生成成功，关闭窗口（剪贴板数据会自动更新）
+        closeWindow()
+      } else {
+        throw new OverlayError(
+          `生成二维码失败: ${result.message}`,
+          OverlayErrorCode.CLIPBOARD_LOAD_FAILED,
+          { itemId }
+        )
+      }
     } else {
-      const methodName =
-        restoreMethod === 'restoreAsText'
-          ? '纯文本'
-          : restoreMethod === 'restoreOcrText'
-            ? 'OCR文字'
-            : restoreMethod === 'parseQRCode'
-              ? '二维码'
-              : ''
-      const action = restoreMethod === 'parseQRCode' ? '解析' : '还原'
-      throw new OverlayError(
-        `剪贴板${methodName}${action}操作失败`,
-        OverlayErrorCode.CLIPBOARD_LOAD_FAILED,
-        { itemId }
-      )
+      const success = await clipboard[restoreMethod](itemId)
+
+      if (success) {
+        closeWindow()
+      } else {
+        const methodName =
+          restoreMethod === 'restoreAsText'
+            ? '纯文本'
+            : restoreMethod === 'restoreOcrText'
+              ? 'OCR文字'
+              : restoreMethod === 'parseQRCode'
+                ? '二维码'
+                : ''
+        const action = restoreMethod === 'parseQRCode' ? '解析' : '还原'
+        throw new OverlayError(
+          `剪贴板${methodName}${action}操作失败`,
+          OverlayErrorCode.CLIPBOARD_LOAD_FAILED,
+          { itemId }
+        )
+      }
     }
   } catch (error) {
     const methodName =
@@ -168,8 +183,10 @@ const restoreClipboard = async (
           ? '为OCR文字'
           : restoreMethod === 'parseQRCode'
             ? '二维码'
-            : ''
-    const action = restoreMethod === 'parseQRCode' ? '解析' : '还原'
+            : restoreMethod === 'generateQRCode'
+              ? '二维码'
+              : ''
+    const action = restoreMethod === 'parseQRCode' ? '解析' : restoreMethod === 'generateQRCode' ? '生成' : '还原'
     console.error(`[前端] ${action}剪贴板${methodName}失败:`, error)
   }
 }
@@ -194,6 +211,11 @@ const restoreClipboardContentAsOcrText = (itemId: string) =>
  * 解析剪贴板项目中的二维码
  */
 const parseQRCodeFromClipboardItem = (itemId: string) => restoreClipboard(itemId, 'parseQRCode')
+
+/**
+ * 生成剪贴板项目的二维码
+ */
+const generateQRCodeFromClipboardItem = (itemId: string) => restoreClipboard(itemId, 'generateQRCode')
 
 /**
  * 删除剪贴板项目
@@ -921,6 +943,7 @@ onUnmounted(() => {
               @restore-as-text="() => restoreClipboardContentAsText(item.id)"
               @restore-ocr-text="() => restoreClipboardContentAsOcrText(item.id)"
               @parse-q-r-code="() => parseQRCodeFromClipboardItem(item.id)"
+              @generateQRCode="() => generateQRCodeFromClipboardItem(item.id)"
               @delete="() => deleteClipboardItem(item.id)"
             />
           </transition-group>

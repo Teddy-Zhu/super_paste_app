@@ -32,6 +32,7 @@ export interface IpcChannels {
   'clipboard-restore-as-text': { itemId: string }
   'clipboard-restore-ocr-text': { itemId: string }
   'clipboard-parse-qrcode': { itemId: string }
+  'clipboard-generate-qrcode': { itemId: string }
   'clipboard-delete-item': { itemId: string }
   'clipboard-clear-history': void
   'clipboard-get-status': void
@@ -63,6 +64,7 @@ export interface IpcResponses {
   'clipboard-restore': { success: boolean; message?: string; error?: string }
   'clipboard-restore-as-text': { success: boolean; message?: string; error?: string }
   'clipboard-restore-ocr-text': { success: boolean; message?: string; error?: string }
+  'clipboard-generate-qrcode': { success: boolean; message?: string; error?: string; data?: { qrCodeDataUrl: string } }
   'clipboard-delete-item': { success: boolean; message?: string; error?: string }
   'clipboard-clear-history': { success: boolean; message?: string; error?: string }
   'clipboard-get-status': { success: boolean; data?: any; error?: string }
@@ -246,6 +248,7 @@ export interface ClipboardOperations {
   restoreAsText(itemId: string): Promise<boolean>
   restoreOcrText(itemId: string): Promise<boolean>
   parseQRCode(itemId: string): Promise<boolean>
+  generateQRCode(itemId: string): Promise<{ success: boolean; message?: string; data?: { qrCodeDataUrl: string } }>
   deleteItem(itemId: string): Promise<boolean>
   clearHistory(): Promise<boolean>
   getStatus(): Promise<ClipboardStatus>

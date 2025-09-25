@@ -100,6 +100,15 @@ export const clipboard: ClipboardOperations = {
     return result.success
   },
 
+  async generateQRCode(itemId: string): Promise<{ success: boolean; message?: string; data?: { qrCodeDataUrl: string } }> {
+    const result: ClipboardIpcResponse<{ qrCodeDataUrl: string }> = await invoke('clipboard-generate-qrcode', itemId)
+    return {
+      success: result.success,
+      message: result.success ? (result.message || '二维码生成成功') : result.error,
+      data: result.success ? result.data : undefined
+    }
+  },
+
   async deleteItem(itemId: string): Promise<boolean> {
     const result: ClipboardIpcResponse = await invoke('clipboard-delete-item', itemId)
     return result.success

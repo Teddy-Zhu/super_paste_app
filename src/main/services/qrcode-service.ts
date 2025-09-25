@@ -1,11 +1,11 @@
 /**
- * 二维码解析服务
+ * 二维码解析和生成服务
  * 使用 qrcode-reader 和 jimp 解析图片中的二维码
+ * 使用 qrcode 生成二维码
  */
 
 import { Jimp } from "jimp";
-
-
+import QRCode from 'qrcode'
 import QrCode from 'qrcode-reader';
 import logger from '../utils/logger'
 
@@ -18,6 +18,82 @@ export class QRCodeService {
   constructor() {
     this.qr = new QrCode()
     logger.debug('[二维码服务] 初始化完成')
+  }
+
+  /**
+   * 将文本转换为二维码并返回base64编码的PNG图片
+   * @param text 要转换为二维码的文本
+   * @param options QRCode选项
+   * @returns Promise<string> base64编码的PNG图片数据
+   */
+  async generateQRCode(text: string, options?: QRCode.QRCodeToDataURLOptions): Promise<string> {
+    try {
+      if (!text || text.trim() === '') {
+        throw new Error('文本内容不能为空')
+      }
+
+      // 设置默认选项
+      const defaultOptions: QRCode.QRCodeToDataURLOptions = {
+        type: 'image/png',
+        width: 256,
+        margin: 2,
+        color: {
+          dark: '#000000',
+          light: '#FFFFFF'
+        },
+        errorCorrectionLevel: 'M'
+      }
+
+      const finalOptions = { ...defaultOptions, ...options }
+
+      // 生成二维码
+      const dataUrl = await QRCode.toDataURL(text, finalOptions)
+
+      logger.info('[二维码服务] 二维码生成成功', { textLength: text.length })
+      return dataUrl
+
+    } catch (error) {
+      logger.error('[二维码服务] 生成二维码失败:', error)
+      throw new Error(`生成二维码失败: ${error instanceof Error ? error.message : String(error)}`)
+    }
+  }
+
+  /**
+   * 将文本转换为二维码并返回Buffer
+   * @param text 要转换为二维码的文本
+   * @param options QRCode选项
+   * @returns Promise<Buffer> PNG图片Buffer
+   */
+  async generateQRCodeBuffer(text: string, options?: QRCode.QRCodeToBufferOptions): Promise<Buffer> {
+    try {
+      if (!text || text.trim() === '') {
+        throw new Error('文本内容不能为空')
+      }
+
+      // 设置默认选项
+      const defaultOptions: QRCode.QRCodeToBufferOptions = {
+        type: 'png',
+        width: 256,
+        margin: 2,
+        color: {
+          dark: '#000000',
+          light: '#FFFFFF'
+        },
+        errorCorrectionLevel: 'M'
+      }
+
+      const finalOptions = { ...defaultOptions, ...options }
+
+      // 生成二维码Buffer
+      const buffer = await QRCode.toBuffer(text, finalOptions)
+
+      logger.info('[二维码服务] 二维码Buffer生成成功', { textLength: text.length, bufferSize: buffer.length })
+      return buffer
+
+    } catch (error) {
+      logger.error('[二维码服务] 生成二维码Buffer失败:', error)
+      throw new Error(`生成二维码Buffer失败: ${error instanceof Error ? error.message : String(error)}`)
+    }
   }
 
   /**

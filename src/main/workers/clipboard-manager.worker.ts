@@ -1237,6 +1237,39 @@ class ClipboardManagerWorker extends BaseWorker {
   }
 
   /**
+   * 设置图片到剪贴板
+   * @param imageBuffer 图片Buffer数据
+   */
+  public setImageToClipboard(imageBuffer: Buffer): boolean {
+    try {
+      // 参数验证
+      if (!Buffer.isBuffer(imageBuffer) || imageBuffer.length === 0) {
+        console.error('[剪贴板管理器 Worker] 无效的图片数据')
+        return false
+      }
+
+      // 使用 TeddyClipboardManager 设置图片内容
+      // 根据 TeddyClipboardManager 的 API，直接传递 Buffer
+      const clipboardData = {
+        availableFormats: ['image'],
+        image: {
+          data: imageBuffer,
+          width: 0,
+          height: 0,
+          size: imageBuffer.length
+        }
+      }
+      this.clipboard.setContents(clipboardData)
+
+      console.log('[剪贴板管理器 Worker] 图片已设置到剪贴板')
+      return true
+    } catch (error) {
+      console.error('[剪贴板管理器 Worker] 设置图片到剪贴板失败:', error)
+      return false
+    }
+  }
+
+  /**
    * 异步执行OCR识别
    */
   private async performAsyncOCR(contentId: string, imageBuffer: Buffer): Promise<void> {
@@ -1379,6 +1412,9 @@ class ClipboardManagerWorker extends BaseWorker {
           break
         case 'parseQRCodeFromItem':
           result = await this.parseQRCodeFromItem(request.params)
+          break
+        case 'setImageToClipboard':
+          result = this.setImageToClipboard(request.params)
           break
         case 'getCurrentClipboard':
           result = await this.getCurrentClipboard()
