@@ -1240,28 +1240,53 @@ class ClipboardManagerWorker extends BaseWorker {
    * 设置图片到剪贴板
    * @param imageBuffer 图片Buffer数据
    */
-  public setImageToClipboard(imageBuffer: Buffer): boolean {
+  public setImageToClipboard(imageBuffer: Buffer | Uint8Array | any): boolean {
     try {
-      // 参数验证
-      if (!Buffer.isBuffer(imageBuffer) || imageBuffer.length === 0) {
-        console.error('[剪贴板管理器 Worker] 无效的图片数据')
+      console.log('[剪贴板管理器 Worker] 收到图片数据:', {
+        isBuffer: Buffer.isBuffer(imageBuffer),
+        isUint8Array: imageBuffer instanceof Uint8Array,
+        length: imageBuffer?.length,
+        type: typeof imageBuffer,
+        constructor: imageBuffer?.constructor?.name
+      })
+
+      // 参数验证 - 检查是否为Buffer、Uint8Array或者可以转换为Buffer
+      let buffer: Buffer
+      if (Buffer.isBuffer(imageBuffer)) {
+        buffer = imageBuffer
+      } else if (imageBuffer instanceof Uint8Array) {
+        // Worker线程间通信时Buffer会被序列化为Uint8Array
+        buffer = Buffer.from(imageBuffer)
+        console.log('[剪贴板管理器 Worker] 从Uint8Array转换为Buffer，大小:', buffer.length)
+      } else if (Array.isArray(imageBuffer)) {
+        // 处理普通数组的情况
+        buffer = Buffer.from(imageBuffer)
+      } else if (imageBuffer && typeof imageBuffer === 'object' && (imageBuffer as any).data) {
+        // 如果是序列化后的Buffer对象，尝试恢复
+        buffer = Buffer.from((imageBuffer as any).data)
+      } else {
+        console.error('[剪贴板管理器 Worker] 无效的图片数据:', typeof imageBuffer, imageBuffer)
+        return false
+      }
+
+      if (buffer.length === 0) {
+        console.error('[剪贴板管理器 Worker] 图片数据为空')
         return false
       }
 
       // 使用 TeddyClipboardManager 设置图片内容
-      // 根据 TeddyClipboardManager 的 API，直接传递 Buffer
       const clipboardData = {
         availableFormats: ['image'],
         image: {
-          data: imageBuffer,
+          data: buffer,
           width: 0,
           height: 0,
-          size: imageBuffer.length
+          size: buffer.length
         }
       }
       this.clipboard.setContents(clipboardData)
 
-      console.log('[剪贴板管理器 Worker] 图片已设置到剪贴板')
+      console.log('[剪贴板管理器 Worker] 图片已设置到剪贴板，大小:', buffer.length)
       return true
     } catch (error) {
       console.error('[剪贴板管理器 Worker] 设置图片到剪贴板失败:', error)
