@@ -57,14 +57,12 @@ export interface ThrottleFunction<T extends (...args: any[]) => any> {
  * 统一管理事件监听器，自动清理
  */
 export function useEventManager(): EventManager {
-  const listeners = ref<
-    Array<{
-      element: EventTarget
-      event: string
-      handler: EventListener
-      cleanup: () => void
-    }>
-  >([])
+  const listeners: Array<{
+    element: EventTarget
+    event: string
+    handler: EventListener
+    cleanup: () => void
+  }> = []
 
   const addEventListener = (
     element: EventTarget,
@@ -76,21 +74,21 @@ export function useEventManager(): EventManager {
 
     const cleanup = () => {
       element.removeEventListener(event, handler)
-      const index = listeners.value.findIndex(
+      const index = listeners.findIndex(
         (l) => l.element === element && l.event === event && l.handler === handler
       )
       if (index > -1) {
-        listeners.value.splice(index, 1)
+        listeners.splice(index, 1)
       }
     }
 
-    listeners.value.push({ element, event, handler, cleanup })
+    listeners.push({ element, event, handler, cleanup })
     return cleanup
   }
 
   const removeAllListeners = () => {
-    listeners.value.forEach(({ cleanup }) => cleanup())
-    listeners.value = []
+    listeners.forEach(({ cleanup }) => cleanup())
+    listeners.length = 0
   }
 
   const cleanup = removeAllListeners
@@ -112,57 +110,57 @@ export function useEventManager(): EventManager {
  * 统一管理定时器，防止内存泄漏
  */
 export function useTimerManager(): TimerManager {
-  const timeouts = ref<Set<number>>(new Set())
-  const intervals = ref<Set<number>>(new Set())
-  const rafs = ref<Set<number>>(new Set())
+  const timeouts = new Set<number>()
+  const intervals = new Set<number>()
+  const rafs = new Set<number>()
 
   const setTimeout = (callback: () => void, delay: number): number => {
     const id = window.setTimeout(() => {
-      timeouts.value.delete(id)
+      timeouts.delete(id)
       callback()
     }, delay)
-    timeouts.value.add(id)
+    timeouts.add(id)
     return id
   }
 
   const setInterval = (callback: () => void, delay: number): number => {
     const id = window.setInterval(callback, delay)
-    intervals.value.add(id)
+    intervals.add(id)
     return id
   }
 
   const requestAnimationFrame = (callback: FrameRequestCallback): number => {
     const id = window.requestAnimationFrame((time) => {
-      rafs.value.delete(id)
+      rafs.delete(id)
       callback(time)
     })
-    rafs.value.add(id)
+    rafs.add(id)
     return id
   }
 
   const clearTimeout = (id: number) => {
     window.clearTimeout(id)
-    timeouts.value.delete(id)
+    timeouts.delete(id)
   }
 
   const clearInterval = (id: number) => {
     window.clearInterval(id)
-    intervals.value.delete(id)
+    intervals.delete(id)
   }
 
   const cancelAnimationFrame = (id: number) => {
     window.cancelAnimationFrame(id)
-    rafs.value.delete(id)
+    rafs.delete(id)
   }
 
   const cleanup = () => {
-    timeouts.value.forEach((id) => window.clearTimeout(id))
-    intervals.value.forEach((id) => window.clearInterval(id))
-    rafs.value.forEach((id) => window.cancelAnimationFrame(id))
+    timeouts.forEach((id) => window.clearTimeout(id))
+    intervals.forEach((id) => window.clearInterval(id))
+    rafs.forEach((id) => window.cancelAnimationFrame(id))
 
-    timeouts.value.clear()
-    intervals.value.clear()
-    rafs.value.clear()
+    timeouts.clear()
+    intervals.clear()
+    rafs.clear()
   }
 
   // 组件卸载时自动清理

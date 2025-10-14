@@ -144,21 +144,6 @@ export const clipboard: ClipboardOperations = {
 }
 
 /**
- * 工具函数：安全的 invoke 调用
- */
-export async function safeInvoke<T>(
-  channel: string,
-  data?: any,
-  defaultValue?: T
-): Promise<T | undefined> {
-  try {
-    return await invoke<T>(channel, data)
-  } catch (error) {
-    return defaultValue
-  }
-}
-
-/**
  * 标签操作封装
  */
 export const tags = {
@@ -273,29 +258,6 @@ export const app = {
       return false
     }
   }
-}
-
-/**
- * 工具函数：带超时的 invoke 调用
- */
-export async function invokeWithTimeout<T>(
-  channel: string,
-  data?: any,
-  timeout: number = 5000
-): Promise<T> {
-  return Promise.race([
-    invoke<T>(channel, data),
-    new Promise<never>((_, reject) =>
-      setTimeout(() => reject(new Error(`IPC 调用超时: ${channel}`)), timeout)
-    )
-  ])
-}
-
-/**
- * 工具函数：批量移除监听器
- */
-export function removeListeners(listeners: Array<() => void>): void {
-  listeners.forEach((remove) => remove())
 }
 
 /**
