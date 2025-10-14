@@ -86,6 +86,35 @@ class ClipboardHistoryService {
       return { items: [], apps: {} }
     }
   }
+
+  /**
+   * 根据内容ID获取单条剪贴板历史记录
+   * 返回转换后的剪贴板项和可选的应用信息
+   */
+  public async getHistoryItemById(
+    contentId: string
+  ): Promise<{ item: ClipboardItem; app?: AppInfo } | null> {
+    try {
+      const record = databaseService.getRecordByContentId({ contentId })
+      if (!record) {
+        return null
+      }
+
+      const tagRecords = databaseService.getRecordTags({ contentId })
+      const tags = tagRecords.map((tag) => ClipboardDataConverter.tagRecordToTag(tag))
+      const item = ClipboardDataConverter.recordToItem(record, tags)
+
+      const appRecord = record.source_app
+        ? databaseService.getAppById({ appId: record.source_app })
+        : null
+      const app = appRecord ? ClipboardDataConverter.appRecordToAppInfo(appRecord) : undefined
+
+      return { item, app }
+    } catch (error) {
+      log.error('[剪贴板历史服务] 获取剪贴板项失败:', error)
+      return null
+    }
+  }
 }
 
 // 导出单例实例

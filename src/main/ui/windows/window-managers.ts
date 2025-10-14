@@ -212,7 +212,9 @@ export class MainWindowManager {
  * Overlay 窗口管理器
  */
 export class OverlayWindowManager {
+  private static readonly SLIDE_IN_DELAY_MS = 16
   private overlayWindow: BrowserWindow | null = null
+  private slideInTimer: NodeJS.Timeout | null = null
 
   /**
    * 获取 overlay 窗口实例
@@ -254,6 +256,7 @@ export class OverlayWindowManager {
         show: false,
         type: 'utility',
         transparent: true,
+        paintWhenInitiallyHidden: true,
         ...(process.platform === 'linux' ? { icon: IconSelector.getWindowIcon() } : {}),
         webPreferences: {
           preload: join(__dirname, '../preload/index.js'),
@@ -266,6 +269,8 @@ export class OverlayWindowManager {
 
       // 设置快捷键管理器的窗口引用
       globalShortcutManager.setOverlayWindow(this.overlayWindow)
+
+      this.resetOverlayBounds()
 
       this.setupEventHandlers()
       this.loadContent()
@@ -296,7 +301,7 @@ export class OverlayWindowManager {
     })
 
     this.overlayWindow.on('show', () => {
-      WindowUtils.safelyEmitToWindow(this.overlayWindow, 'trigger-slide-in-animation')
+      this.scheduleSlideInAnimation()
     })
 
     this.overlayWindow.on('focus', () => {
@@ -310,6 +315,7 @@ export class OverlayWindowManager {
     })
 
     this.overlayWindow.on('closed', () => {
+      this.clearSlideInTimer()
       // 取消全局 ESC 键监听
       globalShortcutManager.unregisterEscapeKey()
 
@@ -341,6 +347,62 @@ export class OverlayWindowManager {
       this.overlayWindow.loadURL(url)
     } else {
       this.overlayWindow.loadFile(join(__dirname, '../renderer/index.html'), { hash: '/overlay' })
+    }
+  }
+
+  /**
+   * 在窗口处于隐藏状态时归一化高度，避免反复切换导致窗口逐步增高
+   */
+  private resetOverlayBounds(): void {
+    const windowInstance = this.overlayWindow
+
+    if (!windowInstance || windowInstance.isDestroyed() || windowInstance.isVisible()) {
+      return
+    }
+
+    try {
+      const currentBounds = windowInstance.getBounds()
+      const targetHeight = WindowConfigCalculator.calculateWindowPosition().height
+      console.log('resetOverlayBounds', currentBounds, targetHeight)
+      if (currentBounds.height === targetHeight) {
+        return
+      }
+
+      const bottom = currentBounds.y + currentBounds.height
+      windowInstance.setBounds({
+        ...currentBounds,
+        height: targetHeight,
+        y: bottom - targetHeight
+      })
+    } catch (error) {
+      logger.error('[主进程] 重置 Overlay 窗口位置失败:', error)
+    }
+  }
+
+  /**
+   * 延迟触发滑入动画，确保窗口已经渲染完首帧，避免动画在不可见状态下执行
+   */
+  private scheduleSlideInAnimation(): void {
+    if (windowStateManager.getOverlayState() !== OverlayState.OPENING) {
+      return
+    }
+
+    if (!WindowUtils.isWindowValidAndVisible(this.overlayWindow)) {
+      return
+    }
+
+    this.clearSlideInTimer()
+
+    this.slideInTimer = setTimeout(() => {
+      this.slideInTimer = null
+      WindowUtils.safelyEmitToWindow(this.overlayWindow, 'trigger-slide-in-animation')
+    }, OverlayWindowManager.SLIDE_IN_DELAY_MS)
+  }
+
+  private clearSlideInTimer(): void {
+    if (this.slideInTimer) {
+      clearTimeout(this.slideInTimer)
+      this.slideInTimer = null
     }
   }
 
@@ -381,7 +443,6 @@ export class OverlayWindowManager {
     windowStateManager.setOverlayState(OverlayState.OPENING)
 
     // 显示并聚焦窗口
-    this.overlayWindow.setBounds(this.overlayWindow.getBounds())
     WindowUtils.safelyShowWindow(this.overlayWindow)
     WindowUtils.safelyFocusWindow(this.overlayWindow)
 
@@ -426,6 +487,9 @@ export class OverlayWindowManager {
     // 隐藏窗口
     WindowUtils.safelyHideWindow(this.overlayWindow)
 
+    this.clearSlideInTimer()
+    // this.resetOverlayBounds()
+
     // 取消全局 ESC 键监听
     globalShortcutManager.unregisterEscapeKey()
 
@@ -468,6 +532,7 @@ export class OverlayWindowManager {
    * 销毁 overlay 窗口
    */
   destroy(): void {
+    this.clearSlideInTimer()
     WindowUtils.safelyDestroyWindow(this.overlayWindow)
     this.overlayWindow = null
   }

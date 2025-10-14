@@ -89,16 +89,43 @@ class ClipboardManager extends BaseWorkerManager {
   }
 
   /**
+   * 安全封装的 Worker 调用
+   */
+  private async safeCall<T>(
+    method: string,
+    errorMessage: string,
+    fallback: T,
+    params?: unknown
+  ): Promise<T> {
+    try {
+      return await this.call<T>(method, params)
+    } catch (error) {
+      logger.error(`[剪贴板管理器] ${errorMessage}:`, error)
+      return fallback
+    }
+  }
+
+  /**
+   * 获取默认配置
+   */
+  private getDefaultConfig(): ClipboardManagerConfig {
+    const maxHistorySize = store.get(STORE_KEY.SETTINGS_MAX_HISTORY_SIZE, 100)
+    const enableLocalOCR = store.get(STORE_KEY.SETTINGS_ENABLE_LOCAL_OCR, false)
+    return {
+      maxHistorySize,
+      checkInterval: 200,
+      enableAutoSave: false,
+      enableLocalOCR
+    }
+  }
+
+  /**
    * 通知 Worker 更新缓存
    * 直接调用 Worker 的缓存同步方法
    */
   private async notifyWorkerCacheUpdate(deletedIds: string[]): Promise<void> {
-    try {
-      if (this.isRunning()) {
-        await this.call('syncDeletedRecordsByIds', deletedIds)
-      }
-    } catch (error) {
-      logger.error('[剪贴板管理器] 通知 Worker 缓存更新失败:', error)
+    if (this.isRunning()) {
+      await this.safeCall('syncDeletedRecordsByIds', '通知 Worker 缓存更新失败', undefined, deletedIds)
     }
   }
 
@@ -160,23 +187,18 @@ class ClipboardManager extends BaseWorkerManager {
   // ==================== 剪贴板操作方法 ====================
 
   public async restoreClipboardContent(params: { content: ClipboardContent }): Promise<boolean> {
-    try {
-      return await this.call('restoreClipboardContent', params)
-    } catch (error) {
-      logger.error('[剪贴板管理器] 还原剪贴板失败:', error)
-      return false
-    }
+    return this.safeCall('restoreClipboardContent', '还原剪贴板失败', false, params)
   }
 
   public async restoreClipboardContentAsText(params: {
     content: ClipboardContent
   }): Promise<boolean> {
-    try {
-      return await this.call('restoreClipboardContentAsText', params)
-    } catch (error) {
-      logger.error('[剪贴板管理器] 还原剪贴板为纯文本失败:', error)
-      return false
-    }
+    return this.safeCall(
+      'restoreClipboardContentAsText',
+      '还原剪贴板为纯文本失败',
+      false,
+      params
+    )
   }
 
   /**
@@ -228,67 +250,38 @@ class ClipboardManager extends BaseWorkerManager {
    * 同步删除记录状态到 Worker
    */
   public async syncDeletedRecords(deletedIds: string[]): Promise<void> {
-    try {
-      if (this.isRunning()) {
-        await this.call('syncDeletedRecords', deletedIds)
-      }
-    } catch (error) {
-      logger.error('[剪贴板管理器] 同步删除记录状态失败:', error)
+    if (!this.isRunning()) {
+      return
     }
+    await this.safeCall('syncDeletedRecords', '同步删除记录状态失败', undefined, deletedIds)
   }
 
   /**
    * 获取配置
    */
   public async getConfig(): Promise<ClipboardManagerConfig> {
-    try {
-      return await this.call('getConfig')
-    } catch (error) {
-      logger.error('[剪贴板管理器] 获取配置失败:', error)
-      // 返回默认配置
-      const maxHistorySize = store.get(STORE_KEY.SETTINGS_MAX_HISTORY_SIZE, 100)
-      const enableLocalOCR = store.get(STORE_KEY.SETTINGS_ENABLE_LOCAL_OCR, false)
-      return {
-        maxHistorySize,
-        checkInterval: 200,
-        enableAutoSave: false,
-        enableLocalOCR
-      }
-    }
+    return this.safeCall('getConfig', '获取配置失败', this.getDefaultConfig())
   }
 
   /**
    * 更新配置
    */
   public async updateConfig(newConfig: Partial<ClipboardManagerConfig>): Promise<void> {
-    try {
-      await this.call('updateConfig', newConfig)
-    } catch (error) {
-      logger.error('[剪贴板管理器] 更新配置失败:', error)
-    }
+    await this.safeCall('updateConfig', '更新配置失败', undefined, newConfig)
   }
 
   /**
    * 获取监听状态
    */
   public async isListeningActive(): Promise<boolean> {
-    try {
-      return await this.call('isListeningActive')
-    } catch (error) {
-      logger.error('[剪贴板管理器] 获取监听状态失败:', error)
-      return false
-    }
+    return this.safeCall('isListeningActive', '获取监听状态失败', false)
   }
 
   /**
    * 强制同步当前剪贴板内容的哈希值
    */
   public async syncClipboardHash(): Promise<void> {
-    try {
-      await this.call('syncClipboardHash')
-    } catch (error) {
-      logger.error('[剪贴板管理器] 同步剪贴板哈希值失败:', error)
-    }
+    await this.safeCall('syncClipboardHash', '同步剪贴板哈希值失败', undefined)
   }
 
   /**
@@ -299,16 +292,17 @@ class ClipboardManager extends BaseWorkerManager {
     try {
       logger.info('[剪贴板管理器] 开始处理系统唤醒恢复')
 
-      // 重置错误状态
-      await this.call('resetErrorState')
+      await this.safeCall('resetErrorState', '系统唤醒恢复期间重置错误状态失败', undefined)
 
-      // 同步剪贴板哈希值
       await this.syncClipboardHash()
 
-      // 如果之前在监听，重新启动监听
       const wasListening = await this.isListeningActive()
       if (!wasListening) {
-        await this.startListening()
+        try {
+          await this.startListening()
+        } catch (error) {
+          logger.error('[剪贴板管理器] 系统唤醒恢复期间重新启动监听失败:', error)
+        }
       }
 
       logger.info('[剪贴板管理器] 系统唤醒恢复完成')
@@ -321,12 +315,7 @@ class ClipboardManager extends BaseWorkerManager {
    * 获取当前剪贴板内容（不触发监控）
    */
   public async getCurrentClipboard(): Promise<ClipboardContent> {
-    try {
-      return await this.call('getCurrentClipboard')
-    } catch (error) {
-      logger.error('[剪贴板管理器] 获取当前剪贴板内容失败:', error)
-      return {}
-    }
+    return this.safeCall('getCurrentClipboard', '获取当前剪贴板内容失败', {} as ClipboardContent)
   }
 
   /**
@@ -335,12 +324,12 @@ class ClipboardManager extends BaseWorkerManager {
   public async restoreClipboardFromDatabase(
     itemId: string
   ): Promise<{ success: boolean; message?: string }> {
-    try {
-      return await this.call('restoreClipboardFromDatabase', itemId)
-    } catch (error) {
-      logger.error('[剪贴板管理器] 从数据库还原剪贴板失败:', error)
-      return { success: false, message: '还原剪贴板失败' }
-    }
+    return this.safeCall(
+      'restoreClipboardFromDatabase',
+      '从数据库还原剪贴板失败',
+      { success: false, message: '还原剪贴板失败' },
+      itemId
+    )
   }
 
   /**
@@ -349,12 +338,12 @@ class ClipboardManager extends BaseWorkerManager {
   public async restoreClipboardFromDatabaseAsText(
     itemId: string
   ): Promise<{ success: boolean; message?: string }> {
-    try {
-      return await this.call('restoreClipboardFromDatabaseAsText', itemId)
-    } catch (error) {
-      logger.error('[剪贴板管理器] 从数据库还原剪贴板为纯文本失败:', error)
-      return { success: false, message: '还原剪贴板为纯文本失败' }
-    }
+    return this.safeCall(
+      'restoreClipboardFromDatabaseAsText',
+      '从数据库还原剪贴板为纯文本失败',
+      { success: false, message: '还原剪贴板为纯文本失败' },
+      itemId
+    )
   }
 
   /**
@@ -364,12 +353,12 @@ class ClipboardManager extends BaseWorkerManager {
   public async parseQRCodeFromItem(
     itemId: string
   ): Promise<{ success: boolean; message?: string }> {
-    try {
-      return await this.call('parseQRCodeFromItem', itemId)
-    } catch (error) {
-      logger.error('[剪贴板管理器] 解析二维码失败:', error)
-      return { success: false, message: '解析二维码失败' }
-    }
+    return this.safeCall(
+      'parseQRCodeFromItem',
+      '解析二维码失败',
+      { success: false, message: '解析二维码失败' },
+      itemId
+    )
   }
 
   // ==================== 标签管理方法 ====================

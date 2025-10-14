@@ -1,5 +1,5 @@
 // Electron 核心模块
-import { app, BrowserWindow } from 'electron'
+import { app } from 'electron'
 
 // 首先初始化日志系统
 import logger from './utils/logger'
@@ -103,19 +103,7 @@ class SuperPasteApp {
    * 处理第二个实例启动
    */
   private handleSecondInstance(): void {
-    const mainWindow = mainWindowManager.getWindow()
-
-    if (mainWindow) {
-      if (mainWindowManager.isMinimized()) {
-        mainWindowManager.restore()
-      }
-      if (!mainWindowManager.isVisible()) {
-        mainWindowManager.showWindow()
-      }
-      mainWindowManager.getWindow()?.focus()
-    } else {
-      mainWindowManager.createWindow()
-    }
+    this.ensureMainWindowVisible()
   }
 
   /**
@@ -160,6 +148,21 @@ class SuperPasteApp {
   }
 
   /**
+   * 确保主窗口存在并处于可见状态
+   */
+  private ensureMainWindowVisible(): void {
+    if (!mainWindowManager.isValid()) {
+      mainWindowManager.createWindow()
+    }
+
+    if (mainWindowManager.isMinimized()) {
+      mainWindowManager.restore()
+    }
+
+    mainWindowManager.showWindow()
+  }
+
+  /**
    * 创建系统托盘
    */
   private createSystemTray(): void {
@@ -186,14 +189,14 @@ class SuperPasteApp {
       // 4. 初始化剪贴板历史清理器
       await this.initializeClipboardHistoryCleaner()
 
-      // 5. 设置系统集成功能
-      await this.setupSystemIntegration()
-
-      // 6. 创建 overlay 窗口（预先创建，保持隐藏）
+      // 5. 创建 overlay 窗口（预先创建，保持隐藏）
       this.createOverlayWindow()
 
-      // 7. 初始化定时同步服务
-      await this.initializeScheduledSync()
+      // 6. 并行执行系统集成与定时同步初始化
+      const systemIntegrationTask = this.setupSystemIntegration().catch((error) => {
+        logger.error('[主进程] 系统集成服务初始化失败:', error)
+      })
+      await Promise.all([systemIntegrationTask, this.initializeScheduledSync()])
 
       logger.debug('[主进程] 后台服务初始化全部完成')
     } catch (error) {
@@ -338,14 +341,7 @@ class SuperPasteApp {
         return
       }
 
-      if (BrowserWindow.getAllWindows().length === 0) {
-        mainWindowManager.createWindow()
-      } else if (mainWindowManager.isValid()) {
-        if (!mainWindowManager.isVisible()) {
-          mainWindowManager.showWindow()
-        }
-        mainWindowManager.getWindow()?.focus()
-      }
+      this.ensureMainWindowVisible()
     })
 
     // 当所有窗口关闭时不退出应用（因为有系统托盘）

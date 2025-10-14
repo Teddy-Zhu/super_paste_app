@@ -149,6 +149,13 @@ export class DatabaseService {
   }
 
   /**
+   * 获取剪贴板记录的标签
+   */
+  public getRecordTags(params: { contentId: string }): TagGroupRecord[] {
+    return clipboardDatabase.getRecordTags(params.contentId)
+  }
+
+  /**
    * 轻量级查询：只获取记录的 content_id 和 hash
    */
   public queryRecordIdsAndHashes(
@@ -333,6 +340,8 @@ export class DatabaseService {
           return this.getRecordByHash(params)
         case 'getRecordByContentId':
           return this.getRecordByContentId(params)
+        case 'getRecordTags':
+          return this.getRecordTags(params)
         case 'queryRecordIdsAndHashes':
           return this.queryRecordIdsAndHashes(params)
         case 'getLastRecordInfo':

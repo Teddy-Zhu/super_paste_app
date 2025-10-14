@@ -9,6 +9,22 @@ import log from 'electron-log'
  */
 class ClipboardTagService {
   /**
+   * 通用执行辅助函数，统一错误处理逻辑
+   */
+  private async execute<T>(
+    operation: () => Promise<T>,
+    errorMessage: string,
+    fallback: T
+  ): Promise<T> {
+    try {
+      return await operation()
+    } catch (error) {
+      log.error(`[剪贴板标签服务] ${errorMessage}:`, error)
+      return fallback
+    }
+  }
+
+  /**
    * 创建新标签组
    */
   public async createTagGroup(
@@ -16,43 +32,45 @@ class ClipboardTagService {
     color: string,
     description?: string
   ): Promise<string | null> {
-    try {
-      const tagId = ClipboardDataConverter.generateTagId()
-      const now = Date.now()
+    return this.execute(
+      async () => {
+        const tagId = ClipboardDataConverter.generateTagId()
+        const now = Date.now()
 
-      const tag: TagGroup = {
-        id: tagId,
-        name,
-        color,
-        description,
-        createdAt: now,
-        updatedAt: now
-      }
+        const tag: TagGroup = {
+          id: tagId,
+          name,
+          color,
+          description,
+          createdAt: now,
+          updatedAt: now
+        }
 
-      const success = await databaseService.createTagGroup({ tag })
-      if (success) {
-        return tagId
-      } else {
-        log.error('[剪贴板标签服务] 创建标签组失败')
-        return null
-      }
-    } catch (error) {
-      log.error('[剪贴板标签服务] 创建标签组失败:', error)
-      return null
-    }
+        const success = await databaseService.createTagGroup({ tag })
+        if (success) {
+          return tagId
+        } else {
+          log.error('[剪贴板标签服务] 创建标签组失败')
+          return null
+        }
+      },
+      '创建标签组失败',
+      null
+    )
   }
 
   /**
    * 获取所有标签组
    */
   public async getAllTagGroups(): Promise<TagGroup[]> {
-    try {
-      const records = await databaseService.getAllTagGroups()
-      return records.map((record: any) => ClipboardDataConverter.tagRecordToTag(record))
-    } catch (error) {
-      log.error('[剪贴板标签服务] 获取标签组列表失败:', error)
-      return []
-    }
+    return this.execute(
+      async () => {
+        const records = await databaseService.getAllTagGroups()
+        return records.map((record: any) => ClipboardDataConverter.tagRecordToTag(record))
+      },
+      '获取标签组列表失败',
+      []
+    )
   }
 
   /**
@@ -62,82 +80,88 @@ class ClipboardTagService {
     tagId: string,
     updates: Partial<Omit<TagGroup, 'id' | 'createdAt'>>
   ): Promise<boolean> {
-    try {
-      const updateData = {
-        ...updates,
-        updatedAt: Date.now()
-      }
+    return this.execute(
+      async () => {
+        const updateData = {
+          ...updates,
+          updatedAt: Date.now()
+        }
 
-      const success = await databaseService.updateTagGroup({ tagId, updateData })
-      return success
-    } catch (error) {
-      log.error('[剪贴板标签服务] 更新标签组失败:', error)
-      return false
-    }
+        const success = await databaseService.updateTagGroup({ tagId, updateData })
+        return success
+      },
+      '更新标签组失败',
+      false
+    )
   }
 
   /**
    * 删除标签组
    */
   public async deleteTagGroup(tagId: string): Promise<boolean> {
-    try {
-      const success = await databaseService.deleteTagGroup({ tagId })
-      return success
-    } catch (error) {
-      log.error('[剪贴板标签服务] 删除标签组失败:', error)
-      return false
-    }
+    return this.execute(
+      async () => {
+        const success = await databaseService.deleteTagGroup({ tagId })
+        return success
+      },
+      '删除标签组失败',
+      false
+    )
   }
 
   /**
    * 为历史记录绑定标签
    */
   public async bindTagToRecord(contentId: string, tagId: string): Promise<boolean> {
-    try {
-      const success = await databaseService.bindTagToRecord({ contentId, tagId })
-      return success
-    } catch (error) {
-      log.error('[剪贴板标签服务] 绑定标签失败:', error)
-      return false
-    }
+    return this.execute(
+      async () => {
+        const success = await databaseService.bindTagToRecord({ contentId, tagId })
+        return success
+      },
+      '绑定标签失败',
+      false
+    )
   }
 
   /**
    * 解除历史记录的标签绑定
    */
   public async unbindTagFromRecord(contentId: string, tagId: string): Promise<boolean> {
-    try {
-      const success = await databaseService.unbindTagFromRecord({ contentId, tagId })
-      return success
-    } catch (error) {
-      log.error('[剪贴板标签服务] 解除标签绑定失败:', error)
-      return false
-    }
+    return this.execute(
+      async () => {
+        const success = await databaseService.unbindTagFromRecord({ contentId, tagId })
+        return success
+      },
+      '解除标签绑定失败',
+      false
+    )
   }
 
   /**
    * 解除历史记录的所有标签绑定
    */
   public async unbindAllTagsFromRecord(contentId: string): Promise<boolean> {
-    try {
-      const success = await databaseService.unbindAllTagsFromRecord({ contentId })
-      return success
-    } catch (error) {
-      log.error('[剪贴板标签服务] 解除所有标签绑定失败:', error)
-      return false
-    }
+    return this.execute(
+      async () => {
+        const success = await databaseService.unbindAllTagsFromRecord({ contentId })
+        return success
+      },
+      '解除所有标签绑定失败',
+      false
+    )
   }
 
   /**
    * 获取标签统计信息
    */
   public async getTagStats(): Promise<TagStats[]> {
-    try {
-      return await databaseService.getTagStats()
-    } catch (error) {
-      log.error('[剪贴板标签服务] 获取标签统计信息失败:', error)
-      return []
-    }
+    return this.execute(
+      async () => {
+        return await databaseService.getTagStats()
+      },
+      '获取标签统计信息失败',
+      []
+    )
   }
 }
 
