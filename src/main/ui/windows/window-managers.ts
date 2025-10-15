@@ -442,6 +442,7 @@ export class OverlayWindowManager {
     // 设置状态为正在打开
     windowStateManager.setOverlayState(OverlayState.OPENING)
 
+    this.overlayWindow.setBounds(this.overlayWindow.getBounds()) // 触发重绘
     // 显示并聚焦窗口
     WindowUtils.safelyShowWindow(this.overlayWindow)
     WindowUtils.safelyFocusWindow(this.overlayWindow)
