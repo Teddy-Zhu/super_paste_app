@@ -1,4 +1,4 @@
-import { BrowserWindow, shell, app } from 'electron'
+import { BrowserWindow, shell, app, screen } from 'electron'
 import { join } from 'path'
 import { is } from '@electron-toolkit/utils'
 import { WindowConfigCalculator, IconSelector } from './window-config'
@@ -213,8 +213,12 @@ export class MainWindowManager {
  */
 export class OverlayWindowManager {
   private static readonly SLIDE_IN_DELAY_MS = 16
+  private static readonly OFFSCREEN_PADDING = 200
   private overlayWindow: BrowserWindow | null = null
   private slideInTimer: NodeJS.Timeout | null = null
+  //@ts-ignore
+  private initialOverlayBounds: Electron.Rectangle | null = null
+  private lastKnownVisibleBounds: Electron.Rectangle | null = null
 
   /**
    * 获取 overlay 窗口实例
@@ -236,6 +240,13 @@ export class OverlayWindowManager {
 
       // 计算窗口位置
       const position = WindowConfigCalculator.calculateWindowPosition()
+      this.initialOverlayBounds = {
+        x: position.x,
+        y: position.y,
+        width: position.width,
+        height: position.height
+      }
+      this.lastKnownVisibleBounds = { ...this.initialOverlayBounds }
 
       // 创建覆盖层窗口
       this.overlayWindow = new BrowserWindow({
@@ -270,7 +281,7 @@ export class OverlayWindowManager {
       // 设置快捷键管理器的窗口引用
       globalShortcutManager.setOverlayWindow(this.overlayWindow)
 
-      this.resetOverlayBounds()
+      // this.resetOverlayBounds()
 
       this.setupEventHandlers()
       this.loadContent()
@@ -322,6 +333,7 @@ export class OverlayWindowManager {
       // 重置overlay状态
       windowStateManager.setOverlayState(OverlayState.CLOSED)
 
+      this.initialOverlayBounds = null
       this.overlayWindow = null
     })
 
@@ -353,6 +365,7 @@ export class OverlayWindowManager {
   /**
    * 在窗口处于隐藏状态时归一化高度，避免反复切换导致窗口逐步增高
    */
+  //@ts-ignore
   private resetOverlayBounds(): void {
     const windowInstance = this.overlayWindow
 
@@ -370,6 +383,11 @@ export class OverlayWindowManager {
 
       const bottom = currentBounds.y + currentBounds.height
       windowInstance.setBounds({
+        ...currentBounds,
+        height: targetHeight,
+        y: bottom - targetHeight
+      })
+      console.log('set bound',{
         ...currentBounds,
         height: targetHeight,
         y: bottom - targetHeight
@@ -441,11 +459,31 @@ export class OverlayWindowManager {
 
     // 设置状态为正在打开
     windowStateManager.setOverlayState(OverlayState.OPENING)
+    const windowInstance = this.overlayWindow
+    const targetBounds =
+      this.lastKnownVisibleBounds ??
+      this.initialOverlayBounds ??
+      WindowConfigCalculator.calculateWindowPosition()
 
-    this.overlayWindow.setBounds(this.overlayWindow.getBounds()) // 触发重绘
+    try {
+      windowInstance.setOpacity(0)
+      windowInstance.setBounds(targetBounds)
+    } catch (error) {
+      logger.error('[主进程] 调整 Overlay 窗口位置失败:', error)
+    }
+
     // 显示并聚焦窗口
-    WindowUtils.safelyShowWindow(this.overlayWindow)
-    WindowUtils.safelyFocusWindow(this.overlayWindow)
+    WindowUtils.safelyShowWindow(windowInstance)
+    WindowUtils.safelyFocusWindow(windowInstance)
+
+    try {
+      windowInstance.setOpacity(1)
+    } catch (error) {
+      logger.error('[主进程] 恢复 Overlay 窗口不透明度失败:', error)
+    }
+
+    this.lastKnownVisibleBounds = { ...targetBounds }
+    this.scheduleSlideInAnimation()
 
     // 注册全局 ESC 键监听
     globalShortcutManager.registerEscapeKey()
@@ -485,8 +523,18 @@ export class OverlayWindowManager {
       return
     }
 
-    // 隐藏窗口
-    WindowUtils.safelyHideWindow(this.overlayWindow)
+    const windowInstance = this.overlayWindow
+
+    try {
+      const currentBounds = windowInstance.getBounds()
+      this.lastKnownVisibleBounds = { ...currentBounds }
+      windowInstance.setOpacity(0)
+      const offscreenBounds = this.calculateOffscreenBounds(currentBounds)
+      windowInstance.setBounds(offscreenBounds)
+      windowInstance.blur()
+    } catch (error) {
+      logger.error('[主进程] 隐藏 Overlay 窗口失败:', error)
+    }
 
     this.clearSlideInTimer()
     // this.resetOverlayBounds()
@@ -535,6 +583,7 @@ export class OverlayWindowManager {
   destroy(): void {
     this.clearSlideInTimer()
     WindowUtils.safelyDestroyWindow(this.overlayWindow)
+    this.initialOverlayBounds = null
     this.overlayWindow = null
   }
 
@@ -549,7 +598,28 @@ export class OverlayWindowManager {
    * 检查窗口是否可见
    */
   isVisible(): boolean {
-    return WindowUtils.isWindowValidAndVisible(this.overlayWindow)
+    return (
+      WindowUtils.isWindowValid(this.overlayWindow) &&
+      windowStateManager.getOverlayState() === OverlayState.OPENED
+    )
+  }
+
+  /**
+   * 计算窗口移出屏幕后的目标位置
+   */
+  private calculateOffscreenBounds(bounds: Electron.Rectangle): Electron.Rectangle {
+    const display = screen.getDisplayMatching(bounds)
+
+    const offscreenX =
+      display.workArea.x + display.workArea.width + bounds.width + OverlayWindowManager.OFFSCREEN_PADDING
+    const offscreenY =
+      display.workArea.y + display.workArea.height + bounds.height + OverlayWindowManager.OFFSCREEN_PADDING
+
+    return {
+      ...bounds,
+      x: offscreenX,
+      y: offscreenY
+    }
   }
 }
 

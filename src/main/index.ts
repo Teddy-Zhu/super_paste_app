@@ -30,7 +30,8 @@ import { SyncConfigUtils } from './sync/sync-config-utils'
 if (process.platform === 'darwin' && is.dev) {
   app.disableHardwareAcceleration()
 }
-
+app.commandLine.appendSwitch('disable-backgrounding-occluded-windows', 'true');
+app.commandLine.appendSwitch('wm-window-animations-disabled', 'true');
 /**
  * 应用程序主类
  */

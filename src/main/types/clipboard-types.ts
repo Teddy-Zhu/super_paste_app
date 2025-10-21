@@ -286,8 +286,13 @@ export class ClipboardDataConverter {
     const formats = availableFormats || ClipboardDataConverter.getAvailableFormats(content)
 
     // 文件类型优先级最高
-    if (content.files && content.files.length > 0) return 'files'
-
+    if (content.files && content.files.length > 0){
+      if (content.files.length === 1 && content.image) {
+        // 如果只有一个文件且是图片，则类型为图片
+        return 'image'
+      }
+      return 'files'
+    }
     // 图片类型
     if (content.image) return 'image'
 

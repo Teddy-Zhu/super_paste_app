@@ -161,6 +161,7 @@ const imageDimensions = ref<{ width: number; height: number } | null>(null)
 // 处理图片加载完成事件
 const handleImageLoad = (event: Event) => {
   const img = event.target as HTMLImageElement
+  console.log('Image loaded with dimensions:', img.naturalWidth, img.naturalHeight)
   if (img) {
     imageDimensions.value = {
       width: img.naturalWidth,
@@ -203,8 +204,8 @@ const getFileDisplayName = computed(() => {
   }
 })
 
-// 获取内容字符数
-const getCharacterCount = (item: ClipboardItem): string => {
+// 获取内容摘要信息
+const getContentSummary = (item: ClipboardItem): string => {
   const content = item.content
 
   if (item.primaryType === 'files') {
@@ -215,6 +216,13 @@ const getCharacterCount = (item: ClipboardItem): string => {
     return 'File Path'
   }
 
+  if (content.image) {
+    if (imageDimensions.value) {
+      return `${imageDimensions.value.width} × ${imageDimensions.value.height}`
+    }
+    return 'Image'
+  }
+
   if (content.text) {
     return `${content.text.length} character${content.text.length !== 1 ? 's' : ''}`
   }
@@ -222,13 +230,6 @@ const getCharacterCount = (item: ClipboardItem): string => {
   if (content.html) {
     const textContent = content.html.replace(/<[^>]*>/g, '')
     return `${textContent.length} character${textContent.length !== 1 ? 's' : ''}`
-  }
-
-  if (content.image) {
-    if (imageDimensions.value) {
-      return `${imageDimensions.value.width} × ${imageDimensions.value.height}`
-    }
-    return 'Image'
   }
 
   if (content.rtf) {
@@ -657,8 +658,8 @@ const shortcutLabel = computed(() => {
         </div>
       </div>
 
-      <!-- 字符数显示（居中显示） -->
-      <span class="character-count">{{ getCharacterCount(item) }}</span>
+      <!-- 内容摘要显示（居中显示） -->
+      <span class="character-count">{{ getContentSummary(item) }}</span>
 
       <!-- 快捷选择模式下显示快捷键（右侧） -->
       <div class="footer-right">

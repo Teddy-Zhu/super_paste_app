@@ -45,6 +45,52 @@ const hasError = ref<boolean>(false)
 const errorMessage = ref<string>('')
 const currentObjectURL = ref<string | null>(null)
 
+// 将 Uint8Array 安全转换为 ArrayBuffer，避免 Blob 构造函数类型报错
+const toArrayBuffer = (data: Uint8Array): ArrayBuffer => {
+  const buffer = new ArrayBuffer(data.byteLength)
+  new Uint8Array(buffer).set(data)
+  return buffer
+}
+
+// 根据魔数识别图片类型，确保 Blob 和 base64 前缀正确
+const detectMimeType = (data: Uint8Array): string => {
+  if (data.length >= 8 && data[0] === 0x89 && data[1] === 0x50 && data[2] === 0x4e && data[3] === 0x47) {
+    return 'image/png'
+  }
+  if (data.length >= 3 && data[0] === 0xff && data[1] === 0xd8 && data[2] === 0xff) {
+    return 'image/jpeg'
+  }
+  if (data.length >= 4 && data[0] === 0x47 && data[1] === 0x49 && data[2] === 0x46 && data[3] === 0x38) {
+    return 'image/gif'
+  }
+  if (
+    data.length >= 12 &&
+    data[0] === 0x52 &&
+    data[1] === 0x49 &&
+    data[2] === 0x46 &&
+    data[3] === 0x46 &&
+    data[8] === 0x57 &&
+    data[9] === 0x45 &&
+    data[10] === 0x42 &&
+    data[11] === 0x50
+  ) {
+    return 'image/webp'
+  }
+  if (data.length >= 4 && data[0] === 0x49 && data[1] === 0x49 && data[2] === 0x2a && data[3] === 0x00) {
+    return 'image/tiff'
+  }
+  if (data.length >= 4 && data[0] === 0x4d && data[1] === 0x4d && data[2] === 0x00 && data[3] === 0x2a) {
+    return 'image/tiff'
+  }
+  if (data.length >= 2 && data[0] === 0x42 && data[1] === 0x4d) {
+    return 'image/bmp'
+  }
+  if (data.length >= 4 && data[0] === 0x00 && data[1] === 0x00 && data[2] === 0x01 && data[3] === 0x00) {
+    return 'image/x-icon'
+  }
+  return 'image/png'
+}
+
 // 判断是否为大图片
 const isLargeImage = computed(() => {
   return props.imageData && props.imageData.length > props.sizeThreshold
@@ -63,13 +109,14 @@ const processImage = async () => {
     isLoading.value = true
     hasError.value = false
     errorMessage.value = ''
+    const mimeType = detectMimeType(props.imageData)
 
     // 清理之前的 Object URL
     cleanupObjectURL()
 
     if (isLargeImage.value) {
       // 大图片使用 Blob URL
-      const blob = new Blob([props.imageData], { type: 'image/png' })
+      const blob = new Blob([toArrayBuffer(props.imageData)], { type: mimeType })
       const objectURL = URL.createObjectURL(blob)
       currentObjectURL.value = objectURL
       imageSrc.value = objectURL
@@ -80,11 +127,11 @@ const processImage = async () => {
           .map((byte) => String.fromCharCode(byte))
           .join('')
         const base64String = btoa(binaryString)
-        imageSrc.value = `data:image/png;base64,${base64String}`
+        imageSrc.value = `data:${mimeType};base64,${base64String}`
       } catch (error) {
         console.error('转换 base64 失败:', error)
         // 回退到 Blob URL 方案
-        const blob = new Blob([props.imageData], { type: 'image/png' })
+        const blob = new Blob([toArrayBuffer(props.imageData)], { type: mimeType })
         const objectURL = URL.createObjectURL(blob)
         currentObjectURL.value = objectURL
         imageSrc.value = objectURL
