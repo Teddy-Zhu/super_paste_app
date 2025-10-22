@@ -682,7 +682,7 @@ const shortcutLabel = computed(() => {
   background: linear-gradient(135deg, #ffffff 0%, #fafbfc 100%);
   border-radius: 16px;
   cursor: pointer;
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   display: flex;
   flex-direction: column;
   position: relative;
