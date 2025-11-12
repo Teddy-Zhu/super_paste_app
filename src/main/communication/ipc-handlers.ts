@@ -15,6 +15,7 @@ import type { ScheduledSyncConfig } from '../sync/types'
 import { SyncStatus } from '../sync/types'
 import { SyncConfigUtils } from '../sync/sync-config-utils'
 import logger from '../utils/logger'
+import { trayManager } from '../ui/tray/tray-manager'
 
 /**
  * IPC 事件处理器管理器
@@ -248,6 +249,9 @@ export class IPCHandlerManager {
         } else {
           logger.debug(`[主进程] 自动启动状态已更新: ${autoStart}`)
         }
+
+        // 更新托盘菜单
+        trayManager.updateMenu()
       }
 
       // 如果更新的是本地OCR配置，更新剪贴板管理器配置
@@ -261,6 +265,9 @@ export class IPCHandlerManager {
         } catch (error) {
           logger.error('[主进程] 更新剪贴板管理器本地OCR配置失败:', error)
         }
+
+        // 更新托盘菜单
+        trayManager.updateMenu()
       }
 
       // 如果更新的是同步启用状态，根据值开启或关闭同步功能

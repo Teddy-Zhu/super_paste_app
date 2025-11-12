@@ -2,6 +2,10 @@ import { Tray, Menu, app } from 'electron'
 import { IconSelector } from '../windows/window-config'
 import { mainWindowManager, overlayWindowManager } from '../windows/window-managers'
 import logger from '../../utils/logger'
+import store from '../../config/store'
+import { STORE_KEY } from '../../config/common'
+import autoStartManager from '../../utils/auto-start-manager'
+import clipboardManager from '../../clipboard/clipboard-manager'
 
 /**
  * 系统托盘管理器
@@ -42,6 +46,10 @@ export class TrayManager {
   private setupContextMenu(): void {
     if (!this.tray) return
 
+    // 获取当前配置状态
+    const autoStart = store.get(STORE_KEY.SETTINGS_AUTO_START, false) as boolean
+    const enableLocalOCR = store.get(STORE_KEY.SETTINGS_ENABLE_LOCAL_OCR, false) as boolean
+
     // 创建右键菜单
     const contextMenu = Menu.buildFromTemplate([
       {
@@ -51,9 +59,52 @@ export class TrayManager {
         }
       },
       {
-        label: '快捷面板',
+        label: '粘贴面板',
         click: () => {
           overlayWindowManager.toggleWindow(true)
+        }
+      },
+      {
+        type: 'separator'
+      },
+      {
+        label: '开机自启',
+        type: 'checkbox',
+        checked: autoStart,
+        click: async () => {
+          const newValue = !autoStart
+          store.set(STORE_KEY.SETTINGS_AUTO_START, newValue)
+
+          // 实际执行自动启动设置
+          const success = await autoStartManager.setEnabled(newValue)
+          if (!success) {
+            logger.error('[主进程] 从托盘设置自动启动失败')
+          } else {
+            logger.debug(`[主进程] 从托盘更新自动启动状态: ${newValue}`)
+          }
+
+          // 重新构建菜单以更新勾选状态
+          this.setupContextMenu()
+        }
+      },
+      {
+        label: '自动 OCR',
+        type: 'checkbox',
+        checked: enableLocalOCR,
+        click: async () => {
+          const newValue = !enableLocalOCR
+          store.set(STORE_KEY.SETTINGS_ENABLE_LOCAL_OCR, newValue)
+
+          // 实际更新剪贴板管理器的 OCR 配置
+          try {
+            await clipboardManager.updateConfig({ enableLocalOCR: newValue })
+            logger.debug(`[主进程] 从托盘更新自动 OCR 状态: ${newValue}`)
+          } catch (error) {
+            logger.error('[主进程] 从托盘更新自动 OCR 配置失败:', error)
+          }
+
+          // 重新构建菜单以更新勾选状态
+          this.setupContextMenu()
         }
       },
       {
@@ -104,6 +155,16 @@ export class TrayManager {
    */
   isValid(): boolean {
     return this.tray !== null && !this.tray.isDestroyed()
+  }
+
+  /**
+   * 更新托盘菜单（当配置变更时调用）
+   */
+  updateMenu(): void {
+    if (this.isValid()) {
+      this.setupContextMenu()
+      logger.debug('[主进程] 托盘菜单已更新')
+    }
   }
 }
 
