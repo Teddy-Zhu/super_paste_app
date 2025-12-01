@@ -413,6 +413,46 @@ class ClipboardDatabase {
   }
 
   /**
+   * 轻量级查询：只获取没有标签的记录的 content_id 和 hash
+   * 用于基于数量的清理，避免删除有标签的记录
+   */
+  public queryRecordIdsAndHashesWithoutTags(
+    options: QueryOptions = {}
+  ): Array<{ content_id: string; hash: string }> {
+    if (!this.db) throw new Error('数据库未初始化')
+
+    try {
+      const { limit = 10000, offset = 0, orderBy = 'last_used', orderDirection = 'DESC' } = options
+
+      // 只查询没有标签的记录的 content_id 和 hash 字段
+      let querySQL = `
+        SELECT content_id, hash 
+        FROM clipboard_history
+        WHERE content_id NOT IN (
+          SELECT DISTINCT content_id FROM clipboard_history_tags
+        )
+      `
+      const params: any[] = []
+
+      // 添加ORDER BY子句
+      querySQL += ` ORDER BY ${orderBy} ${orderDirection}`
+
+      // 添加LIMIT和OFFSET
+      querySQL += ' LIMIT ? OFFSET ?'
+      params.push(limit, offset)
+
+      const stmt = this.db.prepare(querySQL)
+      const results = stmt.all(...params) as Array<{ content_id: string; hash: string }>
+
+      // 过滤掉没有 hash 的记录
+      return results.filter((record) => record.hash)
+    } catch (error) {
+      logger.error('[剪贴板数据库] 查询无标签记录ID和哈希失败:', error)
+      return []
+    }
+  }
+
+  /**
    * 轻量级查询：获取最后使用的记录的基本信息（content_id 和 hash）
    */
   public getLastRecordInfo(): { content_id: string; hash: string } | null {

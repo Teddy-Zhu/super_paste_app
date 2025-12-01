@@ -1,4 +1,4 @@
-import databaseService from './database-service'
+import clipboardDatabase from '../clipboard/clipboard-database'
 import type { ClipboardItem, AppInfo } from '../types/clipboard-types'
 import { ClipboardDataConverter } from '../types/clipboard-types'
 import log from 'electron-log'
@@ -14,7 +14,7 @@ class ClipboardHistoryService {
   public async deleteHistoryItem(itemId: string): Promise<boolean> {
     try {
       // 直接从数据库中删除
-      const success = await databaseService.deleteRecord({ contentId: itemId })
+      const success = await clipboardDatabase.deleteRecord(itemId)
 
       if (!success) {
         log.error('[剪贴板历史服务] 未找到指定的剪贴板项:', itemId)
@@ -34,7 +34,7 @@ class ClipboardHistoryService {
   public async clearHistory(): Promise<void> {
     try {
       // 清空数据库中的历史记录
-      await databaseService.clearAllRecords()
+      await clipboardDatabase.clearAllRecords()
     } catch (error) {
       log.error('[剪贴板历史服务] 清空历史记录失败:', error)
     }
@@ -59,7 +59,7 @@ class ClipboardHistoryService {
     apps: Record<string, AppInfo>
   }> {
     try {
-      const recordsWithTags = await databaseService.queryRecordsWithTags({
+      const recordsWithTags = await clipboardDatabase.queryRecordsWithTags({
         limit: options.limit,
         offset: options.offset,
         tagIds: options.tagIds,
@@ -95,17 +95,17 @@ class ClipboardHistoryService {
     contentId: string
   ): Promise<{ item: ClipboardItem; app?: AppInfo } | null> {
     try {
-      const record = databaseService.getRecordByContentId({ contentId })
+      const record = clipboardDatabase.getRecordByContentId(contentId)
       if (!record) {
         return null
       }
 
-      const tagRecords = databaseService.getRecordTags({ contentId })
+      const tagRecords = clipboardDatabase.getRecordTags(contentId)
       const tags = tagRecords.map((tag) => ClipboardDataConverter.tagRecordToTag(tag))
       const item = ClipboardDataConverter.recordToItem(record, tags)
 
       const appRecord = record.source_app
-        ? databaseService.getAppById({ appId: record.source_app })
+        ? clipboardDatabase.getAppById(record.source_app)
         : null
       const app = appRecord ? ClipboardDataConverter.appRecordToAppInfo(appRecord) : undefined
 

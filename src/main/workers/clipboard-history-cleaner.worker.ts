@@ -212,29 +212,26 @@ class ClipboardHistoryCleanerWorker extends BaseWorker {
         }
       }
 
-      // 2. 基于数量的清理
+      // 2. 基于数量的清理（排除有标签的记录）
       if (this.config.enableCountBasedCleanup && this.config.maxHistorySize > 0) {
         const currentCount = await this.callMainThread('database-getRecordCount')
 
         if (currentCount > this.config.maxHistorySize) {
           const excessCount = currentCount - this.config.maxHistorySize
 
-          // 优化：只获取需要删除的记录 ID，无需完整记录数据
-          const recordsToDelete = await this.callMainThread('database-queryRecordIdsAndHashes', {
-            limit: excessCount,
-            offset: this.config.maxHistorySize,
-            orderBy: 'last_used',
-            orderDirection: 'DESC'
-          })
+          // 优化：只获取需要删除的无标签记录 ID，避免删除有标签的记录
+          const recordsToDelete = await this.callMainThread(
+            'database-queryRecordIdsAndHashesWithoutTags',
+            {
+              limit: excessCount,
+              offset: this.config.maxHistorySize,
+              orderBy: 'last_used',
+              orderDirection: 'DESC'
+            }
+          )
 
-          // 删除这些记录
+          // 删除这些记录（无需解绑标签，因为这些记录没有标签）
           for (const record of recordsToDelete) {
-            // 1. 先删除该记录的所有标签绑定
-            await this.callMainThread('database-unbindAllTagsFromRecord', {
-              contentId: record.content_id
-            })
-
-            // 2. 然后删除记录本身
             await this.callMainThread('database-deleteRecord', { contentId: record.content_id })
             deletedRecordIds.push(record.content_id)
             deletedCount++
@@ -302,17 +299,20 @@ class ClipboardHistoryCleanerWorker extends BaseWorker {
       if (currentCount > maxHistorySize) {
         const excessCount = currentCount - maxHistorySize
 
-        // 优化：只获取需要删除的记录 ID，无需完整记录数据
-        const recordsToDelete = await this.callMainThread('database-queryRecordIdsAndHashes', {
-          limit: excessCount,
-          offset: maxHistorySize,
-          orderBy: 'last_used',
-          orderDirection: 'DESC'
-        })
+        // 优化：只获取需要删除的无标签记录 ID，避免删除有标签的记录
+        const recordsToDelete = await this.callMainThread(
+          'database-queryRecordIdsAndHashesWithoutTags',
+          {
+            limit: excessCount,
+            offset: maxHistorySize,
+            orderBy: 'last_used',
+            orderDirection: 'DESC'
+          }
+        )
 
         const deletedIds: string[] = []
 
-        // 删除这些记录
+        // 删除这些记录（无需解绑标签，因为这些记录没有标签）
         for (const record of recordsToDelete) {
           await this.callMainThread('database-deleteRecord', { contentId: record.content_id })
           deletedIds.push(record.content_id)

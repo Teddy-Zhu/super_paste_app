@@ -1,4 +1,4 @@
-import databaseService from './database-service'
+import clipboardDatabase from '../clipboard/clipboard-database'
 import type { TagGroup, TagStats } from '../types/clipboard-types'
 import { ClipboardDataConverter } from '../types/clipboard-types'
 import log from 'electron-log'
@@ -46,7 +46,7 @@ class ClipboardTagService {
           updatedAt: now
         }
 
-        const success = await databaseService.createTagGroup({ tag })
+        const success = clipboardDatabase.createTagGroup(tag)
         if (success) {
           return tagId
         } else {
@@ -65,7 +65,7 @@ class ClipboardTagService {
   public async getAllTagGroups(): Promise<TagGroup[]> {
     return this.execute(
       async () => {
-        const records = await databaseService.getAllTagGroups()
+        const records = clipboardDatabase.getAllTagGroups()
         return records.map((record: any) => ClipboardDataConverter.tagRecordToTag(record))
       },
       '获取标签组列表失败',
@@ -87,7 +87,7 @@ class ClipboardTagService {
           updatedAt: Date.now()
         }
 
-        const success = await databaseService.updateTagGroup({ tagId, updateData })
+        const success = clipboardDatabase.updateTagGroup(tagId, updateData)
         return success
       },
       '更新标签组失败',
@@ -101,7 +101,7 @@ class ClipboardTagService {
   public async deleteTagGroup(tagId: string): Promise<boolean> {
     return this.execute(
       async () => {
-        const success = await databaseService.deleteTagGroup({ tagId })
+        const success = clipboardDatabase.deleteTagGroup(tagId)
         return success
       },
       '删除标签组失败',
@@ -115,7 +115,7 @@ class ClipboardTagService {
   public async bindTagToRecord(contentId: string, tagId: string): Promise<boolean> {
     return this.execute(
       async () => {
-        const success = await databaseService.bindTagToRecord({ contentId, tagId })
+        const success = clipboardDatabase.bindTagToRecord(contentId, tagId)
         return success
       },
       '绑定标签失败',
@@ -129,7 +129,7 @@ class ClipboardTagService {
   public async unbindTagFromRecord(contentId: string, tagId: string): Promise<boolean> {
     return this.execute(
       async () => {
-        const success = await databaseService.unbindTagFromRecord({ contentId, tagId })
+        const success = clipboardDatabase.unbindTagFromRecord(contentId, tagId)
         return success
       },
       '解除标签绑定失败',
@@ -143,7 +143,7 @@ class ClipboardTagService {
   public async unbindAllTagsFromRecord(contentId: string): Promise<boolean> {
     return this.execute(
       async () => {
-        const success = await databaseService.unbindAllTagsFromRecord({ contentId })
+        const success = clipboardDatabase.unbindAllTagsFromRecord(contentId)
         return success
       },
       '解除所有标签绑定失败',
@@ -157,7 +157,7 @@ class ClipboardTagService {
   public async getTagStats(): Promise<TagStats[]> {
     return this.execute(
       async () => {
-        return await databaseService.getTagStats()
+        return clipboardDatabase.getTagGroupStats()
       },
       '获取标签统计信息失败',
       []
