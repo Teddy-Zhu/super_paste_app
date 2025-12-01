@@ -1,4 +1,4 @@
-import databaseService from '../services/database-service'
+import clipboardDatabase from '../clipboard/clipboard-database'
 import autoStartManager from '../utils/auto-start-manager'
 import { STORE_KEY } from '../config/common'
 import store from '../config/store'
@@ -16,7 +16,7 @@ export class DataInitializationService {
       logger.debug('[主进程] 检查示例标签数据')
 
       // 检查是否已有标签数据
-      const existingTags = databaseService.getAllTagGroups()
+      const existingTags = clipboardDatabase.getAllTagGroups()
 
       if (existingTags.length === 0) {
         logger.debug('[主进程] 未找到标签数据，创建示例标签')
@@ -32,13 +32,16 @@ export class DataInitializationService {
 
         for (const tag of sampleTags) {
           try {
-            const tagId = databaseService.createTagGroup({
+            const success = clipboardDatabase.createTagGroup({
+              id: `tag_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`,
               name: tag.name,
               color: tag.color,
-              description: tag.description
+              description: tag.description,
+              createdAt: Date.now(),
+              updatedAt: Date.now()
             })
 
-            if (!tagId) {
+            if (!success) { // Changed from `if (success)` to `if (!success)` to match original logic flow (error on failure)
               logger.error(`[主进程] 创建标签失败: ${tag.name}`)
             } else {
               logger.debug(`[主进程] 创建标签成功: ${tag.name}`)
