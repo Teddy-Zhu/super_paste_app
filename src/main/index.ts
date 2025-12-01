@@ -11,9 +11,12 @@ import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import ipcManager from './communication/ipc-manager'
 import clipboardManager from './clipboard/clipboard-manager'
 import clipboardDatabase from './clipboard/clipboard-database'
-import clipboardHistoryCleaner from './clipboard/clipboard-history-cleaner'
 import { clearAllDebounceTimers } from './utils/common'
 import { scheduledSyncManager } from './workers/scheduled-sync-manager'
+import { BaseWorkerManager } from './workers/base-worker-manager'
+import type { WorkerConfig } from './types/worker-types'
+import clipboardHistoryCleanerWorkerPath from './workers/clipboard-history-cleaner.worker?modulePath'
+import { getCleanupConfig } from './config/cleanup-config'
 
 // 重构后的模块管理器
 import { mainWindowManager, overlayWindowManager } from './ui/windows/window-managers'
@@ -27,6 +30,15 @@ import { CLIPBOARD_CONFIG } from './config/constants'
 
 // 同步相关模块
 import { SyncConfigUtils } from './sync/sync-config-utils'
+
+/**
+ * 简单的清理器 Worker 管理器
+ * 继承 BaseWorkerManager，不添加额外逻辑
+ */
+class ClipboardHistoryCleanerManager extends BaseWorkerManager {
+  // 不需要额外实现，继承基类的所有功能
+}
+
 if (process.platform === 'darwin' && is.dev) {
   app.disableHardwareAcceleration()
 }
@@ -37,6 +49,7 @@ app.commandLine.appendSwitch('wm-window-animations-disabled', 'true');
  */
 class SuperPasteApp {
   private isInitialized = false // 标记应用是否已完成初始化
+  private clipboardHistoryCleaner: ClipboardHistoryCleanerManager | null = null // 清理器 Worker 实例
 
   /**
    * 应用启动入口
@@ -246,13 +259,37 @@ class SuperPasteApp {
    */
   private async initializeClipboardHistoryCleaner(): Promise<void> {
     try {
-      // 初始化清理器（启动worker并配置）
-      await clipboardHistoryCleaner.initialize()
-      logger.debug('[主进程] 剪贴板历史清理器Worker初始化完成')
+      // 创建 Worker 配置
+      const config: WorkerConfig = {
+        name: 'ClipboardHistoryCleaner',
+        workerPath: clipboardHistoryCleanerWorkerPath
+      }
+
+      // 创建 Worker 管理器实例
+      this.clipboardHistoryCleaner = new ClipboardHistoryCleanerManager(config)
+
+      // 启动 Worker
+      await this.clipboardHistoryCleaner.start()
+      logger.debug('[主进程] 剪贴板历史清理器 Worker 启动成功')
+
+      // 获取用户数据路径
+      const userDataPath = app.getPath('userData')
+
+      // 获取清理配置
+      const cleanupConfig = getCleanupConfig()
+
+      // 初始化清理器配置
+      await this.clipboardHistoryCleaner.call('initialize', {
+        config: cleanupConfig,
+        userDataPath
+      })
+      logger.debug('[主进程] 剪贴板历史清理器配置初始化完成')
 
       // 启动自动清理（如果配置了保留时间）
-      await clipboardHistoryCleaner.startAutoCleanup()
-      logger.debug('[主进程] 剪贴板历史清理器自动清理启动完成')
+      if (cleanupConfig.enableAutoCleanup) {
+        await this.clipboardHistoryCleaner.call('startAutoCleanup')
+        logger.debug('[主进程] 剪贴板历史清理器自动清理启动完成')
+      }
     } catch (error) {
       logger.error('[主进程] 剪贴板历史清理器初始化失败:', error)
       // 清理器初始化失败不影响应用主要功能
@@ -367,7 +404,13 @@ class SuperPasteApp {
       clipboardManager.stopListening()
 
       // 销毁历史记录清理器
-      clipboardHistoryCleaner.destroy()
+      if (this.clipboardHistoryCleaner) {
+        await this.clipboardHistoryCleaner.call('destroy').catch(() => {
+          // 忽略错误，确保能继续清理
+        })
+        await this.clipboardHistoryCleaner.stop()
+        this.clipboardHistoryCleaner = null
+      }
 
       // 清理所有防抖定时器
       clearAllDebounceTimers()

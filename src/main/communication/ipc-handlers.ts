@@ -9,7 +9,6 @@ import { STORE_KEY } from '../config/common'
 import { debounceExecution } from '../utils/common'
 import { MAX_HISTORY_SIZE_DEBOUNCE_DELAY, MAX_KEEP_TIME_DEBOUNCE_DELAY } from '../config/constants'
 import clipboardManager from '../clipboard/clipboard-manager'
-import clipboardHistoryCleaner from '../clipboard/clipboard-history-cleaner'
 import { scheduledSyncManager } from '../workers/scheduled-sync-manager'
 import type { ScheduledSyncConfig } from '../sync/types'
 import { SyncStatus } from '../sync/types'
@@ -221,19 +220,13 @@ export class IPCHandlerManager {
       }
 
       // 如果更新的是最大保存时间配置，使用防抖更新历史记录清理器配置
+      // 注意：清理器已优化为独立 Worker，配置由 index.ts 中的实例管理
       if (key === STORE_KEY.SETTINGS_MAX_KEEP_TIME) {
         debounceExecution(
           'update-max-keep-time',
           async () => {
-            logger.debug('[主进程] 最大保存时间配置已更新，更新清理器配置')
-            try {
-              const maxKeepTime = store.get(STORE_KEY.SETTINGS_MAX_KEEP_TIME, -1)
-              await clipboardHistoryCleaner.call('updateConfig', {
-                maxKeepTime
-              })
-            } catch (error) {
-              logger.error('[主进程] 更新清理器配置失败:', error)
-            }
+            logger.debug('[主进程] 最大保存时间配置已更新，清理器将在下次应用启动时使用新配置')
+            // TODO: 如果需要动态更新清理器配置，需要在 index.ts 中暴露清理器实例的引用
           },
           MAX_KEEP_TIME_DEBOUNCE_DELAY
         )

@@ -8,6 +8,7 @@ import type {
 } from '../types/worker-types'
 import type { CleanupConfig, CleanupStats } from '../types/clipboard-types'
 import logger from '../utils/logger'
+import clipboardDatabase from '../clipboard/clipboard-database'
 
 /**
  * 剪贴板历史记录清理器 Worker
@@ -65,6 +66,18 @@ class ClipboardHistoryCleanerWorker extends BaseWorker {
       logFileName: 'clipboard-cleaner-worker.log',
       logScope: 'clipboard-cleaner-worker'
     })
+
+    // 初始化数据库连接
+    try {
+      if (!clipboardDatabase.isConnected()) {
+        clipboardDatabase.initialize(userDataPath)
+        logger.info('[历史记录清理器 Worker] 数据库初始化成功')
+      }
+    } catch (error) {
+      logger.error('[历史记录清理器 Worker] 数据库初始化失败:', error)
+      throw error
+    }
+
     // 更新配置
     if (config) {
       this.config = { ...this.config, ...config }
@@ -179,8 +192,8 @@ class ClipboardHistoryCleanerWorker extends BaseWorker {
     const startTime = Date.now()
 
     try {
-      // 通过主线程调用数据库操作
-      const totalRecords = await this.callMainThread('database-getRecordCount')
+      // 直接调用数据库操作
+      const totalRecords = clipboardDatabase.getRecordCount()
 
       if (totalRecords === 0) {
         this.onOperationSuccess()
@@ -198,15 +211,11 @@ class ClipboardHistoryCleanerWorker extends BaseWorker {
       // 1. 基于时间的清理
       if (this.config.maxKeepTime > 0) {
         const expireTimestamp = this.calculateExpireTimestamp()
-        const expiredRecordIds = await this.callMainThread('database-getExpiredRecordIds', {
-          expireTimestamp
-        })
+        const expiredRecordIds = clipboardDatabase.getExpiredRecordIds(expireTimestamp)
 
         if (expiredRecordIds.length > 0) {
-          // 优化：直接删除，无需查询 hash
-          const timeBasedDeletedCount = await this.callMainThread('database-deleteExpiredRecords', {
-            expireTimestamp
-          })
+          // 直接删除过期记录
+          const timeBasedDeletedCount = clipboardDatabase.deleteRecordsByTimestamp(expireTimestamp)
           deletedRecordIds.push(...expiredRecordIds)
           deletedCount += timeBasedDeletedCount
         }
@@ -214,25 +223,22 @@ class ClipboardHistoryCleanerWorker extends BaseWorker {
 
       // 2. 基于数量的清理（排除有标签的记录）
       if (this.config.enableCountBasedCleanup && this.config.maxHistorySize > 0) {
-        const currentCount = await this.callMainThread('database-getRecordCount')
+        const currentCount = clipboardDatabase.getRecordCount()
 
         if (currentCount > this.config.maxHistorySize) {
           const excessCount = currentCount - this.config.maxHistorySize
 
-          // 优化：只获取需要删除的无标签记录 ID，避免删除有标签的记录
-          const recordsToDelete = await this.callMainThread(
-            'database-queryRecordIdsAndHashesWithoutTags',
-            {
-              limit: excessCount,
-              offset: this.config.maxHistorySize,
-              orderBy: 'last_used',
-              orderDirection: 'DESC'
-            }
-          )
+          // 只获取需要删除的无标签记录 ID，避免删除有标签的记录
+          const recordsToDelete = clipboardDatabase.queryRecordIdsAndHashesWithoutTags({
+            limit: excessCount,
+            offset: this.config.maxHistorySize,
+            orderBy: 'last_used',
+            orderDirection: 'DESC'
+          })
 
           // 删除这些记录（无需解绑标签，因为这些记录没有标签）
           for (const record of recordsToDelete) {
-            await this.callMainThread('database-deleteRecord', { contentId: record.content_id })
+            clipboardDatabase.deleteRecord(record.content_id)
             deletedRecordIds.push(record.content_id)
             deletedCount++
           }
@@ -294,27 +300,24 @@ class ClipboardHistoryCleanerWorker extends BaseWorker {
     }
 
     try {
-      const currentCount = await this.callMainThread('database-getRecordCount')
+      const currentCount = clipboardDatabase.getRecordCount()
 
       if (currentCount > maxHistorySize) {
         const excessCount = currentCount - maxHistorySize
 
-        // 优化：只获取需要删除的无标签记录 ID，避免删除有标签的记录
-        const recordsToDelete = await this.callMainThread(
-          'database-queryRecordIdsAndHashesWithoutTags',
-          {
-            limit: excessCount,
-            offset: maxHistorySize,
-            orderBy: 'last_used',
-            orderDirection: 'DESC'
-          }
-        )
+        // 只获取需要删除的无标签记录 ID，避免删除有标签的记录
+        const recordsToDelete = clipboardDatabase.queryRecordIdsAndHashesWithoutTags({
+          limit: excessCount,
+          offset: maxHistorySize,
+          orderBy: 'last_used',
+          orderDirection: 'DESC'
+        })
 
         const deletedIds: string[] = []
 
         // 删除这些记录（无需解绑标签，因为这些记录没有标签）
         for (const record of recordsToDelete) {
-          await this.callMainThread('database-deleteRecord', { contentId: record.content_id })
+          clipboardDatabase.deleteRecord(record.content_id)
           deletedIds.push(record.content_id)
         }
 

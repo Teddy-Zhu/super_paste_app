@@ -1,7 +1,5 @@
 import { BaseWorkerManager } from '../workers/base-worker-manager'
 import { NotificationService } from '../services/notification-service'
-import databaseService from '../services/database-service'
-import clipboardHistoryCleaner from './clipboard-history-cleaner'
 import store from '../config/store'
 import { STORE_KEY } from '../config/common'
 import type { ClipboardContent, ClipboardManagerConfig } from '../types/clipboard-types'
@@ -55,22 +53,23 @@ class ClipboardManager extends BaseWorkerManager {
     )
 
     // 监听清理检查请求事件
-    this.on('cleanup-check-required', (data: { reason: string; maxHistorySize: number }) => {
-      // 转发给清理器处理
-      clipboardHistoryCleaner.emit('cleanup-check-required', data)
-    })
+    // 注意：清理器已优化为直接使用 Worker，不再需要事件转发
+    // this.on('cleanup-check-required', (data: { reason: string; maxHistorySize: number }) => {
+    //   // 转发给清理器处理
+    // })
 
     // 监听清理完成事件，直接更新缓存
-    clipboardHistoryCleaner.on(
-      'cleanup-completed',
-      (data: { stats: any; deletedRecordIds?: string[] }) => {
-        logger.info('[剪贴板管理器] 收到清理完成事件:', data.stats)
-        // 直接通知 clipboard-manager worker 更新缓存
-        if (data.deletedRecordIds && data.deletedRecordIds.length > 0) {
-          this.notifyWorkerCacheUpdate(data.deletedRecordIds)
-        }
-      }
-    )
+    // 注意：清理器已优化为直接使用 Worker，不再需要事件转发
+    // clipboardHistoryCleaner.on(
+    //   'cleanup-completed',
+    //   (data: { stats: any; deletedRecordIds?: string[] }) => {
+    //     logger.info('[剪贴板管理器] 收到清理完成事件:', data.stats)
+    //     // 直接通知 clipboard-manager worker 更新缓存
+    //     if (data.deletedRecordIds && data.deletedRecordIds.length > 0) {
+    //       this.notifyWorkerCacheUpdate(data.deletedRecordIds)
+    //     }
+    //   }
+    // )
   }
 
   /**
@@ -100,7 +99,7 @@ class ClipboardManager extends BaseWorkerManager {
     try {
       return await this.call<T>(method, params)
     } catch (error) {
-      logger.error(`[剪贴板管理器] ${errorMessage}:`, error)
+      logger.error(`[剪贴板管理器] ${errorMessage}: `, error)
       return fallback
     }
   }
@@ -119,15 +118,12 @@ class ClipboardManager extends BaseWorkerManager {
     }
   }
 
-  /**
-   * 通知 Worker 更新缓存
-   * 直接调用 Worker 的缓存同步方法
-   */
-  private async notifyWorkerCacheUpdate(deletedIds: string[]): Promise<void> {
-    if (this.isRunning()) {
-      await this.safeCall('syncDeletedRecordsByIds', '通知 Worker 缓存更新失败', undefined, deletedIds)
-    }
-  }
+  // notifyWorkerCacheUpdate 方法已弃用，因为清理器不再通过主线程通知
+  // private async notifyWorkerCacheUpdate(deletedIds: string[]): Promise<void> {
+  //   if (this.isRunning()) {
+  //     await this.safeCall('syncDeletedRecordsByIds', '通知 Worker 缓存更新失败', undefined, deletedIds)
+  //   }
+  // }
 
   /**
    * 重写基类方法来处理来自 Worker 的请求
@@ -138,29 +134,23 @@ class ClipboardManager extends BaseWorkerManager {
 
   /**
    * 处理 Worker 调用
+   * 注意：Worker 现在应该直接访问数据库，此方法已弃用
    */
   private async handleWorkerCall(request: WorkerRequest): Promise<void> {
     try {
-      let result: any
+      // Worker 应该直接访问数据库，不应再通过主线程调用
+      // 如果收到此类请求，记录警告
+      logger.warn('[剪贴板管理器] Worker 尝试通过主线程调用数据库，这不应该发生:', request.method)
 
-      // 检查是否是数据库操作
-      if (request.method.startsWith('database-')) {
-        const operation = request.method.replace('database-', '')
-        result = await databaseService.executeOperation(operation, request.params)
-      } else {
-        throw new Error(`未知的调用方法: ${request.method}`)
-      }
-
-      // 发送成功响应
+      // 发送错误响应
       this.worker?.postMessage({
         id: `response-${Date.now()}`,
         type: 'response',
         requestId: request.id,
-        success: true,
-        data: result,
+        success: false,
+        error: 'Worker 应直接访问数据库',
         timestamp: Date.now()
       })
-      // console.log('send response to worker', new Date().toDateString())
     } catch (error) {
       // 发送错误响应
       this.worker?.postMessage({

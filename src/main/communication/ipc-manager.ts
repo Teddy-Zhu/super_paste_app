@@ -3,7 +3,6 @@ import type { IpcMainInvokeEvent } from 'electron'
 import clipboardManager from '../clipboard/clipboard-manager'
 import clipboardHistoryService from '../services/clipboard-history-service'
 import clipboardTagService from '../services/clipboard-tag-service'
-import clipboardHistoryCleaner from '../clipboard/clipboard-history-cleaner'
 import { qrCodeService } from '../services/qrcode-service'
 import type { ClipboardItem, ClipboardManagerConfig } from '../types/clipboard-types'
 import type { BaseWorkerManager } from '../workers/base-worker-manager'
@@ -564,10 +563,8 @@ class IpcManager {
       workers.push(clipboardManager)
     }
 
-    // 添加剪贴板历史清理器
-    if (clipboardHistoryCleaner.isRunning()) {
-      workers.push(clipboardHistoryCleaner)
-    }
+    // 清理器已优化为独立 Worker，由 index.ts 管理
+    // 如需导出清理器的 heapdump，需要在 index.ts 中暴露清理器实例
 
     return workers
   }

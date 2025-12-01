@@ -29,9 +29,8 @@ class ClipboardDatabase {
   private appCacheMaxSize: number = 1000 // 最大缓存数量
 
   private constructor() {
-    // 数据库文件保存在应用的 userData 目录中
-    const userDataPath = app.getPath('userData')
-    this.dbPath = join(userDataPath, 'clipboard-history.db')
+    // 构造函数中不再直接获取路径，延迟到 initialize 中处理
+    this.dbPath = ''
   }
 
   /**
@@ -46,9 +45,27 @@ class ClipboardDatabase {
 
   /**
    * 初始化数据库连接和表结构
+   * @param userDataPath 可选的用户数据路径，在 Worker 中必须提供
    */
-  public initialize(): void {
+  public initialize(userDataPath?: string): void {
     try {
+      // 确定数据库路径
+      if (userDataPath) {
+        this.dbPath = join(userDataPath, 'clipboard-history.db')
+      } else if (!this.dbPath) {
+        // 如果没有提供路径且未设置，尝试从 app 获取（主进程模式）
+        try {
+          const path = app.getPath('userData')
+          this.dbPath = join(path, 'clipboard-history.db')
+        } catch (error) {
+          throw new Error('无法获取 userData 路径，请在 initialize 方法中显式传入')
+        }
+      }
+
+      if (!this.dbPath) {
+        throw new Error('数据库路径未设置')
+      }
+
       // 创建数据库连接
       this.db = new Database(this.dbPath)
 
