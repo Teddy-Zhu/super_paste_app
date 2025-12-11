@@ -37,7 +37,7 @@
     "onnxruntime-node": "1.22.0-rev",
     "qrcode": "^1.5.4",
     "qrcode-reader": "^1.0.4",
-    "sharp": "^0.34.4",
+    "sharp": "^0.34.5",
     "webdav": "^5.8.0"
   },
   "devDependencies": {
@@ -83,6 +83,7 @@
       "electron",
       "esbuild",
       "get-windows",
+      "lzma-native",
       "onnxruntime-node",
       "sharp",
       "vue-demi"

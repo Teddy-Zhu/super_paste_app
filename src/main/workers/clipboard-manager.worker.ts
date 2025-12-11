@@ -18,12 +18,14 @@ import ActiveWindow from '@paymoapp/active-window'
 import logger from '../utils/logger'
 import { ocrService, OCRServiceOptions } from '../services/ocr-service'
 import { qrCodeService } from '../services/qrcode-service'
+import { ClipboardDatabase } from '../clipboard/clipboard-database'
 import path from 'path'
 
 class ClipboardManagerWorker extends BaseWorker {
   private config: ClipboardManagerConfig
   private clipboard: TeddyClipboardManager
   private clipboardListener: ClipboardListener
+  private database: ClipboardDatabase
   private isListening: boolean = false
   private checkTimer: NodeJS.Timeout | null = null
   private lastClipboardHash: string = ''
@@ -55,6 +57,9 @@ class ClipboardManagerWorker extends BaseWorker {
 
     // 初始化剪贴板监听器
     this.clipboardListener = new ClipboardListener()
+
+    // 初始化数据库实例
+    this.database = ClipboardDatabase.getInstance()
 
     // 初始化 ActiveWindow
     this.initializeActiveWindow()
@@ -238,11 +243,11 @@ class ClipboardManagerWorker extends BaseWorker {
   public async initialize(
     params?:
       | {
-          config?: Partial<ClipboardManagerConfig>
-          userDataPath?: string
-          isPackaged?: boolean
-          appPath?: string
-        }
+        config?: Partial<ClipboardManagerConfig>
+        userDataPath?: string
+        isPackaged?: boolean
+        appPath?: string
+      }
       | Partial<ClipboardManagerConfig>
   ): Promise<void> {
     // 处理参数兼容性
@@ -268,6 +273,9 @@ class ClipboardManagerWorker extends BaseWorker {
         logFileName: 'clipboard-manager-worker.log',
         logScope: 'clipboard-manager-worker'
       })
+
+      // 初始化数据库连接
+      this.database.initialize(userDataPath)
     }
 
     if (config) {
@@ -279,10 +287,10 @@ class ClipboardManagerWorker extends BaseWorker {
 
     try {
       // 初始化历史记录缓存
-      await this.initializeHistoryCache()
+      this.initializeHistoryCache()
 
-      // 数据库已在主进程中初始化，直接加载最后一项信息
-      await this.loadLastItemInfo()
+      // 加载最后一项信息
+      this.loadLastItemInfo()
       // 直接获取剪贴板数据进行初始化
       const clipboardData = this.readClipboardDirect()
       this.lastClipboardHash = await this.generateClipboardHashFromData(clipboardData)
@@ -497,10 +505,7 @@ class ClipboardManagerWorker extends BaseWorker {
       const contentHash = ClipboardDataConverter.generateContentHash(content)
 
       if (this.lastItemHash === contentHash) {
-        await this.callMainThread('database-updateLastUsed', {
-          contentId: this.lastItemId,
-          lastUsed: now
-        })
+        this.database.updateLastUsed(this.lastItemId, now)
         this.sendEvent('history-updated', { timestamp: Date.now() })
         return
       }
@@ -509,10 +514,7 @@ class ClipboardManagerWorker extends BaseWorker {
       const cachedRecord = this.getRecordFromCache(contentHash)
 
       if (cachedRecord) {
-        await this.callMainThread('database-updateLastUsed', {
-          contentId: cachedRecord.id,
-          lastUsed: now
-        })
+        this.database.updateLastUsed(cachedRecord.id, now)
         this.lastItemId = cachedRecord.id
         this.lastItemHash = contentHash
       } else {
@@ -523,23 +525,23 @@ class ClipboardManagerWorker extends BaseWorker {
 
         let sourceAppId: string | undefined = undefined
         if (sourceAppInfo) {
-          sourceAppId = await this.callMainThread('database-insertOrUpdateApp', {
-            application: sourceAppInfo.application,
-            path: sourceAppInfo.path,
-            icon: sourceAppInfo.icon
-          })
+          sourceAppId = this.database.insertOrUpdateApp(
+            sourceAppInfo.application,
+            sourceAppInfo.path,
+            sourceAppInfo.icon
+          ) || undefined
         }
 
-        await this.callMainThread('database-insertRecord', {
-          contentId: newItemId,
+        this.database.insertRecord(
+          newItemId,
           content,
-          primaryType: ClipboardDataConverter.detectPrimaryType(content, availableFormats),
-          availableFormats: availableFormats,
-          timestamp: now,
-          lastUsed: now,
-          sourceApp: sourceAppId,
-          hash: contentHash
-        })
+          ClipboardDataConverter.detectPrimaryType(content, availableFormats),
+          availableFormats,
+          now,
+          now,
+          sourceAppId,
+          contentHash
+        )
 
         // 添加到缓存
         this.addToCache(newItemId, contentHash)
@@ -570,10 +572,10 @@ class ClipboardManagerWorker extends BaseWorker {
    * 从数据库加载所有记录的 id 和 hash 到内存缓存
    * 优化：使用轻量级查询，只获取 content_id 和 hash，避免加载完整记录数据
    */
-  private async initializeHistoryCache(): Promise<void> {
+  private initializeHistoryCache(): void {
     try {
       // 使用轻量级查询，只获取 content_id 和 hash
-      const records = await this.callMainThread('database-queryRecordIdsAndHashes', {
+      const records = this.database.queryRecordIdsAndHashes({
         limit: this.maxCacheSize,
         orderBy: 'last_used',
         orderDirection: 'DESC'
@@ -671,10 +673,10 @@ class ClipboardManagerWorker extends BaseWorker {
     this.idToHashIndex.clear()
   }
 
-  private async loadLastItemInfo(): Promise<void> {
+  private loadLastItemInfo(): void {
     try {
       // 优化：使用轻量级查询，直接获取最后记录的 content_id 和 hash
-      const lastRecordInfo = await this.callMainThread('database-getLastRecordInfo')
+      const lastRecordInfo = this.database.getLastRecordInfo()
 
       if (lastRecordInfo) {
         this.lastItemId = lastRecordInfo.content_id
@@ -788,7 +790,7 @@ class ClipboardManagerWorker extends BaseWorker {
         const clipboardData = this.readClipboardDirect()
         this.lastClipboardHash = await this.generateClipboardHashFromData(clipboardData)
         this.checkQuickClipboardChange(clipboardData)
-      } catch (error) {}
+      } catch (error) { }
       this.resetErrorState()
     } catch (error) {
       // 静默处理错误
@@ -1025,9 +1027,7 @@ class ClipboardManagerWorker extends BaseWorker {
       }
 
       // 从数据库获取记录
-      const targetRecord = await this.callMainThread('database-getRecordByContentId', {
-        contentId: itemId
-      })
+      const targetRecord = this.database.getRecordByContentId(itemId)
 
       if (!targetRecord) {
         return { success: false, message: '未找到指定的剪贴板项' }
@@ -1053,10 +1053,7 @@ class ClipboardManagerWorker extends BaseWorker {
       if (success) {
         // 更新最后使用时间
         const now = Date.now()
-        await this.callMainThread('database-updateLastUsed', {
-          contentId: itemId,
-          lastUsed: now
-        })
+        this.database.updateLastUsed(itemId, now)
       }
 
       return {
@@ -1083,9 +1080,7 @@ class ClipboardManagerWorker extends BaseWorker {
       }
 
       // 从数据库获取记录
-      const targetRecord = await this.callMainThread('database-getRecordByContentId', {
-        contentId: itemId
-      })
+      const targetRecord = this.database.getRecordByContentId(itemId)
 
       if (!targetRecord) {
         return { success: false, message: '未找到指定的剪贴板项' }
@@ -1112,10 +1107,7 @@ class ClipboardManagerWorker extends BaseWorker {
       if (success) {
         // 更新最后使用时间
         const now = Date.now()
-        await this.callMainThread('database-updateLastUsed', {
-          contentId: itemId,
-          lastUsed: now
-        })
+        this.database.updateLastUsed(itemId, now)
       }
 
       return {
@@ -1142,9 +1134,7 @@ class ClipboardManagerWorker extends BaseWorker {
       }
 
       // 从数据库获取记录
-      const targetRecord = await this.callMainThread('database-getRecordByContentId', {
-        contentId: itemId
-      })
+      const targetRecord = this.database.getRecordByContentId(itemId)
 
       if (!targetRecord) {
         return { success: false, message: '未找到指定的剪贴板项' }
@@ -1188,9 +1178,7 @@ class ClipboardManagerWorker extends BaseWorker {
       }
 
       // 从数据库获取记录
-      const targetRecord = await this.callMainThread('database-getRecordByContentId', {
-        contentId: itemId
-      })
+      const targetRecord = this.database.getRecordByContentId(itemId)
       if (!targetRecord) {
         return { success: false, message: '未找到指定的剪贴板项' }
       }
@@ -1201,8 +1189,8 @@ class ClipboardManagerWorker extends BaseWorker {
       }
 
       try {
-        // 将 base64 图片数据转换为 Buffer
-        const imageBuffer = Buffer.from(targetRecord.content_image, 'base64')
+        // content_image 已经是 Buffer 类型，直接使用
+        const imageBuffer = targetRecord.content_image
 
         // 使用二维码服务解析图片
         const qrText = await qrCodeService.parseFromBuffer(imageBuffer)
@@ -1323,10 +1311,7 @@ class ClipboardManagerWorker extends BaseWorker {
         )
 
         // 更新数据库中的OCR字段
-        const updateSuccess = await this.callMainThread('database-updateOCR', {
-          contentId: contentId,
-          ocrText: ocrResult.text
-        })
+        const updateSuccess = this.database.updateOCR(contentId, ocrResult.text)
 
         if (updateSuccess) {
           // 通知前端更新这条记录的OCR值
