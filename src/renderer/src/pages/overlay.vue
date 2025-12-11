@@ -35,7 +35,7 @@ const isQuickSelectMode = ref(false)
 
 // ==================== 下拉菜单状态 ====================
 const isDropdownVisible = ref(false)
-const dropdownMenuRef = ref<HTMLElement>()
+// const dropdownMenuRef = ref<HTMLElement>()
 
 // ==================== 事件管理器 ====================
 const eventManager = useEventManager()

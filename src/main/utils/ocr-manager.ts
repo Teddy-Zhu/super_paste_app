@@ -119,8 +119,8 @@ export class OCRManager {
       const decodeDic = await fs.readFile(keysPath, 'utf-8')
 
       // 初始化 OCR 配置
-      const initConfig = {
-        ort,
+      const initConfig: any = {
+        ort: ort as any,
         det: {
           input: detModelPath,
           ratio: config.detRatio || 1.0,
@@ -148,9 +148,9 @@ export class OCRManager {
         const clsModelPath = path.join(this.resourcePath, 'ppocr_cls.onnx')
         try {
           await fs.access(clsModelPath)
-          ;(initConfig as any).docCls = {
-            input: clsModelPath
-          }
+            ; (initConfig as any).docCls = {
+              input: clsModelPath
+            }
           logger.info('启用文档方向识别')
         } catch (error) {
           logger.warn('文档方向识别模型不存在，跳过该功能')

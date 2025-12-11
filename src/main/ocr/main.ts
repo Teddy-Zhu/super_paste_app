@@ -114,11 +114,12 @@ function putImgDom(img: OffscreenCanvas, id?: string) {
   if (id) canvas.id = id
   try {
     document?.body?.append(canvas)
-  } catch (error) {}
+  } catch (error) { }
 }
 
 let createImageData = (data: Uint8ClampedArray, w: number, h: number) => {
-  return new ImageData(data, w, h)
+  // 使用 any 类型断言解决 ArrayBufferLike 与 ArrayBuffer 的类型不兼容问题
+  return new ImageData(data as any, w, h)
 }
 
 function log(...args: any[]) {
@@ -135,36 +136,36 @@ async function init(
   op:
     | InitOcrBase
     | ({
-        /** @deprecated use det.input */
-        detPath: string
-        /** @deprecated use rec.input */
-        recPath: string
-        /** @deprecated */
-        layoutPath?: string
-        /** @deprecated use docCls.input */
-        docClsPath?: string
-        /** @deprecated use rec.decodeDic */
-        dic: string
-        /** @deprecated */
-        layoutDic?: string
-        /** @deprecated use analyzeLayout.docDirs */
-        docDirs?: ReadingDir[]
-        /** @deprecated use analyzeLayout.columnsTip */
-        columnsTip?: ColumnsTip
-        dev?: boolean
-        log?: boolean
-        /** @deprecated use rec.imgh */
-        imgh?: number
-        /** @deprecated use det.ratio */
-        detRatio?: number
-        /** @deprecated use det.on and rec.on */
-        onProgress?: (type: 'det' | 'rec', total: number, count: number) => void
-        /** @deprecated use det.on */
-        onDet?: (r: detResultType) => void
-        /** @deprecated use rec.on */
-        onRec?: (index: number, result: { text: string; mean: number }) => void
-      } & InitOcrGlobal &
-        OrtOption)
+      /** @deprecated use det.input */
+      detPath: string
+      /** @deprecated use rec.input */
+      recPath: string
+      /** @deprecated */
+      layoutPath?: string
+      /** @deprecated use docCls.input */
+      docClsPath?: string
+      /** @deprecated use rec.decodeDic */
+      dic: string
+      /** @deprecated */
+      layoutDic?: string
+      /** @deprecated use analyzeLayout.docDirs */
+      docDirs?: ReadingDir[]
+      /** @deprecated use analyzeLayout.columnsTip */
+      columnsTip?: ColumnsTip
+      dev?: boolean
+      log?: boolean
+      /** @deprecated use rec.imgh */
+      imgh?: number
+      /** @deprecated use det.ratio */
+      detRatio?: number
+      /** @deprecated use det.on and rec.on */
+      onProgress?: (type: 'det' | 'rec', total: number, count: number) => void
+      /** @deprecated use det.on */
+      onDet?: (r: detResultType) => void
+      /** @deprecated use rec.on */
+      onRec?: (index: number, result: { text: string; mean: number }) => void
+    } & InitOcrGlobal &
+      OrtOption)
 ) {
   // 兼容老版本
   setOCREnv(op)
@@ -173,40 +174,40 @@ async function init(
       'det' in op
         ? op.det
         : {
-            input: op.detPath,
-            ratio: op.detRatio,
-            on: async (r) => {
-              if (op.onDet) op.onDet(r)
-              if (op.onProgress) op.onProgress('det', 1, 1)
-            }
-          },
+          input: op.detPath,
+          ratio: op.detRatio,
+          on: async (r) => {
+            if (op.onDet) op.onDet(r)
+            if (op.onProgress) op.onProgress('det', 1, 1)
+          }
+        },
     rec:
       'rec' in op
         ? op.rec
         : {
-            input: op.recPath,
-            decodeDic: op.dic,
-            imgh: op.imgh,
-            on: async (index, result, t) => {
-              if (op.onRec) op.onRec(index, result)
-              if (op.onProgress) op.onProgress('rec', t, index + 1)
-            }
-          },
+          input: op.recPath,
+          decodeDic: op.dic,
+          imgh: op.imgh,
+          on: async (index, result, t) => {
+            if (op.onRec) op.onRec(index, result)
+            if (op.onProgress) op.onProgress('rec', t, index + 1)
+          }
+        },
     docCls:
       'rec' in op
         ? op.docCls
         : op.docClsPath
           ? {
-              input: op.docClsPath
-            }
+            input: op.docClsPath
+          }
           : undefined,
     analyzeLayout:
       'rec' in op
         ? op.analyzeLayout
         : {
-            columnsTip: op.columnsTip,
-            docDirs: op.docDirs
-          },
+          columnsTip: op.columnsTip,
+          docDirs: op.docDirs
+        },
     ...op
   }
 
@@ -225,8 +226,8 @@ function setOCREnv(op: {
   dev = Boolean(op.dev)
   canlog = dev || Boolean(op.log)
   if (!dev) {
-    task.l = () => {}
-    task2.l = () => {}
+    task.l = () => { }
+    task2.l = () => { }
   }
   if (op.canvas) setCanvas(op.canvas)
   if (op.imageData) createImageData = op.imageData
@@ -243,7 +244,7 @@ async function loadImg(src: loadImgType) {
     img = new Image()
     img.src = src
     await new Promise((resolve) => {
-      ;(img as HTMLImageElement).onload = resolve
+      ; (img as HTMLImageElement).onload = resolve
     })
   } else if (src instanceof ImageData) {
     img = src

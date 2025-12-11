@@ -1,12 +1,7 @@
 import { parentPort } from 'node:worker_threads'
 import { writeHeapSnapshot } from 'v8'
 import { join } from 'path'
-import type {
-  WorkerMessage,
-  WorkerRequest,
-  WorkerResponse,
-  WorkerEvent
-} from '../types/worker-types'
+import type { WorkerMessage, WorkerEvent } from '../types/worker-types'
 import logger from '../utils/logger'
 
 /**
