@@ -70,19 +70,40 @@ export abstract class BaseWorkerManager extends EventEmitter implements WorkerMa
    */
   public async stop(): Promise<void> {
     if (!this.worker) {
+      logger.debug(`[${this.config.name}] Worker 不存在,跳过停止`)
       return
     }
 
+    logger.info(`[${this.config.name}] 开始停止 Worker...`)
+
     try {
       // 清理所有待处理的请求
+      logger.debug(`[${this.config.name}] 清理待处理的请求 (${this.pendingRequests.size} 个)...`)
       this.clearPendingRequests()
+      logger.debug(`[${this.config.name}] 待处理的请求已清理`)
 
-      // 终止 Worker
-      await this.worker.terminate()
+      // 给 Worker 一点时间完成清理(如果有destroy方法的话)
+      logger.debug(`[${this.config.name}] 等待 100ms 让 Worker 完成清理...`)
+      await new Promise(resolve => setTimeout(resolve, 100))
+
+      // 设置终止超时,避免无限等待
+      logger.debug(`[${this.config.name}] 开始终止 Worker (5秒超时)...`)
+      const terminatePromise = this.worker.terminate()
+      const timeoutPromise = new Promise((_, reject) =>
+        setTimeout(() => reject(new Error('Worker 终止超时')), 5000)
+      )
+
+      await Promise.race([terminatePromise, timeoutPromise])
+
       this.worker = null
       this.isInitialized = false
+
+      logger.info(`[${this.config.name}] ✓ Worker 已成功停止`)
     } catch (error) {
-      logger.error(`[${this.config.name}] 停止 Worker 失败:`, error)
+      logger.error(`[${this.config.name}] ✗ 停止 Worker 失败:`, error)
+      // 即使失败也要清理引用
+      this.worker = null
+      this.isInitialized = false
       throw error
     }
   }

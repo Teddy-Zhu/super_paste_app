@@ -1,4 +1,4 @@
-import { Tray, Menu, app } from 'electron'
+import { Tray, Menu } from 'electron'
 import { IconSelector } from '../windows/window-config'
 import { mainWindowManager, overlayWindowManager } from '../windows/window-managers'
 import logger from '../../utils/logger'
@@ -6,6 +6,7 @@ import store from '../../config/store'
 import { STORE_KEY } from '../../config/common'
 import autoStartManager from '../../utils/auto-start-manager'
 import clipboardManager from '../../clipboard/clipboard-manager'
+import appEventBus from '../../utils/app-event-bus'
 
 /**
  * 系统托盘管理器
@@ -113,7 +114,9 @@ export class TrayManager {
       {
         label: '退出',
         click: () => {
-          app.quit()
+          logger.info('[托盘管理器] 用户点击退出菜单')
+          // 通过事件总线发送退出请求
+          appEventBus.requestAppQuit()
         }
       }
     ])

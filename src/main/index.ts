@@ -31,6 +31,9 @@ import { CLIPBOARD_CONFIG } from './config/constants'
 // 同步相关模块
 import { SyncConfigUtils } from './sync/sync-config-utils'
 
+// 应用事件总线
+import appEventBus from './utils/app-event-bus'
+
 /**
  * 简单的清理器 Worker 管理器
  * 继承 BaseWorkerManager，不添加额外逻辑
@@ -87,6 +90,24 @@ class SuperPasteApp {
     } catch (error) {
       logger.error('[主进程] 应用启动失败:', error)
       throw error
+    }
+  }
+
+  /**
+   * 执行应用退出
+   * 供托盘菜单等外部调用
+   */
+  public async performQuit(): Promise<void> {
+    logger.info('[主进程] 开始执行应用退出流程')
+
+    try {
+      await this.cleanup()
+      logger.info('[主进程] 清理完成,退出应用')
+      app.exit(0)
+    } catch (error) {
+      logger.error('[主进程] 退出过程中发生错误:', error)
+      // 即使出错也要退出
+      app.exit(1)
     }
   }
 
@@ -151,6 +172,9 @@ class SuperPasteApp {
 
     // 6. 设置应用事件监听器
     this.setupAppEventListeners()
+
+    // 7. 注册应用退出事件监听器
+    this.setupAppQuitHandler()
   }
 
   /**
@@ -371,9 +395,12 @@ class SuperPasteApp {
    * 设置应用事件监听器
    */
   private setupAppEventListeners(): void {
+    // 退出清理标志 - 防止重复清理
+    let cleanupCompleted = false
+
     // macOS 特有的激活事件
     app.on('activate', () => {
-      // 只有在应用完全初始化后，且用户主动激活应用时才显示主窗口
+      // 只有在应用完全初始化后,且用户主动激活应用时才显示主窗口
       // 这样可以避免在应用启动时自动显示窗口
       if (!this.isInitialized) {
         return
@@ -382,68 +409,207 @@ class SuperPasteApp {
       this.ensureMainWindowVisible()
     })
 
-    // 当所有窗口关闭时不退出应用（因为有系统托盘）
+    // 当所有窗口关闭时的处理
     app.on('window-all-closed', () => {
-      // 保持任务栏图标运行，用户可以通过托盘菜单退出
+      logger.debug('[主进程] 所有窗口已关闭')
+      // 在 macOS 上,除非明确退出,否则应用和菜单栏会保持活动状态
+      // 但我们有系统托盘,所以不需要特殊处理 macOS
+      // 如果用户点击了退出,app.quit() 会触发 will-quit 事件
     })
 
-    // 应用退出前清理资源
-    app.on('before-quit', async () => {
-      await this.cleanup()
+    // 在 app.quit() 被调用之前触发
+    app.on('before-quit', () => {
+      logger.info('[主进程] before-quit 事件触发')
+    })
+
+    // 应用即将退出时的清理
+    app.on('will-quit', async (event) => {
+      logger.info('[主进程] will-quit 事件触发')
+
+      // 如果已经完成清理,直接退出
+      if (cleanupCompleted) {
+        logger.info('[主进程] 清理已完成,允许退出')
+        return
+      }
+
+      // 阻止默认退出行为,等待清理完成
+      event.preventDefault()
+
+      logger.info('[主进程] ========== 应用即将退出,开始清理资源 ==========')
+
+      try {
+        await this.cleanup()
+        logger.info('[主进程] ========== 资源清理完成,应用即将退出 ==========')
+        cleanupCompleted = true
+      } catch (error) {
+        logger.error('[主进程] ========== 清理资源时发生错误 ==========', error)
+        cleanupCompleted = true // 即使失败也标记为完成,避免卡住
+      } finally {
+        // 清理完成后,强制退出应用
+        logger.info('[主进程] 调用 app.exit(0) 强制退出')
+        app.exit(0)
+      }
+    })
+  }
+
+  /**
+   * 设置应用退出事件处理器
+   * 监听来自事件总线的退出请求
+   */
+  private setupAppQuitHandler(): void {
+    appEventBus.onQuitRequested(async () => {
+      logger.info('[主进程] 收到退出请求,开始执行退出流程')
+      await this.performQuit()
     })
   }
 
   /**
    * 清理应用资源
    */
-  private async cleanup(): Promise<void> {
-    logger.debug('[主进程] 开始清理应用资源')
+  public async cleanup(): Promise<void> {
+    logger.info('[主进程] ========== 开始清理应用资源 ==========')
 
     try {
-      // 停止剪贴板监听
-      clipboardManager.stopListening()
-
-      // 销毁历史记录清理器
-      if (this.clipboardHistoryCleaner) {
-        await this.clipboardHistoryCleaner.call('destroy').catch(() => {
-          // 忽略错误，确保能继续清理
-        })
-        await this.clipboardHistoryCleaner.stop()
-        this.clipboardHistoryCleaner = null
+      // 1. 首先停止剪贴板监听(避免在清理过程中产生新的数据)
+      logger.info('[主进程] [步骤 1/12] 开始停止剪贴板监听...')
+      try {
+        await Promise.race([
+          clipboardManager.stopListening(),
+          new Promise((_, reject) => setTimeout(() => reject(new Error('停止剪贴板监听超时')), 3000))
+        ])
+        logger.info('[主进程] [步骤 1/12] ✓ 剪贴板监听已停止')
+      } catch (error) {
+        logger.error('[主进程] [步骤 1/12] ✗ 停止剪贴板监听失败:', error)
       }
 
-      // 清理所有防抖定时器
+      // 2. 停止定时同步服务
+      logger.info('[主进程] [步骤 2/12] 开始销毁定时同步服务...')
+      try {
+        await Promise.race([
+          scheduledSyncManager.destroy(),
+          new Promise((_, reject) => setTimeout(() => reject(new Error('销毁定时同步服务超时')), 3000))
+        ])
+        logger.info('[主进程] [步骤 2/12] ✓ 定时同步服务已销毁')
+      } catch (error) {
+        logger.error('[主进程] [步骤 2/12] ✗ 销毁定时同步服务失败:', error)
+      }
+
+      // 3. 销毁历史记录清理器
+      logger.info('[主进程] [步骤 3/12] 开始销毁历史记录清理器...')
+      if (this.clipboardHistoryCleaner) {
+        try {
+          await Promise.race([
+            (async () => {
+              logger.debug('[主进程] [步骤 3/12] 调用清理器 destroy 方法...')
+              await this.clipboardHistoryCleaner!.call('destroy').catch((err) => {
+                logger.warn('[主进程] [步骤 3/12] 清理器 destroy 调用失败:', err)
+              })
+              logger.debug('[主进程] [步骤 3/12] 停止清理器 Worker...')
+              await this.clipboardHistoryCleaner!.stop()
+              logger.debug('[主进程] [步骤 3/12] 清理器 Worker 已停止')
+            })(),
+            new Promise((_, reject) => setTimeout(() => reject(new Error('销毁历史清理器超时')), 3000))
+          ])
+          this.clipboardHistoryCleaner = null
+          logger.info('[主进程] [步骤 3/12] ✓ 历史记录清理器已销毁')
+        } catch (error) {
+          logger.error('[主进程] [步骤 3/12] ✗ 销毁历史记录清理器失败:', error)
+          // 强制停止
+          if (this.clipboardHistoryCleaner) {
+            logger.warn('[主进程] [步骤 3/12] 尝试强制停止清理器...')
+            await this.clipboardHistoryCleaner.stop().catch(() => { })
+            this.clipboardHistoryCleaner = null
+          }
+        }
+      } else {
+        logger.info('[主进程] [步骤 3/12] - 历史记录清理器不存在,跳过')
+      }
+
+      // 4. 停止剪贴板管理器 Worker
+      logger.info('[主进程] [步骤 4/12] 开始停止剪贴板管理器 Worker...')
+      try {
+        await Promise.race([
+          clipboardManager.stop(),
+          new Promise((_, reject) => setTimeout(() => reject(new Error('停止剪贴板管理器超时')), 3000))
+        ])
+        logger.info('[主进程] [步骤 4/12] ✓ 剪贴板管理器已停止')
+      } catch (error) {
+        logger.error('[主进程] [步骤 4/12] ✗ 停止剪贴板管理器失败:', error)
+      }
+
+      // 5. 清理所有防抖定时器
+      logger.info('[主进程] [步骤 5/12] 清理防抖定时器...')
       clearAllDebounceTimers()
+      logger.info('[主进程] [步骤 5/12] ✓ 防抖定时器已清理')
 
-      // 关闭数据库连接
-      clipboardDatabase.close()
+      // 6. 关闭数据库连接
+      logger.info('[主进程] [步骤 6/12] 关闭数据库连接...')
+      try {
+        clipboardDatabase.close()
+        logger.info('[主进程] [步骤 6/12] ✓ 数据库连接已关闭')
+      } catch (error) {
+        logger.error('[主进程] [步骤 6/12] ✗ 关闭数据库连接失败:', error)
+      }
 
-      // 清理 IPC 事件处理器
-      ipcManager.cleanup()
-      IPCHandlerManager.cleanup()
+      // 7. 清理 IPC 事件处理器
+      logger.info('[主进程] [步骤 7/12] 清理 IPC 事件处理器...')
+      try {
+        ipcManager.cleanup()
+        IPCHandlerManager.cleanup()
+        logger.info('[主进程] [步骤 7/12] ✓ IPC 事件处理器已清理')
+      } catch (error) {
+        logger.error('[主进程] [步骤 7/12] ✗ 清理 IPC 事件处理器失败:', error)
+      }
 
-      // 销毁托盘
-      trayManager.destroy()
+      // 8. 销毁托盘
+      logger.info('[主进程] [步骤 8/12] 销毁系统托盘...')
+      try {
+        trayManager.destroy()
+        logger.info('[主进程] [步骤 8/12] ✓ 系统托盘已销毁')
+      } catch (error) {
+        logger.error('[主进程] [步骤 8/12] ✗ 销毁系统托盘失败:', error)
+      }
 
-      // 销毁窗口
-      mainWindowManager.destroy()
-      overlayWindowManager.destroy()
+      // 9. 销毁窗口
+      logger.info('[主进程] [步骤 9/12] 销毁窗口...')
+      try {
+        mainWindowManager.destroy()
+        overlayWindowManager.destroy()
+        logger.info('[主进程] [步骤 9/12] ✓ 窗口已销毁')
+      } catch (error) {
+        logger.error('[主进程] [步骤 9/12] ✗ 销毁窗口失败:', error)
+      }
 
-      // 重置窗口状态
-      windowStateManager.reset()
+      // 10. 重置窗口状态
+      logger.info('[主进程] [步骤 10/12] 重置窗口状态...')
+      try {
+        windowStateManager.reset()
+        logger.info('[主进程] [步骤 10/12] ✓ 窗口状态已重置')
+      } catch (error) {
+        logger.error('[主进程] [步骤 10/12] ✗ 重置窗口状态失败:', error)
+      }
 
-      // 清理电源监控
-      powerMonitorManager.cleanup()
+      // 11. 清理电源监控
+      logger.info('[主进程] [步骤 11/12] 清理电源监控...')
+      try {
+        powerMonitorManager.cleanup()
+        logger.info('[主进程] [步骤 11/12] ✓ 电源监控已清理')
+      } catch (error) {
+        logger.error('[主进程] [步骤 11/12] ✗ 清理电源监控失败:', error)
+      }
 
-      // 取消所有全局快捷键注册
-      globalShortcutManager.unregisterAll()
+      // 12. 取消所有全局快捷键注册
+      logger.info('[主进程] [步骤 12/12] 取消全局快捷键注册...')
+      try {
+        globalShortcutManager.unregisterAll()
+        logger.info('[主进程] [步骤 12/12] ✓ 全局快捷键已取消注册')
+      } catch (error) {
+        logger.error('[主进程] [步骤 12/12] ✗ 取消全局快捷键注册失败:', error)
+      }
 
-      // 销毁定时同步服务
-      await scheduledSyncManager.destroy()
-
-      logger.debug('[主进程] 应用资源清理完成')
+      logger.info('[主进程] ========== 应用资源清理完成 ==========')
     } catch (error) {
-      logger.error('[主进程] 清理应用资源时发生错误:', error)
+      logger.error('[主进程] ========== 清理应用资源时发生严重错误 ==========', error)
     }
   }
 }
@@ -461,6 +627,9 @@ superPasteApp.start().catch((error) => {
   logger.error('[主进程] 应用启动失败:', error)
   process.exit(1)
 })
+
+// 导出应用实例,供其他模块使用(如托盘管理器)
+export { superPasteApp }
 
 // ===== 模块化重构说明 =====
 /*
