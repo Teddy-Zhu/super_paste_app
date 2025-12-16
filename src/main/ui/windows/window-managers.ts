@@ -215,8 +215,7 @@ export class OverlayWindowManager {
   private static readonly SLIDE_IN_DELAY_MS = 16
   private overlayWindow: BrowserWindow | null = null
   private slideInTimer: NodeJS.Timeout | null = null
-  //@ts-ignore
-  private initialOverlayBounds: Electron.Rectangle | null = null
+  private cachedWindowBounds: Electron.Rectangle | null = null
 
   /**
    * 获取 overlay 窗口实例
@@ -236,9 +235,9 @@ export class OverlayWindowManager {
 
       logger.debug('[主进程] 开始创建 Overlay 窗口')
 
-      // 计算窗口位置
+      // 计算并缓存窗口位置
       const position = WindowConfigCalculator.calculateWindowPosition()
-      this.initialOverlayBounds = {
+      this.cachedWindowBounds = {
         x: position.x,
         y: position.y,
         width: position.width,
@@ -277,8 +276,6 @@ export class OverlayWindowManager {
 
       // 设置快捷键管理器的窗口引用
       globalShortcutManager.setOverlayWindow(this.overlayWindow)
-
-      // this.resetOverlayBounds()
 
       this.setupEventHandlers()
       this.loadContent()
@@ -330,7 +327,7 @@ export class OverlayWindowManager {
       // 重置overlay状态
       windowStateManager.setOverlayState(OverlayState.CLOSED)
 
-      this.initialOverlayBounds = null
+      this.cachedWindowBounds = null
       this.overlayWindow = null
     })
 
@@ -363,38 +360,13 @@ export class OverlayWindowManager {
   }
 
   /**
-   * 在窗口处于隐藏状态时归一化高度，避免反复切换导致窗口逐步增高
+   * 获取目标窗口边界(使用缓存或重新计算)
    */
-  //@ts-ignore
-  private resetOverlayBounds(): void {
-    const windowInstance = this.overlayWindow
-
-    if (!windowInstance || windowInstance.isDestroyed() || windowInstance.isVisible()) {
-      return
+  private getTargetBounds(): Electron.Rectangle {
+    if (!this.cachedWindowBounds) {
+      this.cachedWindowBounds = WindowConfigCalculator.calculateWindowPosition()
     }
-
-    try {
-      const currentBounds = windowInstance.getBounds()
-      const targetHeight = WindowConfigCalculator.calculateWindowPosition().height
-      console.log('resetOverlayBounds', currentBounds, targetHeight)
-      if (currentBounds.height === targetHeight) {
-        return
-      }
-
-      const bottom = currentBounds.y + currentBounds.height
-      windowInstance.setBounds({
-        ...currentBounds,
-        height: targetHeight,
-        y: bottom - targetHeight
-      })
-      console.log('set bound',{
-        ...currentBounds,
-        height: targetHeight,
-        y: bottom - targetHeight
-      })
-    } catch (error) {
-      logger.error('[主进程] 重置 Overlay 窗口位置失败:', error)
-    }
+    return this.cachedWindowBounds
   }
 
   /**
@@ -460,28 +432,25 @@ export class OverlayWindowManager {
     // 设置状态为正在打开
     windowStateManager.setOverlayState(OverlayState.OPENING)
     const windowInstance = this.overlayWindow
-    const targetBounds =
-      this.initialOverlayBounds ?? WindowConfigCalculator.calculateWindowPosition()
+    const targetBounds = this.getTargetBounds()
 
-    console.log('Overlay window target bounds:', targetBounds)
+    logger.debug('[主进程] Overlay 窗口目标边界:', targetBounds)
+
     try {
-      windowInstance.setOpacity(0)
+      // 设置窗口边界
       windowInstance.setBounds(targetBounds)
+
+      // 显示并聚焦窗口
+      WindowUtils.safelyShowWindow(windowInstance)
+      WindowUtils.safelyFocusWindow(windowInstance)
+
+      // 触发滑入动画
+      this.scheduleSlideInAnimation()
     } catch (error) {
-      logger.error('[主进程] 调整 Overlay 窗口位置失败:', error)
+      logger.error('[主进程] 显示 Overlay 窗口失败:', error)
+      windowStateManager.setOverlayState(OverlayState.CLOSED)
+      return
     }
-
-    // 显示并聚焦窗口
-    WindowUtils.safelyShowWindow(windowInstance)
-    WindowUtils.safelyFocusWindow(windowInstance)
-
-    try {
-      windowInstance.setOpacity(1)
-    } catch (error) {
-      logger.error('[主进程] 恢复 Overlay 窗口不透明度失败:', error)
-    }
-
-    this.scheduleSlideInAnimation()
 
     // 注册全局 ESC 键监听
     globalShortcutManager.registerEscapeKey()
@@ -524,22 +493,15 @@ export class OverlayWindowManager {
     const windowInstance = this.overlayWindow
 
     try {
-      const currentBounds = windowInstance.getBounds()
-      windowInstance.setOpacity(0)
-      const hiddenBounds = {
-        x: currentBounds.x,
-        y: currentBounds.y,
-        width: 0,
-        height: 0
-      }
-      windowInstance.setBounds(hiddenBounds)
+      // 清除定时器
+      this.clearSlideInTimer()
+
+      // 失焦并隐藏窗口
       windowInstance.blur()
+      WindowUtils.safelyHideWindow(windowInstance)
     } catch (error) {
       logger.error('[主进程] 隐藏 Overlay 窗口失败:', error)
     }
-
-    this.clearSlideInTimer()
-    // this.resetOverlayBounds()
 
     // 取消全局 ESC 键监听
     globalShortcutManager.unregisterEscapeKey()
@@ -585,7 +547,7 @@ export class OverlayWindowManager {
   destroy(): void {
     this.clearSlideInTimer()
     WindowUtils.safelyDestroyWindow(this.overlayWindow)
-    this.initialOverlayBounds = null
+    this.cachedWindowBounds = null
     this.overlayWindow = null
   }
 

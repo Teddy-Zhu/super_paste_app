@@ -507,24 +507,34 @@ class ClipboardDatabase {
   }
 
   /**
-   * 清空所有历史记录
+   * 清空所有历史记录（排除有标签的记录）
+   * 只删除没有标签的记录，保留有标签的记录
    */
   public clearAllRecords(): boolean {
     if (!this.db) throw new Error('数据库未初始化')
 
     try {
-      // 首先清空所有标签绑定
-      const deleteTagsSQL = 'DELETE FROM clipboard_history_tags'
+      // 只删除没有标签的记录的标签绑定（实际上这些记录没有标签绑定，但为了保险起见还是执行）
+      const deleteTagsSQL = `
+        DELETE FROM clipboard_history_tags
+        WHERE content_id NOT IN (
+          SELECT DISTINCT content_id FROM clipboard_history_tags
+        )
+      `
       const deleteTagsStmt = this.db.prepare(deleteTagsSQL)
       deleteTagsStmt.run()
 
-      // 然后清空历史记录
-      const deleteSQL = 'DELETE FROM clipboard_history'
+      // 只删除没有标签的历史记录
+      const deleteSQL = `
+        DELETE FROM clipboard_history
+        WHERE content_id NOT IN (
+          SELECT DISTINCT content_id FROM clipboard_history_tags
+        )
+      `
       const stmt = this.db.prepare(deleteSQL)
-      stmt.run()
+      const result = stmt.run()
 
-      // 重置自增ID
-      this.db.exec('DELETE FROM sqlite_sequence WHERE name = "clipboard_history"')
+      logger.info(`[剪贴板数据库] 清空历史记录完成，删除了 ${result.changes} 条记录（保留有标签的记录）`)
 
       return true
     } catch (error) {
