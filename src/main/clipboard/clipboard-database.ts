@@ -1,5 +1,4 @@
 import Database from 'better-sqlite3'
-import { app } from 'electron'
 import { join } from 'path'
 import type {
   ClipboardContent,
@@ -45,22 +44,16 @@ class ClipboardDatabase {
 
   /**
    * 初始化数据库连接和表结构
-   * @param userDataPath 可选的用户数据路径，在 Worker 中必须提供
+   * @param userDataPath 用户数据路径，必须提供
    */
-  public initialize(userDataPath?: string): void {
+  public initialize(userDataPath: string): void {
     try {
       // 确定数据库路径
-      if (userDataPath) {
-        this.dbPath = join(userDataPath, 'clipboard-history.db')
-      } else if (!this.dbPath) {
-        // 如果没有提供路径且未设置，尝试从 app 获取（主进程模式）
-        try {
-          const path = app.getPath('userData')
-          this.dbPath = join(path, 'clipboard-history.db')
-        } catch (error) {
-          throw new Error('无法获取 userData 路径，请在 initialize 方法中显式传入')
-        }
+      if (!userDataPath) {
+        throw new Error('userDataPath 参数是必需的')
       }
+
+      this.dbPath = join(userDataPath, 'clipboard-history.db')
 
       if (!this.dbPath) {
         throw new Error('数据库路径未设置')

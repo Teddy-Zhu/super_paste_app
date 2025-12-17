@@ -142,10 +142,18 @@ export function useAnimation(
     // console.log('[动画管理] 重置overlay状态')
     overlayStateManager.resetState()
 
+    // 重置搜索框状态
+    isSearchVisible.value = false
+    isSearchAnimating.value = false
+    isOpeningSearch.value = false
+
     // 重置元素位置到初始状态
     if (overlayContentRef.value) {
       overlayContentRef.value.style.transform = 'translateY(100%)'
     }
+
+    // 重置搜索框样式
+    resetSearchStyles()
   }
 
   // ==================== 搜索动画方法 ====================

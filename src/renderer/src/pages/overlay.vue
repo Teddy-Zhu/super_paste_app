@@ -144,7 +144,10 @@ const restoreClipboard = async (
       // 生成二维码需要特殊处理
       const result = await clipboard.generateQRCode(itemId)
       if (result.success) {
-        // 生成成功，关闭窗口（剪贴板数据会自动更新）
+        // 生成成功,重置搜索状态并关闭窗口
+        if (animationManager.isSearchVisible.value) {
+          await hideSearchBox(true)
+        }
         closeWindow()
       } else {
         throw new OverlayError(
@@ -157,6 +160,10 @@ const restoreClipboard = async (
       const success = await clipboard[restoreMethod](itemId)
 
       if (success) {
+        // 用户点击了粘贴项,重置搜索状态并关闭窗口
+        if (animationManager.isSearchVisible.value) {
+          await hideSearchBox(true)
+        }
         closeWindow()
       } else {
         const methodName =
@@ -306,6 +313,11 @@ const waitForAnimationFinish = (playState: any): Promise<void> => {
 const closeWindow = async () => {
   if (!animationManager.canStartClosing()) return
 
+  // 如果搜索框可见,先隐藏并清空
+  if (animationManager.isSearchVisible.value) {
+    await hideSearchBox(true)
+  }
+
   animationManager.setAnimationState(AnimationState.SLIDING_OUT)
   const { play: playSlideOut, playState } = animationManager.createSlideOutAnimation()
 
@@ -360,9 +372,13 @@ const toggleSearch = async (withBuffer = false, force = false): Promise<void> =>
 const hideSearchBox = async (clearText = false): Promise<void> => {
   console.log(`[搜索框] 开始隐藏搜索框${clearText ? ' (清空文本)' : ''}`)
 
-  // 如果需要清空文本，先清空
+  // 如果需要清空文本,先清空并重置tab到all
   if (clearText) {
     searchAndNavManager.resetSearchState()
+    // 重置tab选择到all
+    if (scrollAndTagsManager.activeTagId.value !== 'all') {
+      await scrollAndTagsManager.switchTag('all')
+    }
   }
 
   animationManager.setSearchAnimating(true)
@@ -509,17 +525,17 @@ const getSearchBoxStateDescription = (): string => {
 const triggerSlideInAnimation = async (): Promise<void> => {
   try {
     if (animationManager.isAnimating()) {
-      console.log('[滑入动画] 动画进行中，忽略滑入请求')
+      console.log('[滑入动画] 动画进行中,忽略滑入请求')
       return
     }
 
     console.log('[滑入动画] 开始滑入动画')
 
-    // 重置搜索状态和样式
-    if (!searchAndNavManager.searchText.value.trim()) {
+    // 不重置搜索状态,保持上次的搜索内容
+    // 只在搜索框不可见时重置样式
+    if (!animationManager.isSearchVisible.value) {
       animationManager.resetSearchStyles()
     }
-    searchAndNavManager.resetSearchState()
 
     // 设置动画状态
     animationManager.setAnimationState(AnimationState.SLIDING_IN)
@@ -527,10 +543,10 @@ const triggerSlideInAnimation = async (): Promise<void> => {
     const { play: playSlideIn, playState } = animationManager.createSlideInAnimation()
     playSlideIn()
 
-    // 等待滑入动画完成（带超时）
+    // 等待滑入动画完成(带超时)
     await withTimeout(waitForAnimationFinish(playState), 5000, '滑入动画超时')
 
-    // 动画完成，设置为活动状态
+    // 动画完成,设置为活动状态
     animationManager.setAnimationState(AnimationState.ACTIVE)
     setupCloseEventListeners()
     send('open-overlay-finished')
@@ -974,7 +990,7 @@ onUnmounted(() => {
 .overlay-content {
   width: 100%;
   height: 100vh;
-  background: #f9f9f9;
+  background: linear-gradient(to bottom, #fafafa 0%, #f5f5f5 100%);
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -988,14 +1004,13 @@ onUnmounted(() => {
 .top-toolbar {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 6px 24px;
-  background: #fef9e6;
-  border-bottom: 1px solid #f0f0f0;
-  backdrop-filter: blur(20px);
-  height: 48px;
-  min-height: 48px;
-  max-height: 48px;
+  gap: 12px;
+  padding: 10px 20px;
+  background: #ffffff;
+  border-bottom: 1px solid #e5e7eb;
+  height: 56px;
+  min-height: 56px;
+  max-height: 56px;
   box-sizing: border-box;
   z-index: 1000;
 }
@@ -1006,16 +1021,20 @@ onUnmounted(() => {
   cursor: pointer;
   color: #6b7280;
   padding: 8px;
-  border-radius: 8px;
-  transition: all 0.2s ease;
+  border-radius: 6px;
+  transition: background-color 0.15s ease, color 0.15s ease;
   display: flex;
   align-items: center;
   justify-content: center;
 }
 
 .toolbar-icon:hover {
-  background: rgba(0, 0, 0, 0.05);
+  background: #f3f4f6;
   color: #374151;
+}
+
+.toolbar-icon:active {
+  background: #e5e7eb;
 }
 
 .toolbar-buttons {
@@ -1035,16 +1054,13 @@ onUnmounted(() => {
   position: absolute;
   top: 100%;
   right: 0;
-  margin-top: 4px;
-  background: rgba(255, 255, 255, 0.95);
-  border: 1px solid rgba(0, 0, 0, 0.1);
+  margin-top: 8px;
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
   border-radius: 8px;
-  box-shadow:
-    0 4px 20px rgba(0, 0, 0, 0.15),
-    0 2px 8px rgba(0, 0, 0, 0.1);
-  backdrop-filter: blur(10px);
-  min-width: 140px;
-  padding: 4px 0;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1), 0 2px 4px rgba(0, 0, 0, 0.06);
+  min-width: 160px;
+  padding: 6px;
   font-size: 14px;
   user-select: none;
   animation: dropdownFadeIn 0.15s ease-out;
@@ -1065,15 +1081,16 @@ onUnmounted(() => {
 .dropdown-item {
   display: flex;
   align-items: center;
-  padding: 8px 12px;
+  padding: 9px 12px;
   cursor: pointer;
-  transition: background-color 0.2s ease;
-  color: #333;
+  transition: background-color 0.15s ease;
+  color: #374151;
+  border-radius: 6px;
 }
 
 .dropdown-item:hover {
-  background-color: rgba(0, 123, 255, 0.1);
-  color: #007bff;
+  background-color: #f3f4f6;
+  color: #1f2937;
 }
 
 .dropdown-icon {
@@ -1106,19 +1123,21 @@ onUnmounted(() => {
 
 .search-input {
   width: 100%;
-  padding: 6px 6px;
-  border: 1px solid #e5e7eb;
+  padding: 9px 14px;
+  border: 1px solid #d1d5db;
   border-radius: 8px;
-  font-size: 17px;
-  background: white;
+  font-size: 14px;
+  background: #ffffff;
   color: #1f2937;
   outline: none;
   transition: all 0.2s ease;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
 }
 
 .search-input:focus {
   border-color: #3b82f6;
-  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1), 0 1px 2px rgba(0, 0, 0, 0.05);
+  background: #ffffff;
 }
 
 .search-input::placeholder {
@@ -1154,32 +1173,31 @@ onUnmounted(() => {
   gap: 8px;
   cursor: pointer;
   white-space: nowrap;
-  padding: 8px 12px;
+  padding: 7px 12px;
   border-radius: 8px;
   position: relative;
   background: transparent;
   border: 1px solid transparent;
   min-width: fit-content;
   width: auto;
+  transition: background-color 0.15s ease, border-color 0.15s ease;
 }
 
 .tab:hover:not(.switching) {
-  background: rgba(255, 255, 255, 0.8);
-  border-color: rgba(0, 0, 0, 0.08);
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.06);
+  background: #f9fafb;
+  border-color: #e5e7eb;
 }
 
 .tab:focus {
   outline: none;
-  background: rgba(255, 255, 255, 0.9);
+  background: #f3f4f6;
   border-color: #3b82f6;
-  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.08);
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.1);
 }
 
 .tab.active {
-  background: rgba(255, 255, 255, 0.95);
-  border-color: rgba(0, 0, 0, 0.12);
-  box-shadow: 0 1px 6px rgba(0, 0, 0, 0.08);
+  background: #f3f4f6;
+  border-color: #d1d5db;
 }
 
 .tab.switching {
@@ -1195,18 +1213,19 @@ onUnmounted(() => {
 }
 
 .tab.active .tab-dot {
-  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.7);
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.6);
 }
 
 .tab-label {
-  font-size: 14px;
-  font-weight: 600;
+  font-size: 13px;
+  font-weight: 500;
   user-select: none;
   color: #6b7280;
 }
 
 .tab.active .tab-label {
   color: #1f2937;
+  font-weight: 600;
 }
 
 .tab-count {
@@ -1222,13 +1241,14 @@ onUnmounted(() => {
   user-select: none;
   flex-shrink: 0;
   box-sizing: border-box;
-  background: rgba(107, 114, 128, 0.2);
+  background: #e5e7eb;
   color: #6b7280;
 }
 
 .tab.active .tab-count {
-  background: rgba(0, 0, 0, 0.1);
-  color: #1f2937;
+  background: #dbeafe;
+  color: #3b82f6;
+  font-weight: 700;
 }
 
 /* 加载指示器 */
@@ -1265,7 +1285,7 @@ onUnmounted(() => {
 .overlay-body {
   flex: 1;
   overflow-y: hidden;
-  background: #f9f9f9;
+  background: transparent;
 }
 
 /* 空状态样式 */

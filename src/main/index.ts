@@ -248,7 +248,8 @@ class SuperPasteApp {
    */
   private async initializeDatabase(): Promise<void> {
     try {
-      clipboardDatabase.initialize()
+      const userDataPath = app.getPath('userData')
+      clipboardDatabase.initialize(userDataPath)
       logger.debug('[主进程] 数据库初始化完成')
     } catch (error) {
       logger.error('[主进程] 数据库初始化失败:', error)
