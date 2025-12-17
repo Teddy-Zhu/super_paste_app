@@ -33,6 +33,8 @@ class ClipboardManagerWorker extends BaseWorker {
   private lastItemId: string = ''
   private lastItemHash: string = ''
   private activeWindowInitialized: boolean = false
+  private cachedActiveWindow: any | null = null
+  private activeWindowSubscriptionId: number | null = null
   private ocrInitialized: boolean = false
   private ocrResourcePath: string = ''
   private isDev: boolean = false
@@ -172,6 +174,13 @@ class ClipboardManagerWorker extends BaseWorker {
           logger.warn('[剪贴板管理器 Worker] macOS 需要屏幕录制权限才能获取窗口标题')
         }
       }
+
+      // 订阅窗口变化事件,实时缓存活动窗口信息
+      this.activeWindowSubscriptionId = ActiveWindow.subscribe((windowInfo: any) => {
+        this.cachedActiveWindow = windowInfo
+        logger.debug('[剪贴板管理器 Worker] 活动窗口已更新:', windowInfo?.application)
+      })
+
       this.activeWindowInitialized = true
       logger.info('[剪贴板管理器 Worker] ActiveWindow 初始化成功')
     } catch (error) {
@@ -318,6 +327,18 @@ class ClipboardManagerWorker extends BaseWorker {
 
     // 停止 ClipboardListener
     this.clipboardListener.stop()
+
+    // 取消 ActiveWindow 订阅
+    if (this.activeWindowSubscriptionId !== null) {
+      try {
+        ActiveWindow.unsubscribe(this.activeWindowSubscriptionId)
+        this.activeWindowSubscriptionId = null
+        this.cachedActiveWindow = null
+        logger.debug('[剪贴板管理器 Worker] ActiveWindow 订阅已取消')
+      } catch (error) {
+        logger.error('[剪贴板管理器 Worker] 取消 ActiveWindow 订阅失败:', error)
+      }
+    }
 
     // 清理定时器（如果有的话）
     if (this.checkTimer) {
@@ -1339,9 +1360,10 @@ class ClipboardManagerWorker extends BaseWorker {
         return undefined
       }
 
-      const activeWindow = ActiveWindow.getActiveWindow()
+      // 从缓存读取活动窗口信息
+      const activeWindow = this.cachedActiveWindow
 
-      if (!activeWindow.application || !activeWindow.path) {
+      if (!activeWindow || !activeWindow.application || !activeWindow.path) {
         return undefined
       }
 
