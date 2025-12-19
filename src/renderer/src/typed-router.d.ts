@@ -25,6 +25,6 @@ declare module 'vue-router/auto-routes' {
     '//components/ShortcutSettings': RouteRecordInfo<'//components/ShortcutSettings', '/components/ShortcutSettings', Record<never, never>, Record<never, never>>,
     '//components/SyncSettings': RouteRecordInfo<'//components/SyncSettings', '/components/SyncSettings', Record<never, never>, Record<never, never>>,
     '//components/TagsManagement': RouteRecordInfo<'//components/TagsManagement', '/components/TagsManagement', Record<never, never>, Record<never, never>>,
-    '/overlay': RouteRecordInfo<'/overlay', '/overlay', Record<never, never>, Record<never, never>>,
+    '/overlay/': RouteRecordInfo<'/overlay/', '/overlay', Record<never, never>, Record<never, never>>,
   }
 }
