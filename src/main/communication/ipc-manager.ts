@@ -1,15 +1,14 @@
-import { ipcMain, BrowserWindow } from 'electron'
+import { ipcMain, BrowserWindow, app } from 'electron'
 import type { IpcMainInvokeEvent } from 'electron'
-import clipboardManager from '../clipboard/clipboard-manager'
+import clipboardManager from '../features/clipboard/manager/clipboard-manager'
 import clipboardHistoryService from '../services/clipboard-history-service'
 import clipboardTagService from '../services/clipboard-tag-service'
 import { qrCodeService } from '../services/qrcode-service'
-import type { ClipboardItem, ClipboardManagerConfig } from '../types/clipboard-types'
+import type { ClipboardItem, ClipboardManagerConfig } from '../features/clipboard/types/clipboard-types'
 import type { BaseWorkerManager } from '../workers/base-worker-manager'
 import logger from '../utils/logger'
 import { writeHeapSnapshot } from 'v8'
 import { join } from 'path'
-import { app } from 'electron'
 
 /**
  * IPC 管理器

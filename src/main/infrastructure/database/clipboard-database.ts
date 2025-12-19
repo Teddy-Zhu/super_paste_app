@@ -9,9 +9,9 @@ import type {
   TagQueryOptions,
   TagStats,
   AppInfoRecord
-} from '../types/clipboard-types'
-import { ClipboardDataConverter } from '../types/clipboard-types'
-import logger from '../utils/logger'
+} from '../../features/clipboard/types/clipboard-types'
+import { ClipboardDataConverter } from '../../features/clipboard/types/clipboard-types'
+import logger from '../../utils/logger'
 
 /**
  * 剪贴板数据库管理器

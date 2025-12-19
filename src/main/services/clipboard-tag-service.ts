@@ -1,6 +1,6 @@
-import clipboardDatabase from '../clipboard/clipboard-database'
-import type { TagGroup, TagStats } from '../types/clipboard-types'
-import { ClipboardDataConverter } from '../types/clipboard-types'
+import clipboardDatabase from '../infrastructure/database/clipboard-database'
+import type { TagGroup, TagStats } from '../features/clipboard/types/clipboard-types'
+import { ClipboardDataConverter } from '../features/clipboard/types/clipboard-types'
 import log from 'electron-log'
 
 /**

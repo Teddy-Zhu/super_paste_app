@@ -1,4 +1,4 @@
-import clipboardDatabase from '../clipboard/clipboard-database'
+import clipboardDatabase from '../infrastructure/database/clipboard-database'
 import autoStartManager from '../utils/auto-start-manager'
 import { STORE_KEY } from '../config/common'
 import store from '../config/store'

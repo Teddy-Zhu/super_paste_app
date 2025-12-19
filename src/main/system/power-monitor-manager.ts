@@ -1,5 +1,5 @@
 import { powerMonitor } from 'electron'
-import clipboardManager from '../clipboard/clipboard-manager'
+import clipboardManager from '../features/clipboard/manager/clipboard-manager'
 import { SYSTEM_RESUME_DELAY } from '../config/constants'
 import logger from '../utils/logger'
 

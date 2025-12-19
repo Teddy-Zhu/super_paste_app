@@ -1,13 +1,13 @@
-import { BaseWorkerManager } from '../workers/base-worker-manager'
-import { NotificationService } from '../services/notification-service'
-import store from '../config/store'
-import { STORE_KEY } from '../config/common'
+import { BaseWorkerManager } from '../../../workers/base-worker-manager'
+import { NotificationService } from '../../../services/notification-service'
+import store from '../../../config/store'
+import { STORE_KEY } from '../../../config/common'
 import type { ClipboardContent, ClipboardManagerConfig } from '../types/clipboard-types'
-import type { WorkerConfig, WorkerRequest } from '../types/worker-types'
+import type { WorkerConfig, WorkerRequest } from '../../../types/worker-types'
 import { app } from 'electron'
 
-import logger from '../utils/logger'
-import clipboardManagerWorkerPath from '../workers/clipboard-manager.worker?modulePath'
+import logger from '../../../utils/logger'
+import clipboardManagerWorkerPath from '../worker/clipboard-manager.worker?modulePath'
 
 /**
  * 剪贴板管理器（主线程接口）
@@ -112,7 +112,6 @@ class ClipboardManager extends BaseWorkerManager {
     const enableLocalOCR = store.get(STORE_KEY.SETTINGS_ENABLE_LOCAL_OCR, false)
     return {
       maxHistorySize,
-      checkInterval: 200,
       enableAutoSave: false,
       enableLocalOCR
     }
@@ -206,7 +205,6 @@ class ClipboardManager extends BaseWorkerManager {
 
     const finalConfig: Partial<ClipboardManagerConfig> = {
       maxHistorySize,
-      checkInterval: 200,
       enableAutoSave: false,
       enableLocalOCR,
       ...config

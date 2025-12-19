@@ -1,4 +1,4 @@
-import { HashUtils } from '../utils/common'
+import { HashUtils } from '../../../utils/common'
 
 /**
  * 剪贴板内容数据
@@ -56,17 +56,17 @@ export interface ClipboardItem {
   id: string
   content: ClipboardContent | ClipboardContentForUI
   primaryType:
-    | 'text'
-    | 'html'
-    | 'image'
-    | 'rtf'
-    | 'files'
-    | 'url'
-    | 'email'
-    | 'phone'
-    | 'code'
-    | 'color'
-    | 'empty'
+  | 'text'
+  | 'html'
+  | 'image'
+  | 'rtf'
+  | 'files'
+  | 'url'
+  | 'email'
+  | 'phone'
+  | 'code'
+  | 'color'
+  | 'empty'
   availableFormats: string[]
   timestamp: number
   lastUsed: number
@@ -99,7 +99,6 @@ export interface ClipboardHistoryRecord {
  */
 export interface ClipboardManagerConfig {
   maxHistorySize: number
-  checkInterval: number
   enableAutoSave: boolean
   enableLocalOCR: boolean
 }
@@ -286,7 +285,7 @@ export class ClipboardDataConverter {
     const formats = availableFormats || ClipboardDataConverter.getAvailableFormats(content)
 
     // 文件类型优先级最高
-    if (content.files && content.files.length > 0){
+    if (content.files && content.files.length > 0) {
       if (content.files.length === 1 && content.image) {
         // 如果只有一个文件且是图片，则类型为图片
         return 'image'

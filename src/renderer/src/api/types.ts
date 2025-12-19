@@ -181,17 +181,17 @@ export interface ClipboardItem {
   id: string
   content: ClipboardContent
   primaryType:
-    | 'text'
-    | 'html'
-    | 'image'
-    | 'rtf'
-    | 'files'
-    | 'url'
-    | 'email'
-    | 'phone'
-    | 'code'
-    | 'color'
-    | 'empty'
+  | 'text'
+  | 'html'
+  | 'image'
+  | 'rtf'
+  | 'files'
+  | 'url'
+  | 'email'
+  | 'phone'
+  | 'code'
+  | 'color'
+  | 'empty'
   availableFormats: string[]
   timestamp: number
   lastUsed: number
@@ -213,7 +213,6 @@ export interface ClipboardHistoryQueryOptions {
 // 剪贴板管理器配置类型
 export interface ClipboardManagerConfig {
   maxHistorySize: number
-  checkInterval: number
   enableAutoSave: boolean
   enableLocalOCR: boolean
 }

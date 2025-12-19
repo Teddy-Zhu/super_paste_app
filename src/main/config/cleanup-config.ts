@@ -1,6 +1,6 @@
 import store from './store'
 import { STORE_KEY } from './common'
-import type { CleanupConfig } from '../types/clipboard-types'
+import type { CleanupConfig } from '../features/clipboard/types/clipboard-types'
 
 /**
  * 清理配置管理工具类

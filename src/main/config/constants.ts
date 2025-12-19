@@ -22,6 +22,5 @@ export const MAIN_WINDOW_CONFIG = {
 
 // ===== 剪贴板管理器配置 =====
 export const CLIPBOARD_CONFIG = {
-  CHECK_INTERVAL: 200,
   ENABLE_AUTO_SAVE: true
 } as const

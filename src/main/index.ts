@@ -9,8 +9,8 @@ import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 
 // 应用核心模块
 import ipcManager from './communication/ipc-manager'
-import clipboardManager from './clipboard/clipboard-manager'
-import clipboardDatabase from './clipboard/clipboard-database'
+import clipboardManager from './features/clipboard/manager/clipboard-manager'
+import clipboardDatabase from './infrastructure/database/clipboard-database'
 import { clearAllDebounceTimers } from './utils/common'
 import { scheduledSyncManager } from './workers/scheduled-sync-manager'
 import { BaseWorkerManager } from './workers/base-worker-manager'
@@ -26,6 +26,8 @@ import { globalShortcutManager } from './system/global-shortcut-manager'
 import { windowStateManager } from './ui/windows/window-state'
 import { SystemIntegrationService } from './system/initialization-services'
 import { IPCHandlerManager } from './communication/ipc-handlers'
+import { appLifecycleManager } from './system/app-lifecycle-manager'
+import { activeWindowService } from './services/active-window-service'
 import { CLIPBOARD_CONFIG } from './config/constants'
 
 // 同步相关模块
@@ -82,9 +84,7 @@ class SuperPasteApp {
       this.isInitialized = true
 
       // 最后再次确保在 macOS 上 dock 是隐藏的
-      if (process.platform === 'darwin') {
-        app.dock?.hide()
-      }
+      appLifecycleManager.hideDock()
 
       logger.info('[主进程] Super Paste 应用启动完成')
     } catch (error) {
@@ -151,9 +151,8 @@ class SuperPasteApp {
     electronApp.setAppUserModelId('com.v2dawn.sp')
 
     // 在 macOS 上确保应用启动时 dock 是隐藏的
-    if (process.platform === 'darwin') {
-      app.dock?.hide()
-    }
+    // 在 macOS 上确保应用启动时 dock 是隐藏的
+    appLifecycleManager.hideDock()
 
     // 1. 立即创建主窗口以提升启动速度（但不显示）
     this.createMainWindow()
@@ -270,7 +269,6 @@ class SuperPasteApp {
    */
   private async initializeClipboardManager(): Promise<void> {
     await clipboardManager.initialize({
-      checkInterval: CLIPBOARD_CONFIG.CHECK_INTERVAL,
       enableAutoSave: CLIPBOARD_CONFIG.ENABLE_AUTO_SAVE
     })
     logger.debug('[主进程] 剪贴板管理器初始化完成')
@@ -332,6 +330,15 @@ class SuperPasteApp {
     // 初始化系统集成服务（标签数据、自启动等）
     await SystemIntegrationService.initialize()
     logger.debug('[主进程] 系统集成服务初始化完成')
+
+    // 初始化 ActiveWindow 服务
+    activeWindowService.initialize()
+    activeWindowService.on('active-window-change', (windowInfo) => {
+      // 发送窗口变化信息给 Worker
+      clipboardManager.call('updateActiveWindow', windowInfo).catch((err) => {
+        logger.warn('[主进程] 发送活动窗口更新给 Worker 失败:', err)
+      })
+    })
   }
 
   /**
@@ -400,27 +407,19 @@ class SuperPasteApp {
     let cleanupCompleted = false
 
     // macOS 特有的激活事件
+    // macOS 特有的激活事件
     app.on('activate', () => {
-      // 只有在应用完全初始化后,且用户主动激活应用时才显示主窗口
-      // 这样可以避免在应用启动时自动显示窗口
-      if (!this.isInitialized) {
-        return
-      }
-
-      this.ensureMainWindowVisible()
+      appLifecycleManager.handleActivate(this.isInitialized)
     })
 
     // 当所有窗口关闭时的处理
     app.on('window-all-closed', () => {
-      logger.debug('[主进程] 所有窗口已关闭')
-      // 在 macOS 上,除非明确退出,否则应用和菜单栏会保持活动状态
-      // 但我们有系统托盘,所以不需要特殊处理 macOS
-      // 如果用户点击了退出,app.quit() 会触发 will-quit 事件
+      appLifecycleManager.handleWindowAllClosed()
     })
 
     // 在 app.quit() 被调用之前触发
     app.on('before-quit', () => {
-      logger.info('[主进程] before-quit 事件触发')
+      appLifecycleManager.handleBeforeQuit()
     })
 
     // 应用即将退出时的清理
@@ -594,6 +593,7 @@ class SuperPasteApp {
       logger.info('[主进程] [步骤 11/12] 清理电源监控...')
       try {
         powerMonitorManager.cleanup()
+        activeWindowService.cleanup()
         logger.info('[主进程] [步骤 11/12] ✓ 电源监控已清理')
       } catch (error) {
         logger.error('[主进程] [步骤 11/12] ✗ 清理电源监控失败:', error)

@@ -5,8 +5,8 @@ import logger from '../../utils/logger'
 import store from '../../config/store'
 import { STORE_KEY } from '../../config/common'
 import autoStartManager from '../../utils/auto-start-manager'
-import clipboardManager from '../../clipboard/clipboard-manager'
-import appEventBus from '../../utils/app-event-bus'
+import clipboardManager from '../../features/clipboard/manager/clipboard-manager'
+import { appEventBus } from '../../utils/app-event-bus'
 
 /**
  * 系统托盘管理器

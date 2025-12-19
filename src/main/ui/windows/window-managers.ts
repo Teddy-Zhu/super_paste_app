@@ -1,9 +1,10 @@
-import { BrowserWindow, shell, app } from 'electron'
+import { BrowserWindow, shell } from 'electron'
 import { join } from 'path'
 import { is } from '@electron-toolkit/utils'
 import { WindowConfigCalculator, IconSelector } from './window-config'
 import { WindowUtils, windowStateManager, OverlayState } from './window-state'
 import { globalShortcutManager } from '../../system/global-shortcut-manager'
+import { appLifecycleManager } from '../../system/app-lifecycle-manager'
 import store from '../../config/store'
 import { STORE_KEY } from '../../config/common'
 import logger from '../../utils/logger'
@@ -58,9 +59,7 @@ export class MainWindowManager {
       this.loadContent()
 
       // 在 macOS 上创建窗口后立即隐藏 dock
-      if (process.platform === 'darwin') {
-        app.dock?.hide()
-      }
+      appLifecycleManager.hideDock()
 
       logger.debug('[主进程] 主窗口创建完成')
     } catch (error) {
@@ -85,26 +84,20 @@ export class MainWindowManager {
     // 监听主窗口显示事件
     this.mainWindow.on('show', () => {
       // 仅在 macOS 上控制 dock 显示
-      if (process.platform === 'darwin') {
-        app.dock?.show()
-      }
+      appLifecycleManager.showDock()
     })
 
     // 监听主窗口隐藏事件
     this.mainWindow.on('hide', () => {
       // 仅在 macOS 上控制 dock 隐藏
-      if (process.platform === 'darwin') {
-        app.dock?.hide()
-      }
+      appLifecycleManager.hideDock()
     })
 
     // 监听主窗口关闭事件
     this.mainWindow.on('closed', () => {
       this.mainWindow = null
       // 仅在 macOS 上控制 dock 隐藏
-      if (process.platform === 'darwin') {
-        app.dock?.hide()
-      }
+      appLifecycleManager.hideDock()
     })
 
     this.mainWindow.webContents.setWindowOpenHandler((details) => {
