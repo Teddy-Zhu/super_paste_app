@@ -95,6 +95,11 @@ export const clipboard: ClipboardOperations = {
     return result.success
   },
 
+  async parseOcr(itemId: string): Promise<boolean> {
+    const result: ClipboardIpcResponse = await invoke('clipboard-parse-ocr', itemId)
+    return result.success
+  },
+
   async parseQRCode(itemId: string): Promise<boolean> {
     const result: ClipboardIpcResponse = await invoke('clipboard-parse-qrcode', itemId)
     return result.success

@@ -291,6 +291,12 @@ class IpcManager {
     )
 
     this.registerHandler(
+      'clipboard-parse-ocr',
+      async (_, itemId: string) => clipboardManager.call('parseOcrFromItem', itemId),
+      '解析OCR'
+    )
+
+    this.registerHandler(
       'clipboard-generate-qrcode',
       async (_, itemId: string) => {
         const historyItem = await clipboardHistoryService.getHistoryItemById(itemId)
@@ -519,6 +525,7 @@ class IpcManager {
       'clipboard-restore',
       'clipboard-restore-as-text',
       'clipboard-restore-ocr-text',
+      'clipboard-parse-ocr',
       'clipboard-parse-qrcode',
       'clipboard-generate-qrcode',
       'clipboard-delete-item',

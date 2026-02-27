@@ -30,6 +30,7 @@ const emit = defineEmits<{
   click: [itemId: string]
   restoreAsText: [itemId: string]
   restoreOcrText: [itemId: string]
+  parseOcr: [itemId: string]
   parseQRCode: [itemId: string]
   generateQRCode: [itemId: string]
   delete: [itemId: string]
@@ -365,7 +366,7 @@ const handleContextMenu = (event: MouseEvent) => {
     }
   ]
 
-  // 如果是图片类型且有OCR文字，添加复制OCR文字选项
+  // 如果是图片类型且有OCR文字,添加复制OCR文字选项
   if (
     props.item.primaryType === 'image' &&
     props.item.content.ocr &&
@@ -379,7 +380,20 @@ const handleContextMenu = (event: MouseEvent) => {
     })
   }
 
-  // 如果是图片类型，添加解析二维码选项
+  // 如果是图片类型且没有OCR文字,添加解析OCR选项
+  if (
+    props.item.primaryType === 'image' &&
+    (!props.item.content.ocr || !props.item.content.ocr.trim())
+  ) {
+    menuItems.push({
+      label: '解析OCR',
+      icon: IconTextBox,
+      action: () => handleParseOcr(),
+      disabled: false
+    })
+  }
+
+  // 如果是图片类型,添加解析二维码选项
   if (props.item.primaryType === 'image') {
     menuItems.push({
       label: '解析二维码',
@@ -479,6 +493,11 @@ const handleRestoreOcrText = () => {
 // 处理解析二维码
 const handleParseQRCode = () => {
   emit('parseQRCode', props.item.id)
+}
+
+// 处理解析OCR
+const handleParseOcr = () => {
+  emit('parseOcr', props.item.id)
 }
 
 // 处理生成二维码

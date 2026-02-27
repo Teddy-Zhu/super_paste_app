@@ -318,6 +318,41 @@ class ClipboardManagerWorker extends BaseWorker {
     }
   }
 
+  public async parseOcrFromItem(itemId: string): Promise<{ success: boolean; message?: string }> {
+    const record = this.repository.getById(itemId)
+    if (!record || !record.content_image) return { success: false, message: 'Not an image' }
+
+    try {
+      // 使用repository的updateOCR方法来触发OCR解析
+      // 这里直接调用ocrService进行OCR解析
+      const { ocrService } = await import('../../../services/ocr-service')
+
+      if (!ocrService.ready) {
+        return { success: false, message: 'OCR service not ready' }
+      }
+
+      const ocrResult = await ocrService.recognizeText(record.content_image)
+      if (ocrResult.success && ocrResult.text && ocrResult.text.trim()) {
+        // 更新数据库中的OCR字段
+        const updated = this.repository.updateOCR(itemId, ocrResult.text)
+        if (updated) {
+          // 发送事件通知前端更新
+          this.sendEvent('record-ocr-updated', {
+            contentId: itemId,
+            ocrText: ocrResult.text,
+            timestamp: Date.now()
+          })
+          return { success: true, message: 'OCR parsed successfully' }
+        }
+        return { success: false, message: 'Failed to update OCR' }
+      }
+      return { success: false, message: 'No text recognized' }
+    } catch (e) {
+      logger.error('[ClipboardManagerWorker] OCR parse error:', e)
+      return { success: false, message: 'OCR parse error' }
+    }
+  }
+
   public setImageToClipboard(imageBuffer: any): boolean {
     // Logic from original worker
     // Need to handle buffer conversion?
@@ -372,6 +407,7 @@ class ClipboardManagerWorker extends BaseWorker {
         case 'restoreClipboardFromDatabaseAsText': result = await this.restoreClipboardFromDatabaseAsText(request.params); break
         case 'restoreClipboardFromDatabaseAsOcrText': result = await this.restoreClipboardFromDatabaseAsOcrText(request.params); break
         case 'parseQRCodeFromItem': result = await this.parseQRCodeFromItem(request.params); break
+        case 'parseOcrFromItem': result = await this.parseOcrFromItem(request.params); break
         case 'setImageToClipboard': result = this.setImageToClipboard(request.params); break
         case 'getCurrentClipboard': result = await this.getCurrentClipboard(); break
         case 'updateActiveWindow': result = this.updateActiveWindow(request.params); break

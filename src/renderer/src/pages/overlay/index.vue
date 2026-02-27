@@ -223,6 +223,27 @@ const restoreClipboardContentAsOcrText = (itemId: string) =>
   restoreClipboard(itemId, 'restoreOcrText')
 
 /**
+ * 解析剪贴板项目的OCR文字
+ */
+const parseOcrFromClipboardItem = async (itemId: string): Promise<void> => {
+  try {
+    if (!itemId || typeof itemId !== 'string') {
+      throw new OverlayError('无效的剪贴板项目ID', OverlayErrorCode.INVALID_STATE, {
+        itemId,
+        type: typeof itemId
+      })
+    }
+
+    const success = await clipboard.parseOcr(itemId)
+    if (!success) {
+      console.error('[前端] 解析OCR失败')
+    }
+  } catch (error) {
+    console.error('[前端] 解析OCR失败:', error)
+  }
+}
+
+/**
  * 解析剪贴板项目中的二维码
  */
 const parseQRCodeFromClipboardItem = (itemId: string) => restoreClipboard(itemId, 'parseQRCode')
@@ -966,6 +987,7 @@ onUnmounted(() => {
               @click="() => restoreClipboardContent(item.id)"
               @restore-as-text="() => restoreClipboardContentAsText(item.id)"
               @restore-ocr-text="() => restoreClipboardContentAsOcrText(item.id)"
+              @parse-ocr="() => parseOcrFromClipboardItem(item.id)"
               @parse-q-r-code="() => parseQRCodeFromClipboardItem(item.id)"
               @generateQRCode="() => generateQRCodeFromClipboardItem(item.id)"
               @delete="() => deleteClipboardItem(item.id)"
