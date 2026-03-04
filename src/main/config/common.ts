@@ -5,6 +5,12 @@ export const STORE_KEY = {
   SETTINGS_MAX_HISTORY_SIZE: 'settings.maxHistorySize',
   SETTINGS_MAX_KEEP_TIME: 'settings.maxKeepTime',
   SETTINGS_ENABLE_LOCAL_OCR: 'settings.enableLocalOCR',
+  SETTINGS_OCR_MODE: 'settings.ocrMode',
+  SETTINGS_OCR_REMOTE_URL: 'settings.ocrRemoteUrl',
+  SETTINGS_OCR_REMOTE_EXTRA_PARAMS: 'settings.ocrRemoteExtraParams',
+  SETTINGS_OCR_REMOTE_IMAGE_FIELD_NAME: 'settings.ocrRemoteImageFieldName',
+  SETTINGS_OCR_REMOTE_REQUEST_FORMAT: 'settings.ocrRemoteRequestFormat',
+  SETTINGS_OCR_REMOTE_RESULT_PATH: 'settings.ocrRemoteResultPath',
 
   SYNC_CONFIG: 'sync',
   SYNC_ENABLED: 'sync.enabled',

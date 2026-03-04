@@ -14,6 +14,7 @@ import { qrCodeService } from '../../../services/qrcode-service'
 import path from 'path'
 import fs from 'fs'
 import { ocrService } from '../../../services/ocr-service'
+import type { OCRServiceOptions } from '../../../services/ocr-service'
 // Modules
 import { ClipboardPoller } from './modules/clipboard-poller'
 import { ContentProcessor } from './modules/content-processor'
@@ -33,13 +34,22 @@ class ClipboardManagerWorker extends BaseWorker {
   private ocrResourcePath: string = ''
   private ocrIsDev: boolean = false
   private ocrInitializing: Promise<boolean> | null = null
+  private ocrConfigHash: string = ''
 
   constructor() {
     super()
     this.config = {
       maxHistorySize: 100,
       enableAutoSave: false,
-      enableLocalOCR: false
+      enableLocalOCR: false,
+      ocrMode: 'local',
+      ocrRemoteConfig: {
+        url: '',
+        extraParams: '{}',
+        imageFieldName: 'image',
+        requestFormat: 'json',
+        resultPath: 'data.result'
+      }
     }
 
     this.poller = new ClipboardPoller()
@@ -76,7 +86,14 @@ class ClipboardManagerWorker extends BaseWorker {
     }
 
     if (config) {
-      this.config = { ...this.config, ...config }
+      this.config = {
+        ...this.config,
+        ...config,
+        ocrRemoteConfig: {
+          ...this.config.ocrRemoteConfig,
+          ...(config.ocrRemoteConfig || {})
+        }
+      }
     }
 
     // 设置 OCR 相关参数
@@ -156,14 +173,50 @@ class ClipboardManagerWorker extends BaseWorker {
     return requiredFiles.every((fileName) => fs.existsSync(path.join(resourcePath, fileName)))
   }
 
-  private async ensureOCRServiceInitialized(): Promise<boolean> {
-    if (ocrService.ready) {
-      return true
+  private buildOCRServiceOptions(): OCRServiceOptions | null {
+    if (this.config.ocrMode === 'local') {
+      if (!this.ocrResourcePath) {
+        logger.warn('[剪贴板管理器 Worker] OCR 初始化失败：资源路径为空')
+        return null
+      }
+
+      return {
+        mode: 'local',
+        resourcePath: this.ocrResourcePath,
+        isDev: this.ocrIsDev
+      }
     }
 
-    if (!this.ocrResourcePath) {
-      logger.warn('[剪贴板管理器 Worker] OCR 初始化失败：资源路径为空')
+    return {
+      mode: 'remote',
+      remoteConfig: {
+        url: this.config.ocrRemoteConfig.url,
+        extraParams: this.config.ocrRemoteConfig.extraParams,
+        imageFieldName: this.config.ocrRemoteConfig.imageFieldName,
+        requestFormat: this.config.ocrRemoteConfig.requestFormat,
+        resultPath: this.config.ocrRemoteConfig.resultPath
+      }
+    }
+  }
+
+  private buildOCRConfigHash(): string {
+    return JSON.stringify({
+      mode: this.config.ocrMode,
+      resourcePath: this.ocrResourcePath,
+      isDev: this.ocrIsDev,
+      remoteConfig: this.config.ocrRemoteConfig
+    })
+  }
+
+  private async ensureOCRServiceInitialized(forceReinitialize = false): Promise<boolean> {
+    const options = this.buildOCRServiceOptions()
+    if (!options) {
       return false
+    }
+
+    const nextHash = this.buildOCRConfigHash()
+    if (!forceReinitialize && ocrService.ready && this.ocrConfigHash === nextHash) {
+      return true
     }
 
     if (this.ocrInitializing) {
@@ -172,10 +225,12 @@ class ClipboardManagerWorker extends BaseWorker {
 
     this.ocrInitializing = (async () => {
       try {
-        await ocrService.initialize({
-          resourcePath: this.ocrResourcePath,
-          isDev: this.ocrIsDev
-        })
+        if (ocrService.ready) {
+          await ocrService.reinitialize(options)
+        } else {
+          await ocrService.initialize(options)
+        }
+        this.ocrConfigHash = nextHash
         logger.info('[剪贴板管理器 Worker] OCR 服务初始化完成')
         return true
       } catch (error) {
@@ -279,9 +334,30 @@ class ClipboardManagerWorker extends BaseWorker {
   }
 
   public async updateConfig(newConfig: Partial<ClipboardManagerConfig>): Promise<void> {
+    const prevConfigHash = this.buildOCRConfigHash()
     const prevEnableLocalOCR = this.config.enableLocalOCR
-    this.config = { ...this.config, ...newConfig }
+    this.config = {
+      ...this.config,
+      ...newConfig,
+      ocrRemoteConfig: {
+        ...this.config.ocrRemoteConfig,
+        ...(newConfig.ocrRemoteConfig || {})
+      }
+    }
+    const hasOCRConfigChanged = prevConfigHash !== this.buildOCRConfigHash()
+
     if (!prevEnableLocalOCR && this.config.enableLocalOCR) {
+      await this.ensureOCRServiceInitialized()
+      return
+    }
+
+    if (prevEnableLocalOCR && !this.config.enableLocalOCR) {
+      ocrService.stop()
+      this.ocrConfigHash = ''
+      return
+    }
+
+    if (this.config.enableLocalOCR && hasOCRConfigChanged) {
       await this.ensureOCRServiceInitialized()
     }
   }

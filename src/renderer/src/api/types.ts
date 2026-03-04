@@ -217,6 +217,14 @@ export interface ClipboardManagerConfig {
   maxHistorySize: number
   enableAutoSave: boolean
   enableLocalOCR: boolean
+  ocrMode: 'local' | 'remote'
+  ocrRemoteConfig: {
+    url: string
+    extraParams: string
+    imageFieldName: string
+    requestFormat: 'json' | 'form'
+    resultPath: string
+  }
 }
 
 // 剪贴板状态类型

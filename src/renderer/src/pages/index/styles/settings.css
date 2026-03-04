@@ -138,6 +138,10 @@
   color: var(--color-accent-green);
 }
 
+.nav-item:nth-child(7) .nav-icon {
+  color: var(--color-primary);
+}
+
 .nav-item.active .nav-icon {
   color: var(--color-primary);
 }

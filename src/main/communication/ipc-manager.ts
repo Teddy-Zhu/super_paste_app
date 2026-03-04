@@ -712,18 +712,42 @@ class IpcManager {
         trayManager.updateMenu()
       }
 
-      if (key === STORE_KEY.SETTINGS_ENABLE_LOCAL_OCR) {
-        const enableLocalOCR = value as boolean
-        logger.debug(`[主进程] 本地OCR配置已更新: ${enableLocalOCR}`)
+      const ocrSettingKeys = new Set([
+        STORE_KEY.SETTINGS_ENABLE_LOCAL_OCR,
+        STORE_KEY.SETTINGS_OCR_MODE,
+        STORE_KEY.SETTINGS_OCR_REMOTE_URL,
+        STORE_KEY.SETTINGS_OCR_REMOTE_EXTRA_PARAMS,
+        STORE_KEY.SETTINGS_OCR_REMOTE_IMAGE_FIELD_NAME,
+        STORE_KEY.SETTINGS_OCR_REMOTE_REQUEST_FORMAT,
+        STORE_KEY.SETTINGS_OCR_REMOTE_RESULT_PATH
+      ])
+
+      if (ocrSettingKeys.has(key)) {
+        logger.debug(`[主进程] OCR配置已更新: ${key}`)
 
         try {
-          await clipboardManager.updateConfig({ enableLocalOCR })
-          logger.debug('[主进程] 剪贴板管理器本地OCR配置已更新')
+          await clipboardManager.updateConfig({
+            enableLocalOCR: store.get(STORE_KEY.SETTINGS_ENABLE_LOCAL_OCR, false),
+            ocrMode: store.get(STORE_KEY.SETTINGS_OCR_MODE, 'local'),
+            ocrRemoteConfig: {
+              url: store.get(STORE_KEY.SETTINGS_OCR_REMOTE_URL, ''),
+              extraParams: store.get(STORE_KEY.SETTINGS_OCR_REMOTE_EXTRA_PARAMS, '{}'),
+              imageFieldName: store.get(
+                STORE_KEY.SETTINGS_OCR_REMOTE_IMAGE_FIELD_NAME,
+                'image'
+              ),
+              requestFormat: store.get(STORE_KEY.SETTINGS_OCR_REMOTE_REQUEST_FORMAT, 'json'),
+              resultPath: store.get(STORE_KEY.SETTINGS_OCR_REMOTE_RESULT_PATH, 'data.result')
+            }
+          })
+          logger.debug('[主进程] 剪贴板管理器 OCR 配置已更新')
         } catch (error) {
-          logger.error('[主进程] 更新剪贴板管理器本地OCR配置失败:', error)
+          logger.error('[主进程] 更新剪贴板管理器 OCR 配置失败:', error)
         }
 
-        trayManager.updateMenu()
+        if (key === STORE_KEY.SETTINGS_ENABLE_LOCAL_OCR) {
+          trayManager.updateMenu()
+        }
       }
 
       logger.debug(`[主进程] 处理特殊配置更新完成 [${key}]`)

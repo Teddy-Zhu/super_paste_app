@@ -44,6 +44,7 @@ const sourceAppInfo = computed(() => {
   return props.apps[props.item.source_app] || null
 })
 
+console.log(props.item)
 // 计算 RTF 内容的 HTML 表示（使用 rtf-to-html-converter 和 DOMPurify）
 const rtfToHtml = computed(() => {
   if (!props.item.content.rtf) return ''
@@ -173,18 +174,26 @@ const handleImageLoad = (event: Event) => {
 
 // 解析文件路径
 const parseFilePaths = computed(() => {
-  if (props.item.primaryType !== 'files' || !props.item.content.text) {
+  if (props.item.primaryType !== 'files' || (!props.item.content.text && !props.item.content.files)) {
     return []
   }
-
-  const text = props.item.content.text
-  const lines = text.split('\n')
   const filePaths: string[] = []
 
-  for (const line of lines) {
-    const trimmedLine = line.trim()
-    if (trimmedLine) {
-      filePaths.push(trimmedLine)
+  const text = props.item.content.text
+  if (text) {
+    const lines = text.split('\n')
+
+    for (const line of lines) {
+      const trimmedLine = line.trim()
+      if (trimmedLine) {
+        filePaths.push(trimmedLine)
+      }
+    }
+  }
+
+  if (props.item.content.files) {
+    for (const file of props.item.content.files) {
+      filePaths.push(decodeURIComponent(file))
     }
   }
 
@@ -438,7 +447,7 @@ const handleContextMenu = (event: MouseEvent) => {
       tagSubmenu.push({
         label: '---',
         icon: '',
-        action: () => {},
+        action: () => { },
         disabled: true
       })
 
@@ -454,7 +463,7 @@ const handleContextMenu = (event: MouseEvent) => {
     menuItems.push({
       label: '标签管理',
       icon: IconTag,
-      action: () => {}, // 二级菜单不需要action
+      action: () => { }, // 二级菜单不需要action
       disabled: false,
       submenu: tagSubmenu
     } as any)
@@ -464,7 +473,7 @@ const handleContextMenu = (event: MouseEvent) => {
   menuItems.push({
     label: '---',
     icon: '',
-    action: () => {},
+    action: () => { },
     disabled: true
   } as any)
 
@@ -573,12 +582,8 @@ const shortcutLabel = computed(() => {
 </script>
 
 <template>
-  <div
-    class="clipboard-card"
-    :class="[`theme-${getCardTheme(item.primaryType)}`, { selected: isSelected }]"
-    @click="handleClick"
-    @contextmenu="handleContextMenu"
-  >
+  <div class="clipboard-card" :class="[`theme-${getCardTheme(item.primaryType)}`, { selected: isSelected }]"
+    @click="handleClick" @contextmenu="handleContextMenu">
     <!-- 卡片头部 -->
     <div class="card-header">
       <div class="header-left">
@@ -614,11 +619,8 @@ const shortcutLabel = computed(() => {
       </div>
 
       <!-- 颜色预览 -->
-      <div
-        class="card-color"
-        v-else-if="item.primaryType === 'color' && colorValue"
-        :style="{ backgroundColor: colorValue || undefined }"
-      >
+      <div class="card-color" v-else-if="item.primaryType === 'color' && colorValue"
+        :style="{ backgroundColor: colorValue || undefined }">
         <div class="color-display">
           <span class="color-text" :style="{ color: getContrastColor }">{{ colorValue }}</span>
         </div>
@@ -626,12 +628,8 @@ const shortcutLabel = computed(() => {
 
       <!-- 图片预览 -->
       <div class="card-image" v-else-if="item.primaryType === 'image' && item.content.image">
-        <ImageDisplay
-          :image-data="item.content.image"
-          alt="Image preview"
-          image-class="card-image-inner"
-          @load="handleImageLoad"
-        />
+        <ImageDisplay :image-data="item.content.image" alt="Image preview" image-class="card-image-inner"
+          @load="handleImageLoad" />
       </div>
 
       <!-- 文件路径预览 -->
@@ -646,19 +644,19 @@ const shortcutLabel = computed(() => {
             <IconFileMultiple class="file-icon-svg" />
           </div>
         </div>
-        <div class="file-name">{{ getFileDisplayName }}</div>
+        <div class="file-name" :title="getFileDisplayName">{{ getFileDisplayName }}</div>
       </div>
 
       <!-- 其他类型内容预览 -->
-      <div
-        class="card-preview"
-        v-else-if="
-          item.primaryType !== 'image' &&
-          item.primaryType !== 'color' &&
-          item.primaryType !== 'files'
-        "
-      >
+      <div class="card-preview" v-else-if="
+        item.primaryType !== 'image' &&
+        item.primaryType !== 'color' &&
+        item.primaryType !== 'files'
+      ">
         {{ getContentPreview(item) }}
+      </div>
+      <div v-else>
+        No Preview
       </div>
     </div>
 
@@ -667,13 +665,8 @@ const shortcutLabel = computed(() => {
       <!-- 左侧标签颜色点 -->
       <div class="footer-left">
         <div v-if="item.tags && item.tags.length > 0" class="tag-dots">
-          <div
-            v-for="tag in item.tags"
-            :key="tag.id"
-            class="tag-dot"
-            :style="{ backgroundColor: tag.color }"
-            :title="tag.name"
-          ></div>
+          <div v-for="tag in item.tags" :key="tag.id" class="tag-dot" :style="{ backgroundColor: tag.color }"
+            :title="tag.name"></div>
         </div>
       </div>
 
@@ -886,7 +879,8 @@ const shortcutLabel = computed(() => {
 .card-rich-preview {
   flex: 1;
   overflow: hidden;
-  position: relative; /* 为遮罩层提供定位参考 */
+  position: relative;
+  /* 为遮罩层提供定位参考 */
   /* border-radius: 12px; */
   /* background: linear-gradient(135deg, rgba(248, 250, 252, 0.8) 0%, rgba(241, 245, 249, 0.8) 100%);
   border: 1px solid rgba(226, 232, 240, 0.6);
@@ -914,7 +908,8 @@ const shortcutLabel = computed(() => {
   bottom: 0;
   background: transparent;
   z-index: 10;
-  cursor: inherit; /* 继承父元素的cursor样式 */
+  cursor: inherit;
+  /* 继承父元素的cursor样式 */
   /* 阻止所有鼠标和触摸事件 */
   pointer-events: auto;
 }
@@ -925,6 +920,7 @@ const shortcutLabel = computed(() => {
   margin: 0 !important;
   border: none !important;
 }
+
 :global(.rich-content *) {
   overflow: hidden !important;
 }
@@ -973,7 +969,7 @@ const shortcutLabel = computed(() => {
   border-radius: 12px; */
 }
 
-.card-image > :first-child {
+.card-image> :first-child {
   flex: 1;
   display: flex;
   align-items: center;
@@ -1118,7 +1114,8 @@ const shortcutLabel = computed(() => {
   flex-shrink: 0;
   background: linear-gradient(135deg, rgba(248, 250, 252, 0.9) 0%, rgba(241, 245, 249, 0.9) 100%);
   position: relative;
-  height: 32px; /* 固定高度防止撑高 */
+  height: 32px;
+  /* 固定高度防止撑高 */
   box-sizing: border-box;
 }
 
@@ -1192,11 +1189,13 @@ const shortcutLabel = computed(() => {
 }
 
 @keyframes shortcut-pulse {
+
   0%,
   100% {
     transform: scale(1);
     box-shadow: 0 1px 2px rgba(59, 130, 246, 0.3);
   }
+
   50% {
     transform: scale(1.02);
     box-shadow: 0 2px 4px rgba(59, 130, 246, 0.4);

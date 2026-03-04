@@ -109,11 +109,27 @@ class ClipboardManager extends BaseWorkerManager {
    */
   private getDefaultConfig(): ClipboardManagerConfig {
     const maxHistorySize = store.get(STORE_KEY.SETTINGS_MAX_HISTORY_SIZE, 100)
-    const enableLocalOCR = store.get(STORE_KEY.SETTINGS_ENABLE_LOCAL_OCR, false)
     return {
       maxHistorySize,
       enableAutoSave: false,
-      enableLocalOCR
+      ...this.getOCRConfigFromStore()
+    }
+  }
+
+  private getOCRConfigFromStore(): Pick<
+    ClipboardManagerConfig,
+    'enableLocalOCR' | 'ocrMode' | 'ocrRemoteConfig'
+  > {
+    return {
+      enableLocalOCR: store.get(STORE_KEY.SETTINGS_ENABLE_LOCAL_OCR, false),
+      ocrMode: store.get(STORE_KEY.SETTINGS_OCR_MODE, 'local'),
+      ocrRemoteConfig: {
+        url: store.get(STORE_KEY.SETTINGS_OCR_REMOTE_URL, ''),
+        extraParams: store.get(STORE_KEY.SETTINGS_OCR_REMOTE_EXTRA_PARAMS, '{}'),
+        imageFieldName: store.get(STORE_KEY.SETTINGS_OCR_REMOTE_IMAGE_FIELD_NAME, 'image'),
+        requestFormat: store.get(STORE_KEY.SETTINGS_OCR_REMOTE_REQUEST_FORMAT, 'json'),
+        resultPath: store.get(STORE_KEY.SETTINGS_OCR_REMOTE_RESULT_PATH, 'data.result')
+      }
     }
   }
 
@@ -201,13 +217,16 @@ class ClipboardManager extends BaseWorkerManager {
 
     // 从store中获取配置
     const maxHistorySize = store.get(STORE_KEY.SETTINGS_MAX_HISTORY_SIZE, 100)
-    const enableLocalOCR = store.get(STORE_KEY.SETTINGS_ENABLE_LOCAL_OCR, false)
-
+    const ocrConfig = this.getOCRConfigFromStore()
     const finalConfig: Partial<ClipboardManagerConfig> = {
       maxHistorySize,
       enableAutoSave: false,
-      enableLocalOCR,
-      ...config
+      ...ocrConfig,
+      ...config,
+      ocrRemoteConfig: {
+        ...ocrConfig.ocrRemoteConfig,
+        ...(config?.ocrRemoteConfig || {})
+      }
     }
 
     // 需要导入 app 来获取 userDataPath、isPackaged 和 appPath

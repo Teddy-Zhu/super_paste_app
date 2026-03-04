@@ -5,10 +5,12 @@ import IconInformation from '~icons/mdi/information'
 import IconTag from '~icons/mdi/tag'
 import IconBug from '~icons/mdi/bug'
 import IconSync from '~icons/mdi/sync'
+import IconOCR from '~icons/mdi/text-recognition'
 import { useSettingsStore } from '@renderer/stores/common'
 
 // 导入组件
 import GeneralSettings from './components/GeneralSettings.vue'
+import OCRSettings from './components/OCRSettings.vue'
 import TagsManagement from './components/TagsManagement.vue'
 import ShortcutSettings from './components/ShortcutSettings.vue'
 import DebugSettings from './components/DebugSettings.vue'
@@ -42,6 +44,11 @@ const settingSections = [
     id: 'sync',
     name: '同步设置',
     icon: IconSync
+  },
+  {
+    id: 'ocr',
+    name: 'OCR 设置',
+    icon: IconOCR
   },
   {
     id: 'tags',
@@ -144,6 +151,9 @@ onUnmounted(() => {
 
       <!-- 同步设置 -->
       <SyncSettings v-if="activeSection === 'sync'" />
+
+      <!-- OCR设置 -->
+      <OCRSettings v-if="activeSection === 'ocr'" :settings-store="settingsStore" />
 
       <!-- 标签管理 -->
       <TagsManagement v-if="activeSection === 'tags'" />

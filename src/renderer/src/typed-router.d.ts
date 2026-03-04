@@ -22,6 +22,7 @@ declare module 'vue-router/auto-routes' {
     '//components/AboutSection': RouteRecordInfo<'//components/AboutSection', '/components/AboutSection', Record<never, never>, Record<never, never>>,
     '//components/DebugSettings': RouteRecordInfo<'//components/DebugSettings', '/components/DebugSettings', Record<never, never>, Record<never, never>>,
     '//components/GeneralSettings': RouteRecordInfo<'//components/GeneralSettings', '/components/GeneralSettings', Record<never, never>, Record<never, never>>,
+    '//components/OCRSettings': RouteRecordInfo<'//components/OCRSettings', '/components/OCRSettings', Record<never, never>, Record<never, never>>,
     '//components/ShortcutSettings': RouteRecordInfo<'//components/ShortcutSettings', '/components/ShortcutSettings', Record<never, never>, Record<never, never>>,
     '//components/SyncSettings': RouteRecordInfo<'//components/SyncSettings', '/components/SyncSettings', Record<never, never>, Record<never, never>>,
     '//components/TagsManagement': RouteRecordInfo<'//components/TagsManagement', '/components/TagsManagement', Record<never, never>, Record<never, never>>,

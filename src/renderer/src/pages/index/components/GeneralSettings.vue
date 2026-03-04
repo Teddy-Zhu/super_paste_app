@@ -58,12 +58,6 @@ const toggleAutoStart = () => {
   console.log('开机自启:', props.settingsStore.autoStart)
 }
 
-// 切换本地OCR
-const toggleLocalOCR = () => {
-  props.settingsStore.enableLocalOCR = !props.settingsStore.enableLocalOCR
-  console.log('本地OCR:', props.settingsStore.enableLocalOCR)
-}
-
 // 更新最大历史记录数量
 const updateMaxHistorySize = (value: number): void => {
   // 确保值在合理范围内
@@ -122,24 +116,6 @@ const clearHistory = async () => {
         <div class="setting-control">
           <label class="toggle-switch">
             <input type="checkbox" :checked="settingsStore.autoStart" @change="toggleAutoStart" />
-            <span class="toggle-slider"></span>
-          </label>
-        </div>
-      </div>
-
-      <!-- 本地OCR -->
-      <div class="setting-card">
-        <div class="setting-info">
-          <h4 class="setting-title">本地OCR</h4>
-          <p class="setting-description">启用本地光学字符识别功能，可从图片中提取文字</p>
-        </div>
-        <div class="setting-control">
-          <label class="toggle-switch">
-            <input
-              type="checkbox"
-              :checked="settingsStore.enableLocalOCR"
-              @change="toggleLocalOCR"
-            />
             <span class="toggle-slider"></span>
           </label>
         </div>
