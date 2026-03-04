@@ -1,7 +1,7 @@
 import { parentPort } from 'node:worker_threads'
 
-import { BaseWorker } from './base-worker'
-import { SyncService } from '../sync/sync-service'
+import { BaseWorker } from '../workers/base-worker'
+import { SyncService } from './sync-service'
 
 import type {
   WorkerMessage,
@@ -10,7 +10,7 @@ import type {
   WorkerEvent
 } from '../types/worker-types'
 import type { SyncResult, ScheduledSyncConfig } from '../sync/types'
-import logger from '../utils/logger'
+import logger from '../utils/worker-logger'
 import { SyncStatus } from '../sync/types'
 
 /**
@@ -29,6 +29,17 @@ class ScheduledSyncWorker extends BaseWorker {
   constructor() {
     super()
     // SyncService 将在 initialize 方法中创建
+  }
+
+  /**
+   * 创建 SyncService 实例，注入通知回调（避免在 Worker 中 import electron）
+   */
+  private createSyncService(userDataPath: string): SyncService {
+    return new SyncService(userDataPath, {
+      onSyncRequiresRestart: (data) => {
+        this.sendEvent('sync-requires-restart', data)
+      }
+    })
   }
 
   protected getWorkerName(): string {
@@ -60,7 +71,7 @@ class ScheduledSyncWorker extends BaseWorker {
       // 尝试初始化同步服务
       try {
         // 创建同步服务实例
-        this.syncService = new SyncService(config.userDataPath)
+        this.syncService = this.createSyncService(config.userDataPath)
 
         // 初始化同步服务
         const initialized = await this.syncService.initialize(
@@ -163,7 +174,7 @@ class ScheduledSyncWorker extends BaseWorker {
         logger.info(`[${this.getWorkerName()}] 同步服务未初始化，开始初始化...`)
 
         // 创建同步服务实例
-        this.syncService = new SyncService(this.config.userDataPath)
+        this.syncService = this.createSyncService(this.config.userDataPath)
 
         // 初始化同步服务
         const initialized = await this.syncService.initialize(
@@ -392,7 +403,7 @@ class ScheduledSyncWorker extends BaseWorker {
       this.sendEvent('manual-sync-started', { timestamp: Date.now() })
 
       // 创建临时的同步服务实例进行同步
-      const tempSyncService = new SyncService(config.userDataPath)
+      const tempSyncService = this.createSyncService(config.userDataPath)
 
       // 初始化临时同步服务
       const initialized = await tempSyncService.initialize(
@@ -499,7 +510,7 @@ class ScheduledSyncWorker extends BaseWorker {
       )
 
       // 创建临时的同步服务实例进行测试
-      const tempSyncService = new SyncService(config.userDataPath)
+      const tempSyncService = this.createSyncService(config.userDataPath)
 
       // 初始化临时同步服务
       const initialized = await tempSyncService.initialize(

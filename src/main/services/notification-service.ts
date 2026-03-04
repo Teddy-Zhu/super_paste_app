@@ -73,7 +73,7 @@ export class NotificationService {
           window.webContents.send('record-ocr-updated', data)
         }
       })
-
+      logger.debug(data.ocrText)
       logger.debug('[通知服务] 已通知前端记录OCR更新:', data.contentId)
     } catch (error) {
       logger.error('[通知服务] 通知前端记录OCR更新失败:', error)

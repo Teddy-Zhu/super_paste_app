@@ -1,6 +1,6 @@
-import { BaseWorkerManager } from './base-worker-manager'
+import { BaseWorkerManager } from '../workers/base-worker-manager'
 import type { WorkerConfig, WorkerRequest } from '../types/worker-types'
-import type { SyncResult, ScheduledSyncConfig, ScheduledSyncStatus } from '../sync/types'
+import type { SyncResult, ScheduledSyncConfig, ScheduledSyncStatus } from './types'
 import logger from '../utils/logger'
 import scheduledSyncWorkerPath from './scheduled-sync.worker?modulePath'
 import { BrowserWindow } from 'electron'

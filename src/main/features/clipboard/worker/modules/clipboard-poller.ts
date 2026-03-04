@@ -3,7 +3,7 @@ import {
     ClipboardListener,
     ClipboardData
 } from '@teddyzhu/clipboard'
-import logger from '../../../../utils/logger'
+import logger from '../../../../utils/worker-logger'
 import { EventEmitter } from 'events'
 
 export class ClipboardPoller extends EventEmitter {
@@ -14,6 +14,7 @@ export class ClipboardPoller extends EventEmitter {
     constructor() {
         super()
         this.clipboard = new TeddyClipboardManager()
+        console.log('ClipboardPoller constructor', this.clipboard)
         this.clipboardListener = new ClipboardListener()
     }
 

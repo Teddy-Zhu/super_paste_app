@@ -3,9 +3,8 @@ import { BaseSyncProvider } from './base-sync-provider'
 import { WebDAVSyncProvider } from './webdav-sync-provider'
 import { SyncStatus, SyncDirection, SyncProviderType } from './types'
 import type { SyncProviderConfig, SyncResult, SyncEventListener, WebDAVConfig } from './types'
-import logger from '../utils/logger'
+import logger from '../utils/worker-logger'
 import { HashUtils } from '../utils/common'
-import { NotificationService } from '../services/notification-service'
 
 /**
  * 数据库和配置文件同步服务
@@ -15,6 +14,7 @@ import { NotificationService } from '../services/notification-service'
 export class SyncService {
   private syncProvider: BaseSyncProvider | null = null
   private userDataPath: string = ''
+  private onSyncRequiresRestart?: (data: { downloadedFiles: string[]; message: string }) => void
 
   // 需要同步的文件路径
   private readonly DATABASE_FILE_NAME = 'clipboard-history.db'
@@ -22,8 +22,12 @@ export class SyncService {
   private readonly REMOTE_DB_PATH = './clipboard-history.db'
   private readonly REMOTE_CONFIG_PATH = './config.json'
 
-  constructor(userDataPath: string) {
+  constructor(
+    userDataPath: string,
+    options?: { onSyncRequiresRestart?: (data: { downloadedFiles: string[]; message: string }) => void }
+  ) {
     this.userDataPath = userDataPath
+    this.onSyncRequiresRestart = options?.onSyncRequiresRestart
   }
 
   /**
@@ -153,7 +157,7 @@ export class SyncService {
       // 检查是否有文件被下载，如果有则需要通知前端重启
       if (result.downloadedFiles && result.downloadedFiles.length > 0) {
         logger.info('[同步服务] 检测到文件已下载，通知前端重启应用')
-        NotificationService.notifySyncRequiresRestart({
+        this.onSyncRequiresRestart?.({
           downloadedFiles: result.downloadedFiles,
           message: `已下载 ${result.downloadedFiles.length} 个文件，需要重启应用以应用更改`
         })

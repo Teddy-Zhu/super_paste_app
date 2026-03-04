@@ -7,6 +7,7 @@ import logger from '../utils/logger'
  */
 export class GlobalShortcutManager {
   private overlayWindow: Electron.BrowserWindow | null = null
+  private currentGlobalShortcut: string | null = null
 
   /**
    * 设置 overlay 窗口引用
@@ -54,11 +55,31 @@ export class GlobalShortcutManager {
       return false
     }
 
+    // 如果更新为新的主快捷键，先清理旧快捷键，避免残留占用
+    if (
+      this.currentGlobalShortcut &&
+      this.currentGlobalShortcut !== shortcutKey &&
+      globalShortcut.isRegistered(this.currentGlobalShortcut)
+    ) {
+      globalShortcut.unregister(this.currentGlobalShortcut)
+      logger.debug(`[主进程] 旧全局快捷键已注销: ${this.currentGlobalShortcut}`)
+    }
+
+    // 如果已经注册过，先注销
+    if (globalShortcut.isRegistered(shortcutKey)) {
+      globalShortcut.unregister(shortcutKey)
+      logger.debug(`[主进程] 已存在相同快捷键，已注销: ${shortcutKey}`)
+    }
+
     const success = globalShortcut.register(shortcutKey, callback)
 
     if (success) {
+      this.currentGlobalShortcut = shortcutKey
       logger.debug(`[主进程] 全局快捷键注册成功: ${shortcutKey}`)
     } else {
+      if (this.currentGlobalShortcut === shortcutKey) {
+        this.currentGlobalShortcut = null
+      }
       logger.error(`[主进程] 全局快捷键注册失败: ${shortcutKey}`)
     }
 
@@ -74,6 +95,10 @@ export class GlobalShortcutManager {
       globalShortcut.unregister(shortcutKey)
       logger.debug(`[主进程] 快捷键已注销: ${shortcutKey}`)
     }
+
+    if (this.currentGlobalShortcut === shortcutKey) {
+      this.currentGlobalShortcut = null
+    }
   }
 
   /**
@@ -81,6 +106,7 @@ export class GlobalShortcutManager {
    */
   unregisterAll(): void {
     globalShortcut.unregisterAll()
+    this.currentGlobalShortcut = null
     logger.debug('[主进程] 所有全局快捷键已注销')
   }
 

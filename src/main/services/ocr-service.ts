@@ -1,4 +1,4 @@
-import { OCRManager, OCRManagerOptions, OCRConfig, OCROutput } from '../utils/ocr-manager'
+import { OCRManager, OCRManagerOptions, OCRConfig, OCROutput } from '../ocr/ocr-manager'
 import logger from '../utils/logger'
 
 /**
@@ -17,7 +17,7 @@ export class OCRService {
   private isServiceReady = false
   private ocrManager: OCRManager | null = null
 
-  private constructor() {}
+  private constructor() { }
 
   /**
    * 获取 OCR 服务单例
@@ -36,6 +36,9 @@ export class OCRService {
   public async initialize(options: OCRServiceOptions): Promise<void> {
     try {
       logger.info('正在初始化 OCR 服务...')
+      if (!options.resourcePath) {
+        throw new Error('OCR 资源路径为空')
+      }
 
       // 初始化 OCR 管理器
       this.ocrManager = OCRManager.getInstance({
@@ -58,6 +61,7 @@ export class OCRService {
 
       logger.info('OCR 服务初始化成功')
     } catch (error) {
+      this.isServiceReady = false
       logger.error('OCR 服务初始化失败:', error)
       throw error
     }

@@ -1,30 +1,39 @@
-import { ipcMain, BrowserWindow, app } from 'electron'
+import { ipcMain, app } from 'electron'
 import type { IpcMainInvokeEvent } from 'electron'
 import clipboardManager from '../features/clipboard/manager/clipboard-manager'
 import clipboardHistoryService from '../services/clipboard-history-service'
 import clipboardTagService from '../services/clipboard-tag-service'
 import { qrCodeService } from '../services/qrcode-service'
+import { NotificationService } from '../services/notification-service'
 import type { ClipboardItem, ClipboardManagerConfig } from '../features/clipboard/types/clipboard-types'
 import type { BaseWorkerManager } from '../workers/base-worker-manager'
+import { mainWindowManager, overlayWindowManager } from '../ui/windows/window-managers'
+import { windowStateManager, OverlayState } from '../ui/windows/window-state'
+import { globalShortcutManager } from '../system/global-shortcut-manager'
+import autoStartManager from '../system/auto-start-manager'
+import store from '../config/store'
+import { STORE_KEY } from '../config/common'
+import { debounceExecution } from '../utils/common'
+import { MAX_HISTORY_SIZE_DEBOUNCE_DELAY, MAX_KEEP_TIME_DEBOUNCE_DELAY } from '../config/constants'
+import { scheduledSyncManager } from '../sync/scheduled-sync-manager'
+import type { ScheduledSyncConfig } from '../sync/types'
+import { SyncStatus } from '../sync/types'
+import { SyncConfigUtils } from '../sync/sync-config-utils'
+import { trayManager } from '../ui/tray/tray-manager'
 import logger from '../utils/logger'
 import { writeHeapSnapshot } from 'v8'
 import { join } from 'path'
 
 /**
  * IPC 管理器
- * 负责注册和管理所有 IPC 事件处理器
+ * 统一注册和管理所有 IPC 事件处理器
  */
 class IpcManager {
   private static instance: IpcManager
   private isInitialized: boolean = false
 
-  private constructor() {
-    // 保持单例构造器不可被外部调用
-  }
+  private constructor() { }
 
-  /**
-   * 获取单例实例
-   */
   public static getInstance(): IpcManager {
     if (!IpcManager.instance) {
       IpcManager.instance = new IpcManager()
@@ -32,24 +41,10 @@ class IpcManager {
     return IpcManager.instance
   }
 
-  /**
-   * 统一广播工具
-   */
-  private broadcastToAllWindows(channel: string, payload: Record<string, unknown> = {}): void {
-    try {
-      const message = { timestamp: Date.now(), ...payload }
-      BrowserWindow.getAllWindows().forEach((window) => {
-        if (window && !window.isDestroyed()) {
-          window.webContents.send(channel, message)
-        }
-      })
-    } catch (error) {
-      logger.error(`[IPC管理器] 广播事件失败 [${channel}]:`, error)
-    }
-  }
+  // ==================== 工具方法 ====================
 
   /**
-   * 通用 IPC handler 注册工具
+   * 通用 IPC handler 注册工具（invoke/handle 模式）
    */
   private registerHandler<TArgs extends unknown[]>(
     channel: string,
@@ -70,34 +65,22 @@ class IpcManager {
   }
 
   /**
-   * 通知前端标签数据已更新
-   */
-  private notifyTagsUpdated(): void {
-    this.broadcastToAllWindows('tags-updated')
-  }
-
-  /**
-   * 通知前端剪贴板历史已更新
-   */
-  private notifyClipboardHistoryUpdated(): void {
-    this.broadcastToAllWindows('clipboard-history-updated')
-  }
-
-  /**
    * 按需通知前端状态变化
    */
   private notifyStateChange(options: { history?: boolean; tags?: boolean }): void {
     const { history, tags } = options
     if (history) {
-      this.notifyClipboardHistoryUpdated()
+      NotificationService.notifyClipboardHistoryUpdate({ timestamp: Date.now() })
     }
     if (tags) {
-      this.notifyTagsUpdated()
+      NotificationService.notifyTagsUpdate({ timestamp: Date.now() })
     }
   }
 
+  // ==================== 初始化 / 清理 ====================
+
   /**
-   * 初始化所有 IPC 事件处理器
+   * 初始化所有 IPC 处理器
    */
   public initialize(): void {
     if (this.isInitialized) {
@@ -105,18 +88,94 @@ class IpcManager {
       return
     }
 
-    // 在初始化前先清理可能存在的旧处理器
+    // 初始化前先清理可能存在的旧处理器
     this.cleanup()
 
-    this.registerClipboardHandlers()
-    this.isInitialized = true
+    logger.debug('[主进程] 开始注册 IPC 事件处理器')
 
-    logger.debug('[IPC管理器] 初始化完成')
+    this.registerClipboardHandlers()
+    this.registerWindowHandlers()
+    this.registerStoreHandlers()
+    this.registerAutoStartHandlers()
+    this.registerAnimationHandlers()
+    this.registerScheduledSyncHandlers()
+    this.registerSystemHandlers()
+
+    this.isInitialized = true
+    logger.debug('[IPC管理器] 所有 IPC 事件处理器注册完成')
   }
 
   /**
-   * 注册剪贴板相关的 IPC 事件处理器
+   * 清理所有 IPC 处理器
    */
+  public cleanup(): void {
+    if (!this.isInitialized) {
+      return
+    }
+
+    const channels = [
+      // 剪贴板历史
+      'clipboard-get-history',
+      'clipboard-restore',
+      'clipboard-restore-as-text',
+      'clipboard-restore-ocr-text',
+      'clipboard-parse-ocr',
+      'clipboard-parse-qrcode',
+      'clipboard-generate-qrcode',
+      'clipboard-delete-item',
+      'clipboard-clear-history',
+      'clipboard-get-status',
+      'clipboard-start-listening',
+      'clipboard-stop-listening',
+      'clipboard-update-config',
+      // 标签
+      'get-all-tags',
+      'create-tag',
+      'update-tag',
+      'delete-tag',
+      'get-tag-stats',
+      'bind-tag-to-record',
+      'unbind-tag-from-record',
+      // 诊断
+      'export-heapdump',
+      // 自启动
+      'auto-start-get-status',
+      'auto-start-set-status',
+      'auto-start-toggle',
+      // 存储
+      'store-get',
+      'store-set',
+      // 定时同步
+      'scheduled-sync:initialize',
+      'scheduled-sync:start',
+      'scheduled-sync:stop',
+      'scheduled-sync:manual-sync',
+      'scheduled-sync:manual-sync-with-config',
+      'scheduled-sync:test-connection',
+      'scheduled-sync:get-status',
+      'scheduled-sync:update-config',
+      'scheduled-sync:refresh',
+      // 系统
+      'app:restart'
+    ]
+
+    channels.forEach((channel) => {
+      ipcMain.removeHandler(channel)
+    })
+
+    this.isInitialized = false
+    logger.debug('[IPC管理器] 所有 IPC 事件处理器已清理')
+  }
+
+  /**
+   * 获取初始化状态
+   */
+  public getInitializationStatus(): boolean {
+    return this.isInitialized
+  }
+
+  // ==================== 剪贴板相关 ====================
+
   private registerClipboardHandlers(): void {
     this.registerHistoryHandlers()
     this.registerClipboardControlHandlers()
@@ -125,9 +184,6 @@ class IpcManager {
     this.registerDiagnosticHandlers()
   }
 
-  /**
-   * 剪贴板历史相关 handler
-   */
   private registerHistoryHandlers(): void {
     this.registerHandler(
       'clipboard-get-history',
@@ -208,9 +264,6 @@ class IpcManager {
     )
   }
 
-  /**
-   * 剪贴板控制相关 handler
-   */
   private registerClipboardControlHandlers(): void {
     const workerPassThroughHandlers = [
       {
@@ -280,9 +333,6 @@ class IpcManager {
     )
   }
 
-  /**
-   * 二维码相关 handler
-   */
   private registerQRCodeHandlers(): void {
     this.registerHandler(
       'clipboard-parse-qrcode',
@@ -347,9 +397,6 @@ class IpcManager {
     )
   }
 
-  /**
-   * 标签相关 handler
-   */
   private registerTagHandlers(): void {
     this.registerHandler(
       'get-all-tags',
@@ -378,7 +425,7 @@ class IpcManager {
           }
         }
 
-        this.notifyTagsUpdated()
+        NotificationService.notifyTagsUpdate({ timestamp: Date.now(), action: 'create' })
         return {
           success: true,
           data: { tagId },
@@ -396,7 +443,7 @@ class IpcManager {
       ) => {
         const success = await clipboardTagService.updateTagGroup(data.tagId, data.updates)
         if (success) {
-          this.notifyTagsUpdated()
+          NotificationService.notifyTagsUpdate({ timestamp: Date.now(), action: 'update' })
         }
         return {
           success,
@@ -411,7 +458,7 @@ class IpcManager {
       async (_, tagId: string) => {
         const success = await clipboardTagService.deleteTagGroup(tagId)
         if (success) {
-          this.notifyTagsUpdated()
+          NotificationService.notifyTagsUpdate({ timestamp: Date.now(), action: 'delete' })
         }
         return {
           success,
@@ -464,9 +511,6 @@ class IpcManager {
     )
   }
 
-  /**
-   * 诊断相关 handler
-   */
   private registerDiagnosticHandlers(): void {
     this.registerHandler(
       'export-heapdump',
@@ -512,67 +556,374 @@ class IpcManager {
   }
 
   /**
-   * 移除所有 IPC 事件处理器
-   */
-  public cleanup(): void {
-    if (!this.isInitialized) {
-      return
-    }
-
-    // 移除剪贴板相关的处理器
-    const clipboardChannels = [
-      'clipboard-get-history',
-      'clipboard-restore',
-      'clipboard-restore-as-text',
-      'clipboard-restore-ocr-text',
-      'clipboard-parse-ocr',
-      'clipboard-parse-qrcode',
-      'clipboard-generate-qrcode',
-      'clipboard-delete-item',
-      'clipboard-clear-history',
-      'clipboard-get-status',
-      'clipboard-start-listening',
-      'clipboard-stop-listening',
-      'clipboard-update-config',
-      'get-all-tags',
-      'create-tag',
-      'update-tag',
-      'delete-tag',
-      'get-tag-stats',
-      'bind-tag-to-record',
-      'unbind-tag-from-record',
-      'export-heapdump'
-    ]
-
-    clipboardChannels.forEach((channel) => {
-      ipcMain.removeAllListeners(channel)
-    })
-
-    this.isInitialized = false
-  }
-
-  /**
-   * 获取初始化状态
-   */
-  public getInitializationStatus(): boolean {
-    return this.isInitialized
-  }
-
-  /**
    * 获取所有活跃的 Worker 管理器
    */
   private getAllWorkerManagers(): BaseWorkerManager[] {
     const workers: BaseWorkerManager[] = []
 
-    // 添加剪贴板管理器
     if (clipboardManager.isRunning()) {
       workers.push(clipboardManager)
     }
 
-    // 清理器已优化为独立 Worker，由 index.ts 管理
-    // 如需导出清理器的 heapdump，需要在 index.ts 中暴露清理器实例
-
     return workers
+  }
+
+  // ==================== 窗口相关 ====================
+
+  private registerWindowHandlers(): void {
+    // 打开 overlay 窗口
+    ipcMain.on('open-overlay-window', () => {
+      try {
+        if (overlayWindowManager.isValid()) {
+          overlayWindowManager.toggleWindow()
+        } else {
+          overlayWindowManager.createWindow()
+          overlayWindowManager.showWindow()
+        }
+      } catch (error) {
+        logger.error('[主进程] 打开 Overlay 窗口失败:', error)
+      }
+    })
+
+    // 关闭 overlay 窗口
+    ipcMain.on('close-overlay-window', () => {
+      try {
+        overlayWindowManager.hideWindow()
+      } catch (error) {
+        logger.error('[主进程] 关闭 Overlay 窗口失败:', error)
+      }
+    })
+
+    // 打开主窗口
+    ipcMain.on('open-main-window', () => {
+      try {
+        mainWindowManager.showWindow()
+      } catch (error) {
+        logger.error('[主进程] 打开主窗口失败:', error)
+      }
+    })
+  }
+
+  // ==================== 存储相关 ====================
+
+  private registerStoreHandlers(): void {
+    // 获取存储值（异步）
+    this.registerHandler(
+      'store-get',
+      async (_, key: string, defaultValue?: unknown) => {
+        return { success: true, data: store.get(key, defaultValue) }
+      },
+      '获取存储值'
+    )
+
+    // 同步获取存储值
+    ipcMain.on('store-get-on', (event, key) => {
+      try {
+        const val = store?.get(key)
+        event.returnValue = val
+      } catch (error) {
+        logger.error(`[主进程] 同步获取存储值失败 [${key}]:`, error)
+        event.returnValue = undefined
+      }
+    })
+
+    // 设置存储值
+    this.registerHandler(
+      'store-set',
+      async (_, key: string, value: unknown) => {
+        logger.debug(`[主进程] 设置存储值 [${key}]:`, value)
+        const oldValue = store.get(key)
+        store.raw_set(key, value)
+
+        await this.handleSpecialConfigUpdates(key, value, oldValue)
+
+        return { success: true }
+      },
+      '设置存储值'
+    )
+  }
+
+  /**
+   * 处理特殊配置更新（全局快捷键、历史大小、OCR、自启动等）
+   */
+  private async handleSpecialConfigUpdates(
+    key: string,
+    value: unknown,
+    oldValue: unknown
+  ): Promise<void> {
+    try {
+      if (key === STORE_KEY.SETTINGS_GLOBAL_SHORTCUT) {
+        logger.debug('[主进程] 全局快捷键配置已更新，重新初始化')
+
+        const oldShortcutKey = typeof oldValue === 'string' ? oldValue : ''
+        const shortcutKey = typeof value === 'string' ? value : ''
+
+        if (oldShortcutKey && oldShortcutKey.trim() !== '' && oldShortcutKey !== shortcutKey) {
+          globalShortcutManager.unregisterShortcut(oldShortcutKey)
+        }
+
+        if (shortcutKey && shortcutKey.trim() !== '') {
+          globalShortcutManager.registerGlobalShortcut(shortcutKey, () => {
+            logger.debug('[主进程] 全局快捷键触发，开始显示窗口111')
+            overlayWindowManager.toggleWindow(true)
+          })
+        } else if (oldShortcutKey && oldShortcutKey.trim() !== '') {
+          globalShortcutManager.unregisterShortcut(oldShortcutKey)
+        }
+      }
+
+      if (key === STORE_KEY.SETTINGS_MAX_HISTORY_SIZE) {
+        debounceExecution(
+          'update-max-history-size',
+          async () => {
+            logger.debug('[主进程] 最大历史记录数量配置已更新，更新剪贴板管理器配置')
+            try {
+              const maxHistorySize = store.get(STORE_KEY.SETTINGS_MAX_HISTORY_SIZE, 100)
+              await clipboardManager.updateConfig({ maxHistorySize })
+            } catch (error) {
+              logger.error('[主进程] 更新剪贴板管理器maxHistorySize失败:', error)
+            }
+          },
+          MAX_HISTORY_SIZE_DEBOUNCE_DELAY
+        )
+      }
+
+      if (key === STORE_KEY.SETTINGS_MAX_KEEP_TIME) {
+        debounceExecution(
+          'update-max-keep-time',
+          async () => {
+            logger.debug('[主进程] 最大保存时间配置已更新，清理器将在下次应用启动时使用新配置')
+            // TODO: 如果需要动态更新清理器配置，需要在 index.ts 中暴露清理器实例的引用
+          },
+          MAX_KEEP_TIME_DEBOUNCE_DELAY
+        )
+      }
+
+      if (key === STORE_KEY.SETTINGS_AUTO_START) {
+        const autoStart = value as boolean
+        const success = await autoStartManager.setEnabled(autoStart)
+
+        if (!success) {
+          logger.error('[主进程] 设置自动启动失败')
+        } else {
+          logger.debug(`[主进程] 自动启动状态已更新: ${autoStart}`)
+        }
+
+        trayManager.updateMenu()
+      }
+
+      if (key === STORE_KEY.SETTINGS_ENABLE_LOCAL_OCR) {
+        const enableLocalOCR = value as boolean
+        logger.debug(`[主进程] 本地OCR配置已更新: ${enableLocalOCR}`)
+
+        try {
+          await clipboardManager.updateConfig({ enableLocalOCR })
+          logger.debug('[主进程] 剪贴板管理器本地OCR配置已更新')
+        } catch (error) {
+          logger.error('[主进程] 更新剪贴板管理器本地OCR配置失败:', error)
+        }
+
+        trayManager.updateMenu()
+      }
+
+      logger.debug(`[主进程] 处理特殊配置更新完成 [${key}]`)
+    } catch (error) {
+      logger.error(`[主进程] 处理特殊配置更新失败 [${key}]:`, error)
+    }
+  }
+
+  // ==================== 自启动相关 ====================
+
+  private registerAutoStartHandlers(): void {
+    this.registerHandler(
+      'auto-start-get-status',
+      async () => {
+        const isEnabled = await autoStartManager.isEnabled()
+        const platformInfo = autoStartManager.getPlatformInfo()
+        return {
+          success: true,
+          data: {
+            enabled: isEnabled,
+            platform: platformInfo.platform,
+            method: platformInfo.method
+          }
+        }
+      },
+      '获取自启动状态'
+    )
+
+    this.registerHandler(
+      'auto-start-set-status',
+      async (_, enabled: boolean) => {
+        const success = await autoStartManager.setEnabled(enabled)
+        return { success, data: { enabled } }
+      },
+      '设置自启动状态'
+    )
+
+    this.registerHandler(
+      'auto-start-toggle',
+      async () => {
+        const newState = await autoStartManager.toggle()
+        return { success: true, data: { enabled: newState } }
+      },
+      '切换自启动状态'
+    )
+  }
+
+  // ==================== 动画相关 ====================
+
+  private registerAnimationHandlers(): void {
+    ipcMain.on('open-overlay-finished', () => {
+      if (windowStateManager.getOverlayState() === OverlayState.OPENING) {
+        windowStateManager.setOverlayState(OverlayState.OPENED)
+      }
+    })
+  }
+
+  // ==================== 定时同步相关 ====================
+
+  private registerScheduledSyncHandlers(): void {
+    this.registerHandler(
+      'scheduled-sync:initialize',
+      async (_, config: Omit<ScheduledSyncConfig, 'userDataPath'>) => {
+        const syncConfig: ScheduledSyncConfig = {
+          ...config,
+          userDataPath: app.getPath('userData')
+        }
+        return await scheduledSyncManager.initialize(syncConfig)
+      },
+      '初始化定时同步'
+    )
+
+    this.registerHandler(
+      'scheduled-sync:start',
+      async () => await scheduledSyncManager.startScheduledSync(),
+      '启动定时同步'
+    )
+
+    this.registerHandler(
+      'scheduled-sync:stop',
+      async () => await scheduledSyncManager.stopScheduledSync(),
+      '停止定时同步'
+    )
+
+    this.registerHandler(
+      'scheduled-sync:manual-sync',
+      async () => await scheduledSyncManager.manualSync(),
+      '手动同步'
+    )
+
+    this.registerHandler(
+      'scheduled-sync:manual-sync-with-config',
+      async (_, config: Omit<ScheduledSyncConfig, 'userDataPath'>) => {
+        const syncConfig: ScheduledSyncConfig = {
+          ...config,
+          userDataPath: app.getPath('userData')
+        }
+        return await scheduledSyncManager.manualSyncWithConfig(syncConfig)
+      },
+      '使用指定配置手动同步'
+    )
+
+    this.registerHandler(
+      'scheduled-sync:test-connection',
+      async (_, config?: Omit<ScheduledSyncConfig, 'userDataPath'>) => {
+        if (config) {
+          const syncConfig: ScheduledSyncConfig = {
+            ...config,
+            userDataPath: app.getPath('userData')
+          }
+          return await scheduledSyncManager.testConnectionWithConfig(syncConfig)
+        } else {
+          return await scheduledSyncManager.testConnection()
+        }
+      },
+      '测试同步连接'
+    )
+
+    this.registerHandler(
+      'scheduled-sync:get-status',
+      async () => {
+        if (!scheduledSyncManager.isRunning()) {
+          return {
+            success: true,
+            data: {
+              isRunning: false,
+              lastSyncTime: 0,
+              nextSyncTime: 0,
+              syncStatus: SyncStatus.IDLE,
+              config: null
+            }
+          }
+        }
+
+        const status = await scheduledSyncManager.getSyncStatus()
+        return { success: true, data: status }
+      },
+      '获取同步状态'
+    )
+
+    this.registerHandler(
+      'scheduled-sync:update-config',
+      async (_, config: Omit<ScheduledSyncConfig, 'userDataPath'>) => {
+        const syncConfig: ScheduledSyncConfig = {
+          ...config,
+          userDataPath: app.getPath('userData')
+        }
+        return await scheduledSyncManager.updateConfig(syncConfig)
+      },
+      '更新定时同步配置'
+    )
+
+    this.registerHandler(
+      'scheduled-sync:refresh',
+      async () => {
+        logger.info('[主进程] 开始刷新计划同步任务')
+
+        const syncConfig = SyncConfigUtils.loadBaseSyncConfig()
+
+        logger.debug('[主进程] 已加载基础同步配置:', {
+          enabled: syncConfig.enabled,
+          provider: syncConfig.providerType,
+          interval: syncConfig.syncInterval
+        })
+
+        const result = await scheduledSyncManager.updateConfig(syncConfig)
+
+        if (result) {
+          if (syncConfig.enabled) {
+            logger.info('[主进程] 计划同步任务刷新成功，同步已启用')
+          } else {
+            logger.info('[主进程] 计划同步任务刷新成功，Worker 基础功能可用')
+          }
+        } else {
+          logger.warn('[主进程] 计划同步任务刷新失败')
+        }
+
+        return result
+      },
+      '刷新计划同步任务'
+    )
+  }
+
+  // ==================== 系统相关 ====================
+
+  private registerSystemHandlers(): void {
+    this.registerHandler(
+      'app:restart',
+      async () => {
+        logger.info('[主进程] 收到应用重启请求')
+
+        setTimeout(() => {
+          app.relaunch()
+          app.exit()
+        }, 1000)
+
+        return { success: true }
+      },
+      '重启应用'
+    )
   }
 }
 

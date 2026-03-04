@@ -4,7 +4,7 @@ import { mainWindowManager, overlayWindowManager } from '../windows/window-manag
 import logger from '../../utils/logger'
 import store from '../../config/store'
 import { STORE_KEY } from '../../config/common'
-import autoStartManager from '../../utils/auto-start-manager'
+import autoStartManager from '../../system/auto-start-manager'
 import clipboardManager from '../../features/clipboard/manager/clipboard-manager'
 import { appEventBus } from '../../utils/app-event-bus'
 

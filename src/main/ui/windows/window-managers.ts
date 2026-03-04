@@ -399,6 +399,7 @@ export class OverlayWindowManager {
 
       if (shortcutKey && shortcutKey.trim() !== '') {
         globalShortcutManager.registerGlobalShortcut(shortcutKey, () => {
+          logger.debug('[主进程] 全局快捷键触发，开始显示窗口')
           this.toggleWindow(true)
         })
       } else {

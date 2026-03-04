@@ -57,12 +57,12 @@ linux:
   category: Utility
   icon: build/icon/icons
   desktop:
-    StartupWMClass: SuperPaste
-    Name: SuperPaste
-    Comment: a clipboard manager tool
+    entry:
+      name: SuperPaste
+      comment: a clipboard manager tool
+      StartupWMClass: SuperPaste
 appImage:
   artifactName: ${name}-${version}.${ext}
-npmRebuild: false
 publish:
   provider: generic
   url: https://example.com/auto-updates

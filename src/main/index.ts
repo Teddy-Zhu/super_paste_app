@@ -12,10 +12,10 @@ import ipcManager from './communication/ipc-manager'
 import clipboardManager from './features/clipboard/manager/clipboard-manager'
 import clipboardDatabase from './infrastructure/database/clipboard-database'
 import { clearAllDebounceTimers } from './utils/common'
-import { scheduledSyncManager } from './workers/scheduled-sync-manager'
+import { scheduledSyncManager } from './sync/scheduled-sync-manager'
 import { BaseWorkerManager } from './workers/base-worker-manager'
 import type { WorkerConfig } from './types/worker-types'
-import clipboardHistoryCleanerWorkerPath from './workers/clipboard-history-cleaner.worker?modulePath'
+import clipboardHistoryCleanerWorkerPath from './features/clipboard/worker/clipboard-history-cleaner.worker?modulePath'
 import { getCleanupConfig } from './config/cleanup-config'
 
 // 重构后的模块管理器
@@ -25,7 +25,6 @@ import { powerMonitorManager } from './system/power-monitor-manager'
 import { globalShortcutManager } from './system/global-shortcut-manager'
 import { windowStateManager } from './ui/windows/window-state'
 import { SystemIntegrationService } from './system/initialization-services'
-import { IPCHandlerManager } from './communication/ipc-handlers'
 import { appLifecycleManager } from './system/app-lifecycle-manager'
 import { activeWindowService } from './services/active-window-service'
 import { CLIPBOARD_CONFIG } from './config/constants'
@@ -396,7 +395,7 @@ class SuperPasteApp {
    * 设置 IPC 事件处理器
    */
   private setupIPCHandlers(): void {
-    IPCHandlerManager.initialize()
+    ipcManager.initialize()
   }
 
   /**
@@ -555,7 +554,6 @@ class SuperPasteApp {
       logger.info('[主进程] [步骤 7/12] 清理 IPC 事件处理器...')
       try {
         ipcManager.cleanup()
-        IPCHandlerManager.cleanup()
         logger.info('[主进程] [步骤 7/12] ✓ IPC 事件处理器已清理')
       } catch (error) {
         logger.error('[主进程] [步骤 7/12] ✗ 清理 IPC 事件处理器失败:', error)

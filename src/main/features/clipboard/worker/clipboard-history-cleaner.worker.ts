@@ -1,14 +1,14 @@
 import { parentPort } from 'node:worker_threads'
-import { BaseWorker } from './base-worker'
+import { BaseWorker } from '../../../workers/base-worker'
 import type {
   WorkerMessage,
   WorkerRequest,
   WorkerResponse,
   WorkerEvent
-} from '../types/worker-types'
-import type { CleanupConfig, CleanupStats } from '../features/clipboard/types/clipboard-types'
-import logger from '../utils/logger'
-import clipboardDatabase from '../infrastructure/database/clipboard-database'
+} from '../../../types/worker-types'
+import type { CleanupConfig, CleanupStats } from '../types/clipboard-types'
+import logger from '../../../utils/worker-logger'
+import clipboardDatabase from '../../../infrastructure/database/clipboard-database'
 
 /**
  * 剪贴板历史记录清理器 Worker

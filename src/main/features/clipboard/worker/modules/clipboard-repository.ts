@@ -1,7 +1,7 @@
 import { ClipboardDatabase } from '../../../../infrastructure/database/clipboard-database'
 import { ClipboardContent, ClipboardDataConverter, AppInfo, ClipboardHistoryRecord } from '../../types/clipboard-types'
 import { ocrService } from '../../../../services/ocr-service'
-import logger from '../../../../utils/logger'
+import logger from '../../../../utils/worker-logger'
 
 export class ClipboardRepository {
     private database: ClipboardDatabase

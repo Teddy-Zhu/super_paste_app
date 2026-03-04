@@ -2,7 +2,7 @@ import { setOCREnv, init } from '../ocr/main'
 import * as ort from 'onnxruntime-node'
 import { promises as fs } from 'fs'
 import path from 'path'
-import logger from './logger'
+import logger from '../utils/logger'
 import { createCanvas, loadImage, createImageData } from 'canvas'
 
 /**
@@ -77,8 +77,26 @@ export class OCRManager {
   }
 
   /**
+   * 更新 OCR 管理器配置
+   * 当资源路径变化且已初始化时，重置实例以便后续按新路径重新初始化
+   */
+  private updateOptions(options: OCRManagerOptions): void {
+    const nextResourcePath = options.resourcePath
+    const nextIsDev = options.isDev || false
+    const resourcePathChanged = this.resourcePath !== nextResourcePath
+
+    if (resourcePathChanged && this.isInitialized) {
+      logger.warn('OCR 资源路径发生变化，重置已初始化实例以重新加载模型')
+      this.destroy()
+    }
+
+    this.resourcePath = nextResourcePath
+    this.isDev = nextIsDev
+  }
+
+  /**
    * 获取 OCR 管理器单例
-   * @param options 构造选项，仅在首次调用时有效
+   * @param options 构造选项，可用于更新资源路径和运行模式
    */
   public static getInstance(options?: OCRManagerOptions): OCRManager {
     if (!OCRManager.instance) {
@@ -86,6 +104,8 @@ export class OCRManager {
         throw new Error('首次调用 getInstance 时必须提供 options 参数')
       }
       OCRManager.instance = new OCRManager(options)
+    } else if (options) {
+      OCRManager.instance.updateOptions(options)
     }
     return OCRManager.instance
   }

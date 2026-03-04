@@ -1,6 +1,6 @@
 import { app } from 'electron'
 import AutoLaunch from '@teddyzhu/auto-launch'
-import logger from './logger'
+import logger from '../utils/logger'
 
 /**
  * 跨平台开机自启管理器

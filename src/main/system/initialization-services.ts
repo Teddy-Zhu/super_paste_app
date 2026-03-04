@@ -1,27 +1,26 @@
 import clipboardDatabase from '../infrastructure/database/clipboard-database'
-import autoStartManager from '../utils/auto-start-manager'
+import autoStartManager from './auto-start-manager'
 import { STORE_KEY } from '../config/common'
 import store from '../config/store'
 import logger from '../utils/logger'
 
 /**
- * 数据初始化服务
+ * 系统集成服务
+ * 负责应用启动时的初始化任务：创建示例标签数据、同步自启状态
  */
-export class DataInitializationService {
+export class SystemIntegrationService {
   /**
    * 创建示例标签数据（如果不存在）
    */
-  static async createSampleTagsIfNeeded(): Promise<void> {
+  private static async createSampleTagsIfNeeded(): Promise<void> {
     try {
       logger.debug('[主进程] 检查示例标签数据')
 
-      // 检查是否已有标签数据
       const existingTags = clipboardDatabase.getAllTagGroups()
 
       if (existingTags.length === 0) {
         logger.debug('[主进程] 未找到标签数据，创建示例标签')
 
-        // 创建一些示例标签
         const sampleTags = [
           { name: 'Work', color: '#3b82f6', description: 'Work related content' },
           { name: 'Personal', color: '#10b981', description: 'Personal notes and content' },
@@ -41,7 +40,7 @@ export class DataInitializationService {
               updatedAt: Date.now()
             })
 
-            if (!success) { // Changed from `if (success)` to `if (!success)` to match original logic flow (error on failure)
+            if (!success) {
               logger.error(`[主进程] 创建标签失败: ${tag.name}`)
             } else {
               logger.debug(`[主进程] 创建标签成功: ${tag.name}`)
@@ -59,29 +58,20 @@ export class DataInitializationService {
       logger.error('[主进程] 创建示例标签数据失败:', error)
     }
   }
-}
 
-/**
- * 系统集成服务
- */
-export class SystemIntegrationService {
   /**
    * 同步自启状态
    * 检查配置中的自启设置与系统实际状态是否一致，如果不一致则同步
    */
-  static async syncAutoStartStatus(): Promise<void> {
+  private static async syncAutoStartStatus(): Promise<void> {
     try {
       logger.debug('[主进程] 开始同步自启状态')
 
-      // 获取配置中的自启状态
       const configuredAutoStart = store.get(STORE_KEY.SETTINGS_AUTO_START, false) as boolean
-
-      // 获取系统中的实际自启状态
       const actualAutoStart = await autoStartManager.isEnabled()
 
       logger.debug(`[主进程] 自启状态检查 - 配置: ${configuredAutoStart}, 实际: ${actualAutoStart}`)
 
-      // 如果状态不一致，则根据配置更新系统状态
       if (configuredAutoStart !== actualAutoStart) {
         logger.debug(`[主进程] 自启状态不一致，正在同步到配置状态: ${configuredAutoStart}`)
 
@@ -107,10 +97,7 @@ export class SystemIntegrationService {
     try {
       logger.debug('[主进程] 开始初始化系统集成服务')
 
-      // 1. 创建示例标签数据
-      await DataInitializationService.createSampleTagsIfNeeded()
-
-      // 2. 同步自启状态
+      await this.createSampleTagsIfNeeded()
       await this.syncAutoStartStatus()
 
       logger.debug('[主进程] 系统集成服务初始化完成')

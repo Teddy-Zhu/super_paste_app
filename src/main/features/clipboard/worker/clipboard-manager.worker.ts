@@ -9,10 +9,11 @@ import type {
 } from '../../../types/worker-types'
 import type { ClipboardContent, ClipboardManagerConfig, AppInfo } from '../types/clipboard-types'
 import { ClipboardDataConverter } from '../types/clipboard-types'
-import logger from '../../../utils/logger'
+import logger from '../../../utils/worker-logger'
 import { qrCodeService } from '../../../services/qrcode-service'
 import path from 'path'
-
+import fs from 'fs'
+import { ocrService } from '../../../services/ocr-service'
 // Modules
 import { ClipboardPoller } from './modules/clipboard-poller'
 import { ContentProcessor } from './modules/content-processor'
@@ -30,6 +31,8 @@ class ClipboardManagerWorker extends BaseWorker {
   private activeWindowInitialized: boolean = false
   private cachedActiveWindow: any | null = null
   private ocrResourcePath: string = ''
+  private ocrIsDev: boolean = false
+  private ocrInitializing: Promise<boolean> | null = null
 
   constructor() {
     super()
@@ -57,7 +60,7 @@ class ClipboardManagerWorker extends BaseWorker {
     if (params && 'config' in params) {
       config = params.config
       userDataPath = params.userDataPath
-      isPackaged = params.isPackaged || true
+      isPackaged = params.isPackaged ?? true
       appPath = params.appPath
     } else {
       config = params as Partial<ClipboardManagerConfig>
@@ -78,10 +81,14 @@ class ClipboardManagerWorker extends BaseWorker {
 
     // 设置 OCR 相关参数
     this.setupOCRParameters(isPackaged, appPath)
+    if (this.config.enableLocalOCR) {
+      await this.ensureOCRServiceInitialized()
+    }
 
     // 初始化时进行一次全量检查
     try {
       const rawData = this.poller.readClipboardDirect()
+      // logger.info('[ClipboardManagerWorker] Initial check rawData:', rawData)
       const converted = this.processor.convertClipboardData(rawData)
       await this.processor.buildClipboardContent(converted)
       // Store current hash in processor/repo context passed if needed, 
@@ -99,19 +106,87 @@ class ClipboardManagerWorker extends BaseWorker {
   }
 
   private setupOCRParameters(isPackaged?: boolean, appPath?: string): void {
-    // Identical logic to previous version
     try {
       logger.info('[剪贴板管理器 Worker] 是否为打包环境:', isPackaged)
-      if (isPackaged) {
-        this.ocrResourcePath = path.join(appPath || '', 'resources', 'ocr').replace('/app.asar', '')
-        logger.info('[剪贴板管理器 Worker] 打包环境下的 OCR 资源路径:', this.ocrResourcePath)
+      this.ocrIsDev = !isPackaged
+      this.ocrResourcePath = this.resolveOCRResourcePath(Boolean(isPackaged), appPath)
+
+      if (this.ocrResourcePath) {
+        logger.info('[剪贴板管理器 Worker] OCR 资源路径:', this.ocrResourcePath)
       } else {
-        this.ocrResourcePath = path.join(__dirname, '..', '..', 'resources', 'ocr')
+        logger.warn('[剪贴板管理器 Worker] 未找到可用的 OCR 资源路径')
       }
     } catch (error) {
       logger.error('[剪贴板管理器 Worker] OCR 参数设置失败:', error)
       this.ocrResourcePath = ''
+      this.ocrIsDev = false
     }
+  }
+
+  private resolveOCRResourcePath(isPackaged: boolean, appPath?: string): string {
+    const normalizedAppPath = (appPath || '').replace(/[\\/]app\.asar$/, '')
+    const candidates = isPackaged
+      ? [
+        path.join(process.resourcesPath || '', 'resources', 'ocr'),
+        path.join(process.resourcesPath || '', 'ocr'),
+        path.join(normalizedAppPath, 'resources', 'ocr'),
+        path.join(normalizedAppPath, 'ocr')
+      ]
+      : [
+        path.resolve(process.cwd(), 'resources', 'ocr'),
+        path.resolve(normalizedAppPath, 'resources', 'ocr'),
+        path.resolve(__dirname, '..', '..', '..', '..', '..', 'resources', 'ocr')
+      ]
+
+    for (const candidate of candidates) {
+      if (this.isValidOCRResourcePath(candidate)) {
+        return candidate
+      }
+    }
+
+    logger.warn('[剪贴板管理器 Worker] OCR 资源路径候选均不可用:', candidates)
+    return ''
+  }
+
+  private isValidOCRResourcePath(resourcePath: string): boolean {
+    if (!resourcePath) {
+      return false
+    }
+    const requiredFiles = ['ppocr_det.onnx', 'ppocr_rec.onnx', 'ppocr_keys_v1.txt']
+    return requiredFiles.every((fileName) => fs.existsSync(path.join(resourcePath, fileName)))
+  }
+
+  private async ensureOCRServiceInitialized(): Promise<boolean> {
+    if (ocrService.ready) {
+      return true
+    }
+
+    if (!this.ocrResourcePath) {
+      logger.warn('[剪贴板管理器 Worker] OCR 初始化失败：资源路径为空')
+      return false
+    }
+
+    if (this.ocrInitializing) {
+      return this.ocrInitializing
+    }
+
+    this.ocrInitializing = (async () => {
+      try {
+        await ocrService.initialize({
+          resourcePath: this.ocrResourcePath,
+          isDev: this.ocrIsDev
+        })
+        logger.info('[剪贴板管理器 Worker] OCR 服务初始化完成')
+        return true
+      } catch (error) {
+        logger.error('[剪贴板管理器 Worker] OCR 服务初始化失败:', error)
+        return false
+      } finally {
+        this.ocrInitializing = null
+      }
+    })()
+
+    return this.ocrInitializing
   }
 
   public startListening(): void {
@@ -124,6 +199,7 @@ class ClipboardManagerWorker extends BaseWorker {
 
   private async handleClipboardChange(data: ClipboardData): Promise<void> {
     try {
+      // console.log('handleClipboardChange', data)
       if (this.isInErrorBackoff()) return
 
       const converted = this.processor.convertClipboardData(data)
@@ -202,8 +278,12 @@ class ClipboardManagerWorker extends BaseWorker {
     return { ...this.config }
   }
 
-  public updateConfig(newConfig: Partial<ClipboardManagerConfig>): void {
+  public async updateConfig(newConfig: Partial<ClipboardManagerConfig>): Promise<void> {
+    const prevEnableLocalOCR = this.config.enableLocalOCR
     this.config = { ...this.config, ...newConfig }
+    if (!prevEnableLocalOCR && this.config.enableLocalOCR) {
+      await this.ensureOCRServiceInitialized()
+    }
   }
 
   public isListeningActive(): boolean {
@@ -325,10 +405,12 @@ class ClipboardManagerWorker extends BaseWorker {
     try {
       // 使用repository的updateOCR方法来触发OCR解析
       // 这里直接调用ocrService进行OCR解析
-      const { ocrService } = await import('../../../services/ocr-service')
-
+      logger.info('[ClipboardManagerWorker] Parsing OCR from item:', itemId)
       if (!ocrService.ready) {
-        return { success: false, message: 'OCR service not ready' }
+        const initialized = await this.ensureOCRServiceInitialized()
+        if (!initialized) {
+          return { success: false, message: 'OCR service initialization failed' }
+        }
       }
 
       const ocrResult = await ocrService.recognizeText(record.content_image)
@@ -390,7 +472,7 @@ class ClipboardManagerWorker extends BaseWorker {
 
       switch (request.method) {
         case 'initialize': result = await this.initialize(request.params); break
-        case 'updateConfig': result = this.updateConfig(request.params); break
+        case 'updateConfig': result = await this.updateConfig(request.params); break
         case 'getConfig': result = this.getConfig(); break
         case 'startListening': result = this.startListening(); break
         case 'stopListening': result = this.stopListening(); break

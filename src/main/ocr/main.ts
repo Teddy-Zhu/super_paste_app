@@ -223,7 +223,7 @@ function setOCREnv(op: {
   canvas?: (w: number, h: number) => any
   imageData?
 }) {
-  dev = Boolean(op.dev)
+  dev = false
   canlog = dev || Boolean(op.log)
   if (!dev) {
     task.l = () => { }
