@@ -4,7 +4,7 @@
  * 基础的防抖、节流功能已移至 useUtils.ts
  */
 
-import { ref, readonly, type Ref } from 'vue'
+import { ref, readonly, shallowRef, type Ref } from 'vue'
 import { useTimerManager } from './useUtils'
 
 // ==================== 类型定义 ====================
@@ -43,16 +43,16 @@ export function useBatchUpdate<T>(
   delay: number = 16 // 一帧的时间
 ): BatchUpdateManager<T> {
   const timerManager = useTimerManager()
-  const pendingUpdates = ref<T[]>([])
+  const pendingUpdates = shallowRef<T[]>([])
   let timeoutId: number | null = null
 
   const addUpdate = (item: T) => {
-    pendingUpdates.value.push(item as any)
+    pendingUpdates.value.push(item)
 
     if (timeoutId === null) {
       timeoutId = timerManager.setTimeout(() => {
         if (pendingUpdates.value.length > 0) {
-          updateFn([...pendingUpdates.value] as T[])
+          updateFn([...pendingUpdates.value])
           pendingUpdates.value = []
         }
         timeoutId = null
@@ -67,7 +67,7 @@ export function useBatchUpdate<T>(
     }
 
     if (pendingUpdates.value.length > 0) {
-      updateFn([...pendingUpdates.value] as T[])
+      updateFn([...pendingUpdates.value])
       pendingUpdates.value = []
     }
   }
@@ -124,7 +124,7 @@ export function useVirtualScroll<T>(
   }
 
   const setItems = (newItems: T[]) => {
-    items.value = newItems as any
+    items.value = newItems
     totalHeight.value = newItems.length * itemHeight
 
     // 重新计算可见范围

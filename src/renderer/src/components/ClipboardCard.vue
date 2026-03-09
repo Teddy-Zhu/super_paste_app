@@ -10,7 +10,7 @@ import IconTag from '~icons/mdi/tag'
 import IconCheck from '~icons/mdi/check'
 import IconDelete from '~icons/mdi/delete'
 import IconCircle from '~icons/mdi/circle'
-import { useContextMenu } from '@renderer/composables/useContextMenu'
+import { useContextMenu, type ContextMenuItem } from '@renderer/composables/useContextMenu'
 import { tags, clipboard } from '@renderer/api/renderer-api'
 import ImageDisplay from './ImageDisplay.vue'
 
@@ -36,46 +36,88 @@ const emit = defineEmits<{
   delete: [itemId: string]
 }>()
 
-// 计算当前项目的应用信息
-const sourceAppInfo = computed(() => {
-  if (!props.item.source_app || !props.apps) {
-    return null
+const PREVIEW_MAX_LENGTH = 150
+const COLOR_REGEX = /^#[0-9a-fA-F]{6}$|^#[0-9a-fA-F]{8}$/
+
+const TYPE_LABEL_MAP: Record<string, string> = {
+  text: 'Text',
+  image: 'Image',
+  html: 'HTML',
+  url: 'URL',
+  files: 'Files',
+  email: 'Email',
+  phone: 'Phone',
+  code: 'Code',
+  rtf: 'RTF',
+  color: 'Color',
+  empty: 'Empty'
+}
+
+const CARD_THEME_MAP: Record<string, string> = {
+  text: 'blue',
+  image: 'green',
+  html: 'purple',
+  url: 'orange',
+  files: 'teal',
+  email: 'red',
+  phone: 'red',
+  code: 'purple',
+  rtf: 'blue',
+  color: 'green',
+  empty: 'gray'
+}
+
+const stripHtmlTags = (html: string): string => html.replace(/<[^>]*>/g, '')
+
+const truncate = (text: string, maxLength: number): string => {
+  return text.length > maxLength ? `${text.slice(0, maxLength)}...` : text
+}
+
+const getFileNameFromPath = (path: string): string => {
+  return path.split('/').pop() || 'Unknown file'
+}
+
+const safeDecodeURIComponent = (value: string): string => {
+  try {
+    return decodeURIComponent(value)
+  } catch {
+    return value
   }
-  return props.apps[props.item.source_app] || null
+}
+
+const hasConvertibleContent = (item: ClipboardItem): boolean => {
+  const { text, html, rtf, files } = item.content
+  return Boolean(text?.trim() || html?.trim() || rtf?.trim() || files?.length)
+}
+
+const sourceAppInfo = computed(() => {
+  return props.item.source_app && props.apps ? props.apps[props.item.source_app] || null : null
 })
 
-// 计算 RTF 内容的 HTML 表示（使用 rtf-to-html-converter 和 DOMPurify）
 const rtfToHtml = computed(() => {
   if (!props.item.content.rtf) return ''
 
   try {
-    const htmlContent = convertRtfToHtml(props.item.content.rtf)
-    const cleanHtml = htmlContent || '<p>富文本内容</p>'
-    return DOMPurify.sanitize(cleanHtml)
+    return DOMPurify.sanitize(convertRtfToHtml(props.item.content.rtf) || '<p>富文本内容</p>')
   } catch (error) {
     console.warn('RTF 转换失败:', error)
     return DOMPurify.sanitize('<p>富文本内容</p>')
   }
 })
 
-// 计算 HTML 内容（用于原生渲染，使用 DOMPurify 清理）
 const htmlContent = computed(() => {
-  if (!props.item.content.html) return ''
-  return DOMPurify.sanitize(props.item.content.html)
+  return props.item.content.html ? DOMPurify.sanitize(props.item.content.html) : ''
 })
 
-// 获取内容预览文本
 const getContentPreview = (item: ClipboardItem): string => {
   const content = item.content
 
   if (content.text) {
-    return content.text.length > 150 ? content.text.substring(0, 150) + '...' : content.text
+    return truncate(content.text, PREVIEW_MAX_LENGTH)
   }
 
   if (content.html) {
-    // 移除HTML标签，只显示文本内容
-    const textContent = content.html.replace(/<[^>]*>/g, '')
-    return textContent.length > 150 ? textContent.substring(0, 150) + '...' : textContent
+    return truncate(stripHtmlTags(content.html), PREVIEW_MAX_LENGTH)
   }
 
   if (content.image) {
@@ -88,53 +130,13 @@ const getContentPreview = (item: ClipboardItem): string => {
 
   if (content.files && content.files.length > 0) {
     const fileCount = content.files.length
-    const fileName = content.files[0].split('/').pop() || 'Unknown file'
-    if (fileCount === 1) {
-      return `File: ${fileName}`
-    } else {
-      return `${fileCount} files (${fileName}...)`
-    }
+    const fileName = getFileNameFromPath(content.files[0])
+    return fileCount === 1 ? `File: ${fileName}` : `${fileCount} files (${fileName}...)`
   }
 
   return 'Unknown content'
 }
 
-// 获取内容标题
-// const getContentTitle = (item: ClipboardItem): string => {
-//   const content = item.content
-
-//   if (content.text) {
-//     const firstLine = content.text.split('\n')[0]
-//     return firstLine.length > 50 ? firstLine.substring(0, 50) + '...' : firstLine
-//   }
-
-//   if (content.html) {
-//     const textContent = content.html.replace(/<[^>]*>/g, '')
-//     const firstLine = textContent.split('\n')[0]
-//     return firstLine.length > 50 ? firstLine.substring(0, 50) + '...' : firstLine
-//   }
-
-//   if (content.image) {
-//     return 'Image'
-//   }
-
-//   if (content.rtf) {
-//     return 'Rich Text Document'
-//   }
-
-//   if (content.bookmark) {
-//     try {
-//       const bookmark = JSON.parse(content.bookmark)
-//       return bookmark.title || bookmark.url || 'Link'
-//     } catch {
-//       return 'Link'
-//     }
-//   }
-
-//   return 'Unknown Content'
-// }
-
-// 格式化时间为英文
 const formatTime = (timestamp: number): string => {
   const now = new Date()
   const date = new Date(timestamp)
@@ -156,13 +158,10 @@ const formatTime = (timestamp: number): string => {
   }
 }
 
-// 存储图片尺寸信息
 const imageDimensions = ref<{ width: number; height: number } | null>(null)
 
-// 处理图片加载完成事件
 const handleImageLoad = (event: Event) => {
   const img = event.target as HTMLImageElement
-  console.log('Image loaded with dimensions:', img.naturalWidth, img.naturalHeight)
   if (img) {
     imageDimensions.value = {
       width: img.naturalWidth,
@@ -171,49 +170,31 @@ const handleImageLoad = (event: Event) => {
   }
 }
 
-// 解析文件路径
 const parseFilePaths = computed(() => {
-  if (props.item.primaryType !== 'files' || (!props.item.content.text && !props.item.content.files)) {
+  if (
+    props.item.primaryType !== 'files' ||
+    (!props.item.content.text && !props.item.content.files)
+  ) {
     return []
   }
-  const filePaths: string[] = []
 
-  const text = props.item.content.text
-  if (text) {
-    const lines = text.split('\n')
+  const textPaths = (props.item.content.text || '')
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean)
+  const filePaths = (props.item.content.files || []).map(safeDecodeURIComponent)
 
-    for (const line of lines) {
-      const trimmedLine = line.trim()
-      if (trimmedLine) {
-        filePaths.push(trimmedLine)
-      }
-    }
-  }
-
-  if (props.item.content.files) {
-    for (const file of props.item.content.files) {
-      filePaths.push(decodeURIComponent(file))
-    }
-  }
-
-  return filePaths
+  return [...textPaths, ...filePaths]
 })
 
-// 获取文件显示名称
 const getFileDisplayName = computed(() => {
   const files = parseFilePaths.value
   if (files.length === 0) return ''
 
-  if (files.length === 1) {
-    const fileName = files[0].split('/').pop() || 'Unknown file'
-    return fileName
-  } else {
-    const fileName = files[0].split('/').pop() || 'Unknown file'
-    return `${fileName} 等${files.length}个文件`
-  }
+  const firstFileName = getFileNameFromPath(files[0])
+  return files.length === 1 ? firstFileName : `${firstFileName} 等${files.length}个文件`
 })
 
-// 获取内容摘要信息
 const getContentSummary = (item: ClipboardItem): string => {
   const content = item.content
 
@@ -237,7 +218,7 @@ const getContentSummary = (item: ClipboardItem): string => {
   }
 
   if (content.html) {
-    const textContent = content.html.replace(/<[^>]*>/g, '')
+    const textContent = stripHtmlTags(content.html)
     return `${textContent.length} character${textContent.length !== 1 ? 's' : ''}`
   }
 
@@ -248,133 +229,52 @@ const getContentSummary = (item: ClipboardItem): string => {
   return 'Unknown content'
 }
 
-// 获取类型标签
 const getTypeLabel = (type: string): string => {
-  switch (type) {
-    case 'text':
-      return 'Text'
-    case 'image':
-      return 'Image'
-    case 'html':
-      return 'HTML'
-    case 'url':
-      return 'URL'
-    case 'files':
-      return 'Files'
-    case 'email':
-      return 'Email'
-    case 'phone':
-      return 'Phone'
-    case 'code':
-      return 'Code'
-    case 'rtf':
-      return 'RTF'
-    case 'color':
-      return 'Color'
-    case 'empty':
-      return 'Empty'
-    default:
-      return 'Text'
-  }
+  return TYPE_LABEL_MAP[type] || 'Text'
 }
 
-// 检测是否为颜色类型并获取颜色值
 const colorValue = computed(() => {
   if (props.item.primaryType === 'color' && props.item.content.text) {
     const text = props.item.content.text.trim()
-    const colorRegex = /^#[0-9a-fA-F]{6}$|^#[0-9a-fA-F]{8}$/
-    if (colorRegex.test(text)) {
+    if (COLOR_REGEX.test(text)) {
       return text
     }
   }
   return null
 })
 
-// 计算颜色的反色
 const getContrastColor = computed(() => {
   if (!colorValue.value) return '#000000'
 
-  // 移除 # 号
   const hex = colorValue.value.replace('#', '')
-
-  // 获取 RGB 值
   const r = parseInt(hex.substring(0, 2), 16)
   const g = parseInt(hex.substring(2, 4), 16)
   const b = parseInt(hex.substring(4, 6), 16)
-
-  // 计算亮度 (使用 YIQ 公式)
   const yiq = (r * 299 + g * 587 + b * 114) / 1000
 
-  // 根据亮度返回黑色或白色
   return yiq >= 128 ? '#000000' : '#ffffff'
 })
 
-// 获取卡片主题色
 const getCardTheme = (primaryType: string): string => {
-  // 根据 primaryType 分配主题色
-  const themeMap: Record<string, string> = {
-    text: 'blue',
-    image: 'green',
-    html: 'purple',
-    url: 'orange',
-    files: 'teal',
-    email: 'red',
-    phone: 'red',
-    code: 'purple',
-    rtf: 'blue',
-    color: 'green',
-    empty: 'gray'
-  }
-
-  return themeMap[primaryType] || 'blue'
+  return CARD_THEME_MAP[primaryType] || 'blue'
 }
 
-// 使用全局上下文菜单管理器
 const { showContextMenu } = useContextMenu()
 
-// 处理点击事件
 const handleClick = () => {
   emit('click', props.item.id)
 }
 
-// 处理右键菜单
 const handleContextMenu = (event: MouseEvent) => {
-  // 检查是否有可转换为文本的内容
-  const hasConvertibleContent = (content: any): boolean => {
-    // 检查是否有直接的文本内容
-    if (content.text && content.text.trim()) {
-      return true
-    }
-
-    // 检查是否有可转换的其他格式
-    if (content.html && content.html.trim()) {
-      return true
-    }
-
-    if (content.rtf && content.rtf.trim()) {
-      return true
-    }
-
-    if (content.files && content.files.length > 0) {
-      return true
-    }
-
-    // 图片不支持转换为文本
-
-    return false
-  }
-
-  // 创建基础菜单项
-  const menuItems = [
+  const menuItems: ContextMenuItem[] = [
     {
       label: '粘贴为纯文本',
       icon: IconTextBox,
-      action: () => handleRestoreAsText(),
-      disabled: !hasConvertibleContent(props.item.content) // 如果没有可转换为文本的内容则禁用
+      action: handleRestoreAsText,
+      disabled: !hasConvertibleContent(props.item)
     }
   ]
 
-  // 如果是图片类型且有OCR文字,添加复制OCR文字选项
   if (
     props.item.primaryType === 'image' &&
     props.item.content.ocr &&
@@ -383,12 +283,10 @@ const handleContextMenu = (event: MouseEvent) => {
     menuItems.push({
       label: '复制OCR文字',
       icon: IconTextBox,
-      action: () => handleRestoreOcrText(),
-      disabled: false
+      action: handleRestoreOcrText
     })
   }
 
-  // 如果是图片类型且没有OCR文字,添加解析OCR选项
   if (
     props.item.primaryType === 'image' &&
     (!props.item.content.ocr || !props.item.content.ocr.trim())
@@ -396,130 +294,100 @@ const handleContextMenu = (event: MouseEvent) => {
     menuItems.push({
       label: '解析OCR',
       icon: IconTextBox,
-      action: () => handleParseOcr(),
-      disabled: false
+      action: handleParseOcr
     })
   }
 
-  // 如果是图片类型,添加解析二维码选项
   if (props.item.primaryType === 'image') {
     menuItems.push({
       label: '解析二维码',
       icon: IconTextBox,
-      action: () => handleParseQRCode(),
-      disabled: false
+      action: handleParseQRCode
     })
   }
 
-  // 如果是文本、HTML或URL类型，添加生成二维码选项
-  if (props.item.primaryType === 'text' || props.item.primaryType === 'html' || props.item.primaryType === 'url') {
+  if (['text', 'html', 'url'].includes(props.item.primaryType)) {
     menuItems.push({
       label: '生成二维码',
       icon: IconTextBox,
-      action: () => handleGenerateQRCode(),
-      disabled: false
+      action: handleGenerateQRCode
     })
   }
 
-  // 添加标签相关菜单项
   if (props.allTags && props.allTags.length > 0) {
-    // 获取当前项目已有的标签ID
-    const currentTagIds = props.item.tags?.map((tag) => tag.id) || []
-
-    // 创建标签二级菜单
-    const tagSubmenu: any[] = []
-
-    // 添加可选择的标签
-    props.allTags.forEach((tag) => {
-      const isTagged = currentTagIds.includes(tag.id)
-      tagSubmenu.push({
+    const currentTagIds = new Set(props.item.tags?.map((tag) => tag.id) || [])
+    const tagSubmenu: ContextMenuItem[] = props.allTags.map((tag) => {
+      const isTagged = currentTagIds.has(tag.id)
+      return {
         label: isTagged ? `${tag.name}` : tag.name,
-        icon: isTagged ? IconCheck : IconCircle, // 已绑定显示勾选，未绑定显示圆点
-        iconColor: tag.color, // 使用标签定义的颜色
-        action: () => (isTagged ? handleRemoveTag(tag.id) : handleAddTag(tag.id)),
-        disabled: false
-      })
+        icon: isTagged ? IconCheck : IconCircle,
+        iconColor: tag.color,
+        action: () => (isTagged ? handleRemoveTag(tag.id) : handleAddTag(tag.id))
+      }
     })
 
-    // 如果当前不是all标签且有标签，添加移除当前标签选项
-    if (props.activeTagId !== 'all' && currentTagIds.length > 0) {
+    if (props.activeTagId !== 'all' && currentTagIds.size > 0) {
       tagSubmenu.push({
         label: '---',
-        icon: '',
-        action: () => { },
+        action: () => {},
         disabled: true
       })
 
       tagSubmenu.push({
         label: '移除当前标签',
         icon: IconDelete,
-        action: () => handleRemoveCurrentTag(),
-        disabled: false
+        action: handleRemoveCurrentTag
       })
     }
 
-    // 添加标签主菜单项（带二级菜单）
     menuItems.push({
       label: '标签管理',
       icon: IconTag,
-      action: () => { }, // 二级菜单不需要action
-      disabled: false,
+      action: () => {},
       submenu: tagSubmenu
-    } as any)
+    })
   }
 
-  // 添加分隔符
   menuItems.push({
     label: '---',
-    icon: '',
-    action: () => { },
+    action: () => {},
     disabled: true
-  } as any)
+  })
 
-  // 添加删除选项
   menuItems.push({
     label: '删除',
     icon: IconDelete,
-    action: () => handleDeleteItem(),
-    disabled: false
-  } as any)
+    action: handleDeleteItem
+  })
 
-  // 显示上下文菜单
   showContextMenu(event, menuItems, `clipboard-card-${props.item.id}`)
 }
 
-// 处理粘贴为纯文本
 const handleRestoreAsText = () => {
   emit('restoreAsText', props.item.id)
 }
 
-// 处理复制OCR文字
 const handleRestoreOcrText = () => {
   emit('restoreOcrText', props.item.id)
 }
 
-// 处理解析二维码
 const handleParseQRCode = () => {
   emit('parseQRCode', props.item.id)
 }
 
-// 处理解析OCR
 const handleParseOcr = () => {
   emit('parseOcr', props.item.id)
 }
 
-// 处理生成二维码
 const handleGenerateQRCode = () => {
   emit('generateQRCode', props.item.id)
 }
 
-// 处理删除项目
 const handleDeleteItem = async () => {
   try {
     const success = await clipboard.deleteItem(props.item.id)
     if (success) {
       emit('delete', props.item.id)
-      console.log('剪贴板项目删除成功')
     } else {
       alert('删除失败')
     }
@@ -529,29 +397,24 @@ const handleDeleteItem = async () => {
   }
 }
 
-// 处理添加标签
 const handleAddTag = async (tagId: string) => {
   try {
     await tags.bindTagToRecord(props.item.id, tagId)
-    console.log('标签绑定成功')
   } catch (error) {
     console.error('绑定标签失败:', error)
     alert('绑定标签失败: ' + (error as Error).message)
   }
 }
 
-// 处理移除标签
 const handleRemoveTag = async (tagId: string) => {
   try {
     await tags.unbindTagFromRecord(props.item.id, tagId)
-    console.log('标签解绑成功')
   } catch (error) {
     console.error('解绑标签失败:', error)
     alert('解绑标签失败: ' + (error as Error).message)
   }
 }
 
-// 处理移除当前标签（当前tab不是all时）
 const handleRemoveCurrentTag = async () => {
   if (!props.activeTagId || props.activeTagId === 'all') {
     return
@@ -559,19 +422,15 @@ const handleRemoveCurrentTag = async () => {
 
   try {
     await tags.unbindTagFromRecord(props.item.id, props.activeTagId)
-    console.log('当前标签解绑成功')
   } catch (error) {
     console.error('解绑当前标签失败:', error)
     alert('解绑当前标签失败: ' + (error as Error).message)
   }
 }
 
-// 计算快捷键标签
 const shortcutLabel = computed(() => {
-  // 只显示前9个项目的快捷键（1-9）
   if (props.index < 9) {
     const keyNumber = props.index + 1
-    // 检测操作系统来显示正确的修饰键
     const isMac = navigator.userAgent.includes('Mac')
     const modifierKey = isMac ? '⌘' : 'Ctrl'
     return `${modifierKey} + ${keyNumber}`
@@ -581,8 +440,12 @@ const shortcutLabel = computed(() => {
 </script>
 
 <template>
-  <div class="clipboard-card" :class="[`theme-${getCardTheme(item.primaryType)}`, { selected: isSelected }]"
-    @click="handleClick" @contextmenu="handleContextMenu">
+  <div
+    class="clipboard-card"
+    :class="[`theme-${getCardTheme(item.primaryType)}`, { selected: isSelected }]"
+    @click="handleClick"
+    @contextmenu="handleContextMenu"
+  >
     <!-- 卡片头部 -->
     <div class="card-header">
       <div class="header-left">
@@ -618,8 +481,11 @@ const shortcutLabel = computed(() => {
       </div>
 
       <!-- 颜色预览 -->
-      <div class="card-color" v-else-if="item.primaryType === 'color' && colorValue"
-        :style="{ backgroundColor: colorValue || undefined }">
+      <div
+        class="card-color"
+        v-else-if="item.primaryType === 'color' && colorValue"
+        :style="{ backgroundColor: colorValue || undefined }"
+      >
         <div class="color-display">
           <span class="color-text" :style="{ color: getContrastColor }">{{ colorValue }}</span>
         </div>
@@ -627,8 +493,12 @@ const shortcutLabel = computed(() => {
 
       <!-- 图片预览 -->
       <div class="card-image" v-else-if="item.primaryType === 'image' && item.content.image">
-        <ImageDisplay :image-data="item.content.image" alt="Image preview" image-class="card-image-inner"
-          @load="handleImageLoad" />
+        <ImageDisplay
+          :image-data="item.content.image"
+          alt="Image preview"
+          image-class="card-image-inner"
+          @load="handleImageLoad"
+        />
       </div>
 
       <!-- 文件路径预览 -->
@@ -647,16 +517,17 @@ const shortcutLabel = computed(() => {
       </div>
 
       <!-- 其他类型内容预览 -->
-      <div class="card-preview" v-else-if="
-        item.primaryType !== 'image' &&
-        item.primaryType !== 'color' &&
-        item.primaryType !== 'files'
-      ">
+      <div
+        class="card-preview"
+        v-else-if="
+          item.primaryType !== 'image' &&
+          item.primaryType !== 'color' &&
+          item.primaryType !== 'files'
+        "
+      >
         {{ getContentPreview(item) }}
       </div>
-      <div v-else>
-        No Preview
-      </div>
+      <div v-else>No Preview</div>
     </div>
 
     <!-- 卡片底部信息 -->
@@ -664,8 +535,13 @@ const shortcutLabel = computed(() => {
       <!-- 左侧标签颜色点 -->
       <div class="footer-left">
         <div v-if="item.tags && item.tags.length > 0" class="tag-dots">
-          <div v-for="tag in item.tags" :key="tag.id" class="tag-dot" :style="{ backgroundColor: tag.color }"
-            :title="tag.name"></div>
+          <div
+            v-for="tag in item.tags"
+            :key="tag.id"
+            class="tag-dot"
+            :style="{ backgroundColor: tag.color }"
+            :title="tag.name"
+          ></div>
         </div>
       </div>
 
@@ -968,7 +844,7 @@ const shortcutLabel = computed(() => {
   border-radius: 12px; */
 }
 
-.card-image> :first-child {
+.card-image > :first-child {
   flex: 1;
   display: flex;
   align-items: center;
@@ -1188,7 +1064,6 @@ const shortcutLabel = computed(() => {
 }
 
 @keyframes shortcut-pulse {
-
   0%,
   100% {
     transform: scale(1);

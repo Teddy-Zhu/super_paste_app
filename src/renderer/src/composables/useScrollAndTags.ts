@@ -95,13 +95,13 @@ export function useScrollAndTags(
   })
 
   // 提取状态引用
-  const allTags = computed(() => tagStateManager.state.value.allTags)
-  const activeTagId = computed(() => tagStateManager.state.value.activeTagId)
-  const isTagSwitching = computed(() => tagStateManager.state.value.isTagSwitching)
-  const tagStats = computed(() => tagStateManager.state.value.tagStats)
+  const allTags = computed<TagGroup[]>(() => tagStateManager.state.value.allTags)
+  const activeTagId = computed<string>(() => tagStateManager.state.value.activeTagId)
+  const isTagSwitching = computed<boolean>(() => tagStateManager.state.value.isTagSwitching)
+  const tagStats = computed<Record<string, number>>(() => tagStateManager.state.value.tagStats)
 
   // 计算标签组件数据
-  const tabs = computed(() => {
+  const tabs = computed<TabData[]>(() => {
     const allTab: TabData = {
       id: 'all',
       label: 'All',
@@ -484,11 +484,11 @@ export function useScrollAndTags(
     isScrolling: readonly(isScrolling),
 
     // 标签状态
-    allTags: allTags as unknown as Ref<TagGroup[]>,
+    allTags,
     activeTagId: readonly(activeTagId),
     isTagSwitching: readonly(isTagSwitching),
     tagStats: readonly(tagStats),
-    tabs: tabs as unknown as Ref<TabData[]>,
+    tabs,
 
     // 滚动方法
     scrollToSelectedItem,

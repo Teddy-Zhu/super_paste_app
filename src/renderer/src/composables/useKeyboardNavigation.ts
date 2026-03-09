@@ -3,7 +3,7 @@
  * 管理键盘事件处理和导航逻辑
  */
 
-import { ref, type Ref } from 'vue'
+import { ref, readonly, type Ref } from 'vue'
 import type { ClipboardItem } from '@renderer/api/types'
 import type { KeyboardNavigationManager } from '@renderer/types/overlay'
 

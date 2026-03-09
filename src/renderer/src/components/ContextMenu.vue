@@ -1,176 +1,167 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
-import { useContextMenu } from '@renderer/composables/useContextMenu'
+import { computed, onUnmounted, ref } from 'vue'
+import { useContextMenu, type ContextMenuItem } from '@renderer/composables/useContextMenu'
 import IconChevronRight from '~icons/mdi/chevron-right'
 
 const { contextMenuState, hideContextMenu } = useContextMenu()
 
-// 二级菜单状态
-const submenuState = ref({
+const SUBMENU_WIDTH = 120
+const MENU_ITEM_HEIGHT = 24
+const MENU_PADDING = 8
+const VIEWPORT_MARGIN = 10
+const MENU_CLOSE_DELAY = 150
+
+const submenuState = ref<{
+  visible: boolean
+  x: number
+  y: number
+  items: ContextMenuItem[]
+}>({
   visible: false,
   x: 0,
   y: 0,
-  items: [] as any[]
+  items: []
 })
 
-// 菜单悬停状态
 const isMouseInMainMenu = ref(false)
 const isMouseInSubmenu = ref(false)
 let closeMenuTimer: number | null = null
 
-// 计算菜单位置样式
-const menuStyle = computed(() => {
-  if (!contextMenuState.visible) return { display: 'none' }
+const getMenuStyle = (visible: boolean, x: number, y: number, zIndex: number) => {
+  if (!visible) {
+    return { display: 'none' }
+  }
 
   return {
     position: 'fixed' as const,
-    zIndex: 9999,
-    left: `${contextMenuState.x}px`,
-    top: `${contextMenuState.y}px`
-  }
-})
-
-// 计算二级菜单位置样式
-const submenuStyle = computed(() => {
-  if (!submenuState.value.visible) return { display: 'none' }
-
-  return {
-    position: 'fixed' as const,
-    zIndex: 10000,
-    left: `${submenuState.value.x}px`,
-    top: `${submenuState.value.y}px`
-  }
-})
-
-// 处理菜单项点击
-const handleItemClick = (item: any) => {
-  if (item.disabled) return
-
-  if (item.submenu) {
-    // 显示二级菜单
-    showSubmenu(item)
-  } else {
-    // 执行操作并关闭菜单
-    item.action()
-    hideContextMenu()
-    hideSubmenu()
+    zIndex,
+    left: `${x}px`,
+    top: `${y}px`
   }
 }
 
-// 显示二级菜单
-const showSubmenu = (item: any, event?: MouseEvent) => {
-  const menuElement = document.querySelector('.context-menu')
+const menuStyle = computed(() =>
+  getMenuStyle(contextMenuState.visible, contextMenuState.x, contextMenuState.y, 9999)
+)
+
+const submenuStyle = computed(() =>
+  getMenuStyle(submenuState.value.visible, submenuState.value.x, submenuState.value.y, 10000)
+)
+
+const clearCloseMenuTimer = () => {
+  if (closeMenuTimer !== null) {
+    clearTimeout(closeMenuTimer)
+    closeMenuTimer = null
+  }
+}
+
+const scheduleMenuClose = (callback: () => void) => {
+  clearCloseMenuTimer()
+  closeMenuTimer = window.setTimeout(() => {
+    if (!isMouseInMainMenu.value && !isMouseInSubmenu.value) {
+      callback()
+    }
+  }, MENU_CLOSE_DELAY)
+}
+
+const hideSubmenu = () => {
+  submenuState.value = {
+    ...submenuState.value,
+    visible: false,
+    items: []
+  }
+  isMouseInSubmenu.value = false
+  clearCloseMenuTimer()
+}
+
+const closeAllMenus = () => {
+  hideSubmenu()
+  hideContextMenu()
+}
+
+const handleItemClick = (item: ContextMenuItem) => {
+  if (item.disabled) return
+
+  if (item.submenu?.length) {
+    showSubmenu(item)
+    return
+  }
+
+  item.action()
+  closeAllMenus()
+}
+
+const showSubmenu = (item: ContextMenuItem, event?: MouseEvent) => {
+  const submenuItems = item.submenu ?? []
+  if (submenuItems.length === 0) {
+    hideSubmenu()
+    return
+  }
+
+  const menuElement = document.querySelector('.context-menu:not(.submenu)')
   if (!menuElement) return
 
   const menuRect = menuElement.getBoundingClientRect()
 
-  // 计算二级菜单位置，确保不超出屏幕边界
-  let submenuX = menuRect.right - 2 // 减少间隙，避免鼠标移动时关闭菜单
-  let submenuY = menuRect.top
+  let submenuX = menuRect.right - 2
+  let submenuY = event ? event.clientY - 10 : menuRect.top
 
-  // 如果有鼠标事件，使用鼠标位置作为Y坐标参考
-  if (event) {
-    submenuY = event.clientY - 10
+  if (submenuX + SUBMENU_WIDTH > window.innerWidth - VIEWPORT_MARGIN) {
+    submenuX = menuRect.left - SUBMENU_WIDTH + 2
   }
 
-  // 检查右边界
-  const submenuWidth = 120 // 估算的二级菜单宽度
-  if (submenuX + submenuWidth > window.innerWidth - 10) {
-    submenuX = menuRect.left - submenuWidth + 2 // 显示在左侧，减少间隙
-  }
-
-  // 检查下边界
-  const submenuHeight = item.submenu.length * 24 + 8 // 估算的二级菜单高度
-  if (submenuY + submenuHeight > window.innerHeight - 10) {
-    submenuY = window.innerHeight - submenuHeight - 10
+  const submenuHeight = submenuItems.length * MENU_ITEM_HEIGHT + MENU_PADDING
+  if (submenuY + submenuHeight > window.innerHeight - VIEWPORT_MARGIN) {
+    submenuY = window.innerHeight - submenuHeight - VIEWPORT_MARGIN
   }
 
   submenuState.value = {
     visible: true,
     x: submenuX,
     y: submenuY,
-    items: item.submenu
+    items: submenuItems
   }
 
-  // 清除任何待执行的关闭定时器
   clearCloseMenuTimer()
 }
 
-// 清除关闭菜单定时器
-const clearCloseMenuTimer = () => {
-  if (closeMenuTimer) {
-    clearTimeout(closeMenuTimer)
-    closeMenuTimer = null
-  }
+const handleSubmenuItemClick = (item: ContextMenuItem) => {
+  if (item.disabled) return
+  item.action()
+  closeAllMenus()
 }
 
-// 隐藏二级菜单
-const hideSubmenu = () => {
-  submenuState.value.visible = false
-  isMouseInSubmenu.value = false
-  clearCloseMenuTimer()
-}
-
-// 处理二级菜单项点击
-const handleSubmenuItemClick = (item: any) => {
-  if (!item.disabled) {
-    item.action()
-    hideContextMenu()
-    hideSubmenu()
-  }
-}
-
-// 鼠标进入主菜单
 const handleMainMenuMouseEnter = () => {
   isMouseInMainMenu.value = true
   clearCloseMenuTimer()
 }
 
-// 鼠标离开主菜单
 const handleMainMenuMouseLeave = () => {
   isMouseInMainMenu.value = false
-  // 延迟关闭，给用户时间移动到二级菜单
-  closeMenuTimer = window.setTimeout(() => {
-    // 只有当鼠标不在任何菜单中时才关闭菜单
-    if (!isMouseInMainMenu.value && !isMouseInSubmenu.value) {
-      hideSubmenu()
-      // 如果没有二级菜单显示，也关闭主菜单
-      if (!submenuState.value.visible) {
-        hideContextMenu()
-      }
-    }
-  }, 150)
+  scheduleMenuClose(closeAllMenus)
 }
 
-// 鼠标进入二级菜单
 const handleSubmenuMouseEnter = () => {
   isMouseInSubmenu.value = true
   clearCloseMenuTimer()
 }
 
-// 鼠标离开二级菜单
 const handleSubmenuMouseLeave = () => {
   isMouseInSubmenu.value = false
-  // 延迟关闭，给用户时间移动回主菜单
-  closeMenuTimer = window.setTimeout(() => {
-    // 只有当鼠标不在任何菜单中时才关闭
-    if (!isMouseInMainMenu.value && !isMouseInSubmenu.value) {
-      hideSubmenu()
-      hideContextMenu() // 同时关闭主菜单
-    }
-  }, 150)
+  scheduleMenuClose(closeAllMenus)
 }
 
-// 鼠标进入菜单项时的处理
-const handleMenuItemMouseEnter = (item: any, event: MouseEvent) => {
+const handleMenuItemMouseEnter = (item: ContextMenuItem, event: Event) => {
   clearCloseMenuTimer()
 
-  if (item.submenu) {
-    showSubmenu(item, event)
+  if (item.submenu?.length) {
+    showSubmenu(item, event as MouseEvent)
   } else {
     hideSubmenu()
   }
 }
+
+onUnmounted(clearCloseMenuTimer)
 </script>
 
 <template>
@@ -190,9 +181,9 @@ const handleMenuItemMouseEnter = (item: any, event: MouseEvent) => {
         <div
           v-else
           class="menu-item"
-          :class="{ disabled: item.disabled, 'has-submenu': item.submenu }"
+          :class="{ disabled: item.disabled, 'has-submenu': item.submenu?.length }"
           @click="handleItemClick(item)"
-          @mouseenter="(event) => handleMenuItemMouseEnter(item, event)"
+          @mouseenter="handleMenuItemMouseEnter(item, $event)"
         >
           <span
             v-if="item.icon"

@@ -3,7 +3,8 @@
  * 管理 overlay 窗口的滑入滑出动画状态
  */
 
-import { ref, type Ref } from 'vue'
+import { ref, readonly, type Ref } from 'vue'
+import { useAnimate } from '@vueuse/core'
 import type {
   OverlayAnimationManager,
   AnimationConfig,

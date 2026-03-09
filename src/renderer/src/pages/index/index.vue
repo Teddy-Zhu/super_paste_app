@@ -20,21 +20,33 @@ import SyncSettings from './components/SyncSettings.vue'
 // 导入API
 import { onSimple } from '@renderer/api/ipc'
 import { app } from '@renderer/api/renderer-api'
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted, type Component } from 'vue'
 
-// 当前选中的设置项
-const activeSection = ref('general')
+type SectionId = 'general' | 'sync' | 'ocr' | 'tags' | 'shortcuts' | 'debug' | 'about'
+
+interface SectionConfig {
+  id: SectionId
+  name: string
+  icon: Component
+}
+
+interface SectionRendererConfig {
+  component: Component
+  getProps?: () => Record<string, unknown>
+}
+
+const activeSection = ref<SectionId>('general')
 const settingsStore = useSettingsStore()
 
-// 重启确认对话框状态
 const showRestartDialog = ref(false)
 const restartDialogData = ref<{
   downloadedFiles: string[]
   message: string
 } | null>(null)
 
-// 设置项列表
-const settingSections = [
+const RESTART_FAIL_MESSAGE = '重启应用失败，请手动重启应用以应用更改'
+
+const settingSections: SectionConfig[] = [
   {
     id: 'general',
     name: '通用设置',
@@ -72,74 +84,105 @@ const settingSections = [
   }
 ]
 
-const currentSectionName = computed(() => {
-  return settingSections.find((section) => section.id === activeSection.value)?.name ?? '设置'
+const sectionRendererMap: Record<SectionId, SectionRendererConfig> = {
+  general: {
+    component: GeneralSettings,
+    getProps: () => ({ settingsStore })
+  },
+  sync: {
+    component: SyncSettings
+  },
+  ocr: {
+    component: OCRSettings,
+    getProps: () => ({ settingsStore })
+  },
+  tags: {
+    component: TagsManagement
+  },
+  shortcuts: {
+    component: ShortcutSettings,
+    getProps: () => ({ settingsStore })
+  },
+  debug: {
+    component: DebugSettings,
+    getProps: () => ({ settingsStore })
+  },
+  about: {
+    component: AboutSection
+  }
+}
+
+const currentSection = computed(() => {
+  return settingSections.find((section) => section.id === activeSection.value) ?? settingSections[0]
 })
 
-// 切换设置项
-const setActiveSection = (sectionId: string): void => {
+const currentSectionName = computed(() => currentSection.value.name)
+const currentSectionRenderer = computed(
+  () => sectionRendererMap[activeSection.value] ?? sectionRendererMap.general
+)
+const currentSectionComponent = computed(() => currentSectionRenderer.value.component)
+const currentSectionProps = computed(() => currentSectionRenderer.value.getProps?.() ?? {})
+
+const setActiveSection = (sectionId: SectionId): void => {
   activeSection.value = sectionId
 }
 
-const minimizeWindow = async (): Promise<void> => {
-  const success = await app.minimizeWindow()
+const runWindowAction = async (
+  action: () => Promise<boolean>,
+  actionName: string
+): Promise<void> => {
+  const success = await action()
   if (!success) {
-    console.error('最小化窗口失败')
+    console.error(`${actionName}失败`)
   }
 }
+
+const minimizeWindow = async (): Promise<void> =>
+  runWindowAction(() => app.minimizeWindow(), '最小化窗口')
 
 const closeWindow = async (): Promise<void> => {
-  const success = await app.closeWindow()
-  if (!success) {
-    console.error('关闭窗口失败')
-  }
+  await runWindowAction(() => app.closeWindow(), '关闭窗口')
 }
 
-// 处理同步需要重启事件
 const handleSyncRequiresRestart = (data: { downloadedFiles: string[]; message: string }): void => {
-  console.log('收到同步需要重启通知:', data)
   restartDialogData.value = data
   showRestartDialog.value = true
 }
 
-// 确认重启应用
+const handleRestartFailure = (error?: unknown): void => {
+  if (error) {
+    console.error('重启应用失败:', error)
+  }
+  alert(RESTART_FAIL_MESSAGE)
+}
+
 const confirmRestart = async (): Promise<void> => {
   try {
     showRestartDialog.value = false
     const success = await app.restart()
     if (!success) {
-      alert('重启应用失败，请手动重启应用以应用更改')
+      handleRestartFailure()
     }
   } catch (error) {
-    console.error('重启应用失败:', error)
-    alert('重启应用失败，请手动重启应用以应用更改')
+    handleRestartFailure(error)
   }
 }
 
-// 取消重启
 const cancelRestart = (): void => {
   showRestartDialog.value = false
   restartDialogData.value = null
 }
 
-// IPC事件监听器清理函数
 let restartRequiredUnsubscribe: (() => void) | null = null
 
-const setupIpcListeners = (): void => {
-  // 设置IPC事件监听器
+onMounted(() => {
   restartRequiredUnsubscribe = onSimple('sync-requires-restart', handleSyncRequiresRestart)
-}
+})
 
-const cleanupIpcListeners = (): void => {
-  // 清理IPC事件监听器
-  if (restartRequiredUnsubscribe) {
-    restartRequiredUnsubscribe()
-    restartRequiredUnsubscribe = null
-  }
-}
-
-onMounted(setupIpcListeners)
-onUnmounted(cleanupIpcListeners)
+onUnmounted(() => {
+  restartRequiredUnsubscribe?.()
+  restartRequiredUnsubscribe = null
+})
 </script>
 
 <template>
@@ -198,26 +241,7 @@ onUnmounted(cleanupIpcListeners)
 
       <!-- 右侧内容区域 -->
       <div class="main-content">
-        <!-- 通用设置 -->
-        <GeneralSettings v-if="activeSection === 'general'" :settings-store="settingsStore" />
-
-        <!-- 同步设置 -->
-        <SyncSettings v-if="activeSection === 'sync'" />
-
-        <!-- OCR设置 -->
-        <OCRSettings v-if="activeSection === 'ocr'" :settings-store="settingsStore" />
-
-        <!-- 标签管理 -->
-        <TagsManagement v-if="activeSection === 'tags'" />
-
-        <!-- 快捷键设置 -->
-        <ShortcutSettings v-if="activeSection === 'shortcuts'" :settings-store="settingsStore" />
-
-        <!-- 调试设置 -->
-        <DebugSettings v-if="activeSection === 'debug'" :settings-store="settingsStore" />
-
-        <!-- 关于 -->
-        <AboutSection v-if="activeSection === 'about'" />
+        <component :is="currentSectionComponent" v-bind="currentSectionProps" />
       </div>
 
       <!-- 重启确认对话框 -->

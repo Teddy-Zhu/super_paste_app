@@ -24,7 +24,7 @@ export interface EventManager {
     element: EventTarget,
     event: string,
     handler: EventListener,
-    options?: AddEventListenerOptions
+    options?: AddEventListenerOptions | boolean
   ) => EventListenerCleanup
   removeAllListeners: () => void
   cleanup: () => void
@@ -61,6 +61,7 @@ export function useEventManager(): EventManager {
     element: EventTarget
     event: string
     handler: EventListener
+    options?: AddEventListenerOptions | boolean
     cleanup: () => void
   }> = []
 
@@ -68,27 +69,33 @@ export function useEventManager(): EventManager {
     element: EventTarget,
     event: string,
     handler: EventListener,
-    options?: AddEventListenerOptions
+    options?: AddEventListenerOptions | boolean
   ): EventListenerCleanup => {
     element.addEventListener(event, handler, options)
 
     const cleanup = () => {
-      element.removeEventListener(event, handler)
+      element.removeEventListener(event, handler, options)
       const index = listeners.findIndex(
-        (l) => l.element === element && l.event === event && l.handler === handler
+        (l) =>
+          l.element === element &&
+          l.event === event &&
+          l.handler === handler &&
+          l.options === options
       )
       if (index > -1) {
         listeners.splice(index, 1)
       }
     }
 
-    listeners.push({ element, event, handler, cleanup })
+    listeners.push({ element, event, handler, options, cleanup })
     return cleanup
   }
 
   const removeAllListeners = () => {
-    listeners.forEach(({ cleanup }) => cleanup())
-    listeners.length = 0
+    while (listeners.length > 0) {
+      const listener = listeners[listeners.length - 1]
+      listener.cleanup()
+    }
   }
 
   const cleanup = removeAllListeners

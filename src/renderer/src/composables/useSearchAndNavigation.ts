@@ -3,11 +3,9 @@
  * 合并搜索逻辑和键盘导航，提供统一的交互接口
  */
 
-import { nextTick, computed, readonly, type Ref } from 'vue'
+import { computed, nextTick, readonly, type Ref } from 'vue'
 import type { ClipboardItem } from '@renderer/api/types'
 import { useDebounce, useStateManager } from './useUtils'
-
-// ==================== 类型定义 ====================
 
 export interface SearchState {
   text: string
@@ -19,16 +17,14 @@ export interface NavigationState {
   isKeyboardNavigation: boolean
 }
 
+type ToggleSearchFn = (withBuffer?: boolean) => void | Promise<void>
+
 export interface SearchAndNavigationManager {
-  // 搜索状态
   readonly searchText: Ref<string>
   readonly isSearching: Ref<boolean>
   readonly inputBuffer: Ref<string>
-
-  // 导航状态
   readonly isKeyboardNavigation: Ref<boolean>
 
-  // 搜索方法
   handleSearchInput: (event: Event) => void
   debouncedSearch: (text: string) => void
   isInputCharacter: (event: KeyboardEvent) => boolean
@@ -37,23 +33,19 @@ export interface SearchAndNavigationManager {
     isSearchVisible: boolean,
     isOpeningSearch: boolean,
     isSearchAnimating: boolean,
-    onToggleSearch: (withBuffer: boolean) => void
+    onToggleSearch: ToggleSearchFn
   ) => void
   applyInputBuffer: () => void
   focusSearchInput: () => void
   resetSearchState: () => void
 
-  // 导航方法
   handleKeyNavigation: (event: KeyboardEvent) => void
   setKeyboardNavigation: (value: boolean) => void
 
-  // 清理方法
   cleanup: () => void
 }
 
-// ==================== 常量定义 ====================
-
-const EXCLUDED_KEYS = [
+const EXCLUDED_KEYS = new Set([
   'ArrowLeft',
   'ArrowRight',
   'ArrowUp',
@@ -87,9 +79,9 @@ const EXCLUDED_KEYS = [
   'Control',
   'Alt',
   'Meta'
-]
+])
 
-// ==================== 主要函数 ====================
+const SEARCH_INPUT_SELECTOR = '.search-input'
 
 export function useSearchAndNavigation(
   clipboardHistory: Ref<ClipboardItem[]>,
@@ -98,10 +90,8 @@ export function useSearchAndNavigation(
   performSearchCallback: (text: string) => Promise<void>,
   onRestoreClipboard: (itemId: string) => void,
   onCloseWindow: () => void,
-  onToggleSearch: () => void
+  onToggleSearch: ToggleSearchFn
 ): SearchAndNavigationManager {
-  // ==================== 状态管理 ====================
-
   const searchStateManager = useStateManager<SearchState>({
     text: '',
     isSearching: false,
@@ -112,7 +102,6 @@ export function useSearchAndNavigation(
     isKeyboardNavigation: false
   })
 
-  // 提取状态引用
   const searchText = computed(() => searchStateManager.state.value.text)
   const isSearching = computed(() => searchStateManager.state.value.isSearching)
   const inputBuffer = computed(() => searchStateManager.state.value.inputBuffer)
@@ -120,155 +109,121 @@ export function useSearchAndNavigation(
     () => navigationStateManager.state.value.isKeyboardNavigation
   )
 
-  // ==================== 搜索功能 ====================
-
-  // 防抖搜索
   const debouncedSearchFn = useDebounce((text: string) => performSearchCallback(text), 300)
 
-  const handleSearchInput = (event: Event) => {
-    const target = event.target as HTMLInputElement
-    const newText = target.value
+  const getSearchInput = (): HTMLInputElement | null => {
+    return document.querySelector<HTMLInputElement>(SEARCH_INPUT_SELECTOR)
+  }
 
-    searchStateManager.setState((prev) => ({ ...prev, text: newText }))
-    debouncedSearchFn(newText)
+  const syncInput = (value: string, focus = false) => {
+    nextTick(() => {
+      const searchInput = getSearchInput()
+      if (!searchInput) return
+
+      searchInput.value = value
+      if (focus) {
+        searchInput.focus()
+      }
+
+      if (value) {
+        searchInput.setSelectionRange(value.length, value.length)
+      }
+    })
+  }
+
+  const appendInputBuffer = (value: string) => {
+    searchStateManager.setState((prev) => ({
+      ...prev,
+      inputBuffer: prev.inputBuffer + value
+    }))
+  }
+
+  const closeSearchOrWindow = () => {
+    if (isSearchVisible.value) {
+      onToggleSearch()
+    } else {
+      onCloseWindow()
+    }
   }
 
   const isInputCharacter = (event: KeyboardEvent): boolean => {
-    // 排除功能键和修饰键
     if (event.ctrlKey || event.metaKey || event.altKey) {
       return false
     }
 
-    // 排除特殊键
-    if (EXCLUDED_KEYS.includes(event.key)) {
+    if (EXCLUDED_KEYS.has(event.key)) {
       return false
     }
 
-    // 检查是否为可打印字符
     return event.key.length === 1
+  }
+
+  const handleSearchInput = (event: Event) => {
+    const target = event.target as HTMLInputElement
+    const newText = target.value
+    searchStateManager.setState((prev) => ({ ...prev, text: newText }))
+    debouncedSearchFn(newText)
+  }
+
+  const applyInputBuffer = () => {
+    const { text, inputBuffer } = searchStateManager.state.value
+    if (!inputBuffer) {
+      return
+    }
+
+    const mergedText = text + inputBuffer
+    searchStateManager.setState((prev) => ({
+      ...prev,
+      text: mergedText,
+      inputBuffer: ''
+    }))
+
+    syncInput(mergedText)
+    debouncedSearchFn(mergedText)
+  }
+
+  const focusSearchInput = () => {
+    const currentText = searchStateManager.state.value.text
+    syncInput(currentText, true)
   }
 
   const handleInputCharacter = (
     event: KeyboardEvent,
-    isSearchVisible: boolean,
-    isOpeningSearch: boolean,
-    isSearchAnimating: boolean,
-    onToggleSearch: (withBuffer: boolean) => void
+    visible: boolean,
+    opening: boolean,
+    animating: boolean,
+    toggleSearch: ToggleSearchFn
   ) => {
-    // 如果搜索框未完全打开，则缓存字符
-    if (!isSearchVisible || isOpeningSearch || isSearchAnimating) {
+    if (!visible || opening || animating) {
       event.preventDefault()
+      appendInputBuffer(event.key)
 
-      // 将字符添加到缓冲区
-      searchStateManager.setState((prev) => ({
-        ...prev,
-        inputBuffer: prev.inputBuffer + event.key
-      }))
-
-      console.log('[搜索导航] 字符已缓存:', searchStateManager.state.value.inputBuffer)
-
-      // 如果搜索框完全未打开，则开始打开
-      if (!isSearchVisible && !isOpeningSearch) {
-        onToggleSearch(true)
+      if (!visible && !opening) {
+        toggleSearch(true)
       }
-    } else {
-      // 搜索框已完全打开，确保焦点在搜索框上
-      const searchInput = document.querySelector('.search-input') as HTMLInputElement
-      if (searchInput && document.activeElement !== searchInput) {
-        searchInput.focus()
-
-        // 将当前字符添加到缓冲区，然后应用
-        searchStateManager.setState((prev) => ({
-          ...prev,
-          inputBuffer: prev.inputBuffer + event.key
-        }))
-        event.preventDefault()
-
-        // 立即应用缓冲区内容
-        applyInputBuffer()
-      }
+      return
     }
-  }
 
-  const applyInputBuffer = () => {
-    const currentBuffer = searchStateManager.state.value.inputBuffer
-    if (currentBuffer) {
-      const currentText = searchStateManager.state.value.text
-      const newText = currentText + currentBuffer
-
-      searchStateManager.setState((prev) => ({
-        ...prev,
-        text: newText,
-        inputBuffer: ''
-      }))
-
-      console.log('[搜索导航] 缓冲区内容已应用:', newText)
-
-      // 同步更新输入框
-      nextTick(() => {
-        const searchInput = document.querySelector('.search-input') as HTMLInputElement
-        if (searchInput) {
-          searchInput.value = newText
-          searchInput.setSelectionRange(newText.length, newText.length)
-        }
-      })
-
-      // 触发搜索
-      debouncedSearchFn(newText)
+    const searchInput = getSearchInput()
+    if (searchInput && document.activeElement !== searchInput) {
+      event.preventDefault()
+      searchInput.focus()
+      appendInputBuffer(event.key)
+      applyInputBuffer()
     }
-  }
-
-  const focusSearchInput = () => {
-    nextTick(() => {
-      const searchInput = document.querySelector('.search-input') as HTMLInputElement
-      if (searchInput) {
-        const currentText = searchStateManager.state.value.text
-        searchInput.value = currentText
-        searchInput.focus()
-        if (currentText) {
-          searchInput.setSelectionRange(currentText.length, currentText.length)
-        }
-      }
-    })
   }
 
   const resetSearchState = () => {
     searchStateManager.resetState()
     debouncedSearchFn.cancel()
-
-    // 同步清空输入框
-    nextTick(() => {
-      const searchInput = document.querySelector('.search-input') as HTMLInputElement
-      if (searchInput) {
-        searchInput.value = ''
-      }
-    })
+    syncInput('')
   }
 
-  // ==================== 键盘导航功能 ====================
-
-  const handleKeyNavigation = (event: KeyboardEvent) => {
-    const isCtrlOrCmd = event.ctrlKey || event.metaKey
-
-    // 如果搜索框已打开且获得焦点，只处理特定的导航键
-    if (isSearchVisible.value) {
-      const searchInput = document.querySelector('.search-input') as HTMLInputElement
-      const isSearchInputFocused = searchInput && document.activeElement === searchInput
-
-      if (isSearchInputFocused) {
-        handleSearchInputNavigation(event)
-        return
-      }
-    }
-
-    // 如果没有剪贴板历史，只处理输入字符和ESC键
-    if (clipboardHistory.value.length === 0) {
-      handleEmptyHistoryNavigation(event)
-      return
-    }
-
-    // 有剪贴板历史时的完整键盘处理
-    handleNavigationWithHistory(event, isCtrlOrCmd)
+  const setKeyboardNavigation = (value: boolean) => {
+    navigationStateManager.setState((prev) => ({
+      ...prev,
+      isKeyboardNavigation: value
+    }))
   }
 
   const handleSearchInputNavigation = (event: KeyboardEvent) => {
@@ -278,11 +233,9 @@ export function useSearchAndNavigation(
         onToggleSearch()
         break
       case 'ArrowDown':
-        // 从搜索框移动到第一个项目
         if (clipboardHistory.value.length > 0) {
           event.preventDefault()
-          const searchInput = document.querySelector('.search-input') as HTMLInputElement
-          if (searchInput) searchInput.blur()
+          getSearchInput()?.blur()
           selectedIndex.value = 0
           setKeyboardNavigation(true)
         }
@@ -291,31 +244,20 @@ export function useSearchAndNavigation(
   }
 
   const handleEmptyHistoryNavigation = (event: KeyboardEvent) => {
-    switch (event.key) {
-      case 'Escape':
-        event.preventDefault()
-        if (isSearchVisible.value) {
-          onToggleSearch()
-        } else {
-          onCloseWindow()
-        }
-        break
-      default:
-        // 检查是否为可输入字符
-        if (isInputCharacter(event)) {
-          handleInputCharacter(
-            event,
-            isSearchVisible.value,
-            false, // isOpeningSearch
-            false, // isSearchAnimating
-            onToggleSearch
-          )
-        }
-        break
+    if (event.key === 'Escape') {
+      event.preventDefault()
+      closeSearchOrWindow()
+      return
+    }
+
+    if (isInputCharacter(event)) {
+      handleInputCharacter(event, isSearchVisible.value, false, false, onToggleSearch)
     }
   }
 
   const handleNavigationWithHistory = (event: KeyboardEvent, isCtrlOrCmd: boolean) => {
+    const maxIndex = clipboardHistory.value.length - 1
+
     switch (event.key) {
       case 'ArrowLeft':
         event.preventDefault()
@@ -330,14 +272,12 @@ export function useSearchAndNavigation(
       case 'ArrowDown':
         event.preventDefault()
         setKeyboardNavigation(true)
-        const maxIndex = clipboardHistory.value.length - 1
         selectedIndex.value = isCtrlOrCmd ? maxIndex : Math.min(maxIndex, selectedIndex.value + 1)
         break
       case 'ArrowRight':
         event.preventDefault()
         setKeyboardNavigation(true)
-        const max = clipboardHistory.value.length - 1
-        selectedIndex.value = Math.min(max, selectedIndex.value + (isCtrlOrCmd ? 5 : 1))
+        selectedIndex.value = Math.min(maxIndex, selectedIndex.value + (isCtrlOrCmd ? 5 : 1))
         break
       case 'Home':
         if (isCtrlOrCmd) {
@@ -350,7 +290,7 @@ export function useSearchAndNavigation(
         if (isCtrlOrCmd) {
           event.preventDefault()
           setKeyboardNavigation(true)
-          selectedIndex.value = clipboardHistory.value.length - 1
+          selectedIndex.value = maxIndex
         }
         break
       case 'Enter':
@@ -361,52 +301,45 @@ export function useSearchAndNavigation(
         break
       case 'Escape':
         event.preventDefault()
-        if (isSearchVisible.value) {
-          onToggleSearch()
-        } else {
-          onCloseWindow()
-        }
+        closeSearchOrWindow()
         break
       default:
-        // 检查是否为可输入字符
         if (isInputCharacter(event)) {
-          handleInputCharacter(
-            event,
-            isSearchVisible.value,
-            false, // isOpeningSearch
-            false, // isSearchAnimating
-            onToggleSearch
-          )
+          handleInputCharacter(event, isSearchVisible.value, false, false, onToggleSearch)
         }
         break
     }
   }
 
-  const setKeyboardNavigation = (value: boolean) => {
-    navigationStateManager.setState((prev) => ({
-      ...prev,
-      isKeyboardNavigation: value
-    }))
-  }
+  const handleKeyNavigation = (event: KeyboardEvent) => {
+    const isCtrlOrCmd = event.ctrlKey || event.metaKey
 
-  // ==================== 清理方法 ====================
+    if (isSearchVisible.value) {
+      const searchInput = getSearchInput()
+      if (searchInput && document.activeElement === searchInput) {
+        handleSearchInputNavigation(event)
+        return
+      }
+    }
+
+    if (clipboardHistory.value.length === 0) {
+      handleEmptyHistoryNavigation(event)
+      return
+    }
+
+    handleNavigationWithHistory(event, isCtrlOrCmd)
+  }
 
   const cleanup = () => {
     debouncedSearchFn.cancel()
   }
 
-  // ==================== 返回接口 ====================
-
   return {
-    // 搜索状态
     searchText: readonly(searchText),
     isSearching: readonly(isSearching),
     inputBuffer: readonly(inputBuffer),
-
-    // 导航状态
     isKeyboardNavigation: readonly(isKeyboardNavigation),
 
-    // 搜索方法
     handleSearchInput,
     debouncedSearch: debouncedSearchFn,
     isInputCharacter,
@@ -415,11 +348,9 @@ export function useSearchAndNavigation(
     focusSearchInput,
     resetSearchState,
 
-    // 导航方法
     handleKeyNavigation,
     setKeyboardNavigation,
 
-    // 清理方法
     cleanup
   }
 }

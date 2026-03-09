@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, nextTick, watch, onMounted, onUnmounted } from 'vue'
+import { ref, nextTick, watch, onMounted, onUnmounted, type Ref } from 'vue'
 import { send, onSimple } from '@renderer/api'
 import { clipboard } from '@renderer/api/renderer-api'
 import type { ClipboardItem, ClipboardHistoryQueryOptions, AppInfo } from '@renderer/api/types'
@@ -8,7 +8,7 @@ import { OverlayError, OverlayErrorCode, isClipboardItem } from '@renderer/types
 // 导入优化后的 composables
 import { useAnimation, AnimationState } from '@renderer/composables/useAnimation'
 import { useSearchAndNavigation } from '@renderer/composables/useSearchAndNavigation'
-import { useScrollAndTags } from '@renderer/composables/useScrollAndTags'
+import { useScrollAndTags, type ScrollAndTagsManager } from '@renderer/composables/useScrollAndTags'
 import { useEventManager, useThrottle, withTimeout } from '@renderer/composables/useUtils'
 
 // 导入组件
@@ -35,7 +35,6 @@ const isQuickSelectMode = ref(false)
 
 // ==================== 下拉菜单状态 ====================
 const isDropdownVisible = ref(false)
-// const dropdownMenuRef = ref<HTMLElement>()
 
 // ==================== 事件管理器 ====================
 const eventManager = useEventManager()
@@ -44,9 +43,18 @@ const eventManager = useEventManager()
 let isCloseListenerSetup = false
 let removeCloseListener: (() => void) | null = null
 let wheelHandler: ((event: WheelEvent) => void) | null = null
+const ipcUnsubscribers: Array<() => void> = []
 
 // ==================== 初始化 Composables ====================
 const animationManager = useAnimation(overlayContentRef, searchContainerRef, tabsContainerRef)
+
+type RestoreMethod =
+  | 'restore'
+  | 'restoreAsText'
+  | 'restoreOcrText'
+  | 'parseQRCode'
+  | 'generateQRCode'
+type PlayStateRef = Ref<'idle' | 'running' | 'paused' | 'finished'>
 
 // ==================== 剪贴板历史加载 ====================
 
@@ -91,11 +99,19 @@ const loadClipboardHistory = async (options?: ClipboardHistoryQueryOptions): Pro
   }
 }
 
+const getActiveTagIds = (): string[] => {
+  return scrollAndTagsManager.activeTagId.value === 'all'
+    ? []
+    : [scrollAndTagsManager.activeTagId.value]
+}
+
+const getCurrentSearchText = (): string => {
+  return searchAndNavManager.searchText.value || ''
+}
+
 const throttledLoadClipboardHistory = useThrottle(() => {
-  console.log('history')
-  const currentTagIds =
-    scrollAndTagsManager.activeTagId.value === 'all' ? [] : [scrollAndTagsManager.activeTagId.value]
-  const currentSearchText = searchAndNavManager.searchText.value || ''
+  const currentTagIds = getActiveTagIds()
+  const currentSearchText = getCurrentSearchText()
 
   loadClipboardHistory({
     tagIds: currentTagIds,
@@ -104,7 +120,7 @@ const throttledLoadClipboardHistory = useThrottle(() => {
 }, 500)
 
 // ==================== 临时占位符，将在 searchAndNavManager 定义后重新定义 ====================
-let scrollAndTagsManager: any
+let scrollAndTagsManager!: ScrollAndTagsManager
 
 // ==================== 事件监听器管理 ====================
 
@@ -128,31 +144,58 @@ const setupCloseEventListeners = () => {
 /**
  * 通用剪贴板还原函数
  */
-const restoreClipboard = async (
-  itemId: string,
-  restoreMethod: 'restore' | 'restoreAsText' | 'restoreOcrText' | 'parseQRCode' | 'generateQRCode'
-): Promise<void> => {
+const ensureValidItemId = (itemId: string): void => {
+  if (!itemId || typeof itemId !== 'string') {
+    throw new OverlayError('无效的剪贴板项目ID', OverlayErrorCode.INVALID_STATE, {
+      itemId,
+      type: typeof itemId
+    })
+  }
+}
+
+const normalizeAfterAction = async (): Promise<void> => {
+  if (animationManager.isSearchVisible.value) {
+    await hideSearchBox(true)
+  }
+
+  if (scrollAndTagsManager.activeTagId.value !== 'all') {
+    await scrollAndTagsManager.switchTag('all')
+  }
+
+  await closeWindow()
+}
+
+const getRestoreMethodMeta = (restoreMethod: RestoreMethod) => {
+  const typeNameMap: Record<RestoreMethod, string> = {
+    restore: '',
+    restoreAsText: '纯文本',
+    restoreOcrText: 'OCR文字',
+    parseQRCode: '二维码',
+    generateQRCode: '二维码'
+  }
+
+  const actionMap: Record<RestoreMethod, string> = {
+    restore: '还原',
+    restoreAsText: '还原',
+    restoreOcrText: '还原',
+    parseQRCode: '解析',
+    generateQRCode: '生成'
+  }
+
+  return {
+    typeName: typeNameMap[restoreMethod],
+    action: actionMap[restoreMethod]
+  }
+}
+
+const restoreClipboard = async (itemId: string, restoreMethod: RestoreMethod): Promise<void> => {
   try {
-    if (!itemId || typeof itemId !== 'string') {
-      throw new OverlayError('无效的剪贴板项目ID', OverlayErrorCode.INVALID_STATE, {
-        itemId,
-        type: typeof itemId
-      })
-    }
+    ensureValidItemId(itemId)
 
     if (restoreMethod === 'generateQRCode') {
-      // 生成二维码需要特殊处理
       const result = await clipboard.generateQRCode(itemId)
       if (result.success) {
-        // 生成成功,重置搜索状态并关闭窗口
-        if (animationManager.isSearchVisible.value) {
-          await hideSearchBox(true)
-        }
-        // 重置 tab 选择到 'all'
-        if (scrollAndTagsManager.activeTagId.value !== 'all') {
-          await scrollAndTagsManager.switchTag('all')
-        }
-        closeWindow()
+        await normalizeAfterAction()
       } else {
         throw new OverlayError(
           `生成二维码失败: ${result.message}`,
@@ -164,45 +207,20 @@ const restoreClipboard = async (
       const success = await clipboard[restoreMethod](itemId)
 
       if (success) {
-        // 用户点击了粘贴项,重置搜索状态并关闭窗口
-        if (animationManager.isSearchVisible.value) {
-          await hideSearchBox(true)
-        }
-        // 重置 tab 选择到 'all'
-        if (scrollAndTagsManager.activeTagId.value !== 'all') {
-          await scrollAndTagsManager.switchTag('all')
-        }
-        closeWindow()
+        await normalizeAfterAction()
       } else {
-        const methodName =
-          restoreMethod === 'restoreAsText'
-            ? '纯文本'
-            : restoreMethod === 'restoreOcrText'
-              ? 'OCR文字'
-              : restoreMethod === 'parseQRCode'
-                ? '二维码'
-                : ''
-        const action = restoreMethod === 'parseQRCode' ? '解析' : '还原'
+        const { typeName, action } = getRestoreMethodMeta(restoreMethod)
         throw new OverlayError(
-          `剪贴板${methodName}${action}操作失败`,
+          `剪贴板${typeName}${action}操作失败`,
           OverlayErrorCode.CLIPBOARD_LOAD_FAILED,
           { itemId }
         )
       }
     }
   } catch (error) {
-    const methodName =
-      restoreMethod === 'restoreAsText'
-        ? '为纯文本'
-        : restoreMethod === 'restoreOcrText'
-          ? '为OCR文字'
-          : restoreMethod === 'parseQRCode'
-            ? '二维码'
-            : restoreMethod === 'generateQRCode'
-              ? '二维码'
-              : ''
-    const action = restoreMethod === 'parseQRCode' ? '解析' : restoreMethod === 'generateQRCode' ? '生成' : '还原'
-    console.error(`[前端] ${action}剪贴板${methodName}失败:`, error)
+    const { typeName, action } = getRestoreMethodMeta(restoreMethod)
+    const suffix = restoreMethod === 'restore' ? '' : ` ${typeName}`
+    console.error(`[前端] ${action}剪贴板${suffix}失败:`, error)
   }
 }
 
@@ -227,12 +245,7 @@ const restoreClipboardContentAsOcrText = (itemId: string) =>
  */
 const parseOcrFromClipboardItem = async (itemId: string): Promise<void> => {
   try {
-    if (!itemId || typeof itemId !== 'string') {
-      throw new OverlayError('无效的剪贴板项目ID', OverlayErrorCode.INVALID_STATE, {
-        itemId,
-        type: typeof itemId
-      })
-    }
+    ensureValidItemId(itemId)
 
     const success = await clipboard.parseOcr(itemId)
     if (!success) {
@@ -251,21 +264,16 @@ const parseQRCodeFromClipboardItem = (itemId: string) => restoreClipboard(itemId
 /**
  * 生成剪贴板项目的二维码
  */
-const generateQRCodeFromClipboardItem = (itemId: string) => restoreClipboard(itemId, 'generateQRCode')
+const generateQRCodeFromClipboardItem = (itemId: string) =>
+  restoreClipboard(itemId, 'generateQRCode')
 
 /**
  * 删除剪贴板项目
  */
 const deleteClipboardItem = async (itemId: string): Promise<void> => {
   try {
-    if (!itemId || typeof itemId !== 'string') {
-      throw new OverlayError('无效的剪贴板项目ID', OverlayErrorCode.INVALID_STATE, {
-        itemId,
-        type: typeof itemId
-      })
-    }
+    ensureValidItemId(itemId)
 
-    // 删除项目后重新加载历史记录
     throttledLoadClipboardHistory()
   } catch (error) {
     console.error('[前端] 删除剪贴板项目失败:', error)
@@ -320,7 +328,7 @@ const clearClipboardHistory = async (): Promise<void> => {
 /**
  * 等待动画完成的通用函数
  */
-const waitForAnimationFinish = (playState: any): Promise<void> => {
+const waitForAnimationFinish = (playState: PlayStateRef): Promise<void> => {
   return new Promise((resolve) => {
     if (playState.value === 'finished') {
       resolve()
@@ -364,19 +372,11 @@ const closeWindow = async () => {
  */
 const toggleSearch = async (withBuffer = false, force = false): Promise<void> => {
   try {
-    // 如果正在动画中且不是强制执行，则忽略
     if (!force && animationManager.isSearchAnimating.value) {
-      console.log('[搜索框] 动画进行中，忽略切换请求')
       return
     }
 
-    const isCurrentlyVisible = animationManager.isSearchVisible.value
-    console.log(`[搜索框] 当前状态: ${getSearchBoxStateDescription()}`)
-    console.log(
-      `[搜索框] 切换操作: ${isCurrentlyVisible ? '隐藏' : '显示'}${withBuffer ? ' (带缓冲区)' : ''}`
-    )
-
-    if (isCurrentlyVisible) {
+    if (animationManager.isSearchVisible.value) {
       await hideSearchBox()
     } else {
       await showSearchBox(withBuffer)
@@ -399,12 +399,8 @@ const toggleSearch = async (withBuffer = false, force = false): Promise<void> =>
  * @param clearText 是否清空搜索文本
  */
 const hideSearchBox = async (clearText = false): Promise<void> => {
-  console.log(`[搜索框] 开始隐藏搜索框${clearText ? ' (清空文本)' : ''}`)
-
-  // 如果需要清空文本,先清空并重置tab到all
   if (clearText) {
     searchAndNavManager.resetSearchState()
-    // 重置tab选择到all
     if (scrollAndTagsManager.activeTagId.value !== 'all') {
       await scrollAndTagsManager.switchTag('all')
     }
@@ -426,11 +422,8 @@ const hideSearchBox = async (clearText = false): Promise<void> => {
     waitForAnimationFinish(tabsShowState)
   ])
 
-  // 更新状态
   animationManager.setSearchVisible(false)
   animationManager.setSearchAnimating(false)
-
-  console.log('[搜索框] 搜索框隐藏完成')
 }
 
 /**
@@ -438,9 +431,6 @@ const hideSearchBox = async (clearText = false): Promise<void> => {
  * @param withBuffer 是否应用输入缓冲区内容
  */
 const showSearchBox = async (withBuffer: boolean): Promise<void> => {
-  console.log(`[搜索框] 开始显示搜索框${withBuffer ? ' (带缓冲区)' : ''}`)
-
-  // 设置动画状态
   animationManager.setOpeningSearch(true)
   animationManager.setSearchAnimating(true)
   animationManager.setSearchVisible(true)
@@ -461,32 +451,22 @@ const showSearchBox = async (withBuffer: boolean): Promise<void> => {
     waitForAnimationFinish(searchExpandState)
   ])
 
-  // 动画完成，更新状态
   animationManager.setSearchAnimating(false)
   animationManager.setOpeningSearch(false)
 
-  // 应用缓冲区内容（如果有）
   if (withBuffer) {
     searchAndNavManager.applyInputBuffer()
   }
 
-  // 聚焦搜索输入框
   searchAndNavManager.focusSearchInput()
-
-  console.log('[搜索框] 搜索框显示完成')
 }
 
 // ==================== 搜索回调函数 ====================
 const performSearchCallback = async (text: string): Promise<void> => {
   try {
-    const currentTagIds =
-      scrollAndTagsManager.activeTagId.value === 'all'
-        ? []
-        : [scrollAndTagsManager.activeTagId.value]
-
     const options: ClipboardHistoryQueryOptions = {
       searchText: text.trim(),
-      tagIds: currentTagIds,
+      tagIds: getActiveTagIds(),
       limit: 50,
       orderBy: 'last_used' as const,
       orderDirection: 'DESC' as const
@@ -523,29 +503,6 @@ scrollAndTagsManager = useScrollAndTags(
   () => searchAndNavManager.searchText.value || ''
 )
 
-// ==================== 搜索框状态管理辅助函数 ====================
-
-/**
- * 获取搜索框当前状态描述
- * @returns 状态描述字符串
- */
-const getSearchBoxStateDescription = (): string => {
-  const isVisible = animationManager.isSearchVisible.value
-  const hasText = !!searchAndNavManager.searchText.value.trim()
-  const isAnimating = animationManager.isSearchAnimating.value
-  const isOpening = animationManager.isOpeningSearch.value
-
-  if (isAnimating) {
-    return isOpening ? '正在显示' : '正在隐藏'
-  }
-
-  if (isVisible) {
-    return hasText ? '可见(有文字)' : '可见(无文字)'
-  }
-
-  return '隐藏'
-}
-
 // ==================== 动画流程函数 ====================
 
 /**
@@ -554,33 +511,23 @@ const getSearchBoxStateDescription = (): string => {
 const triggerSlideInAnimation = async (): Promise<void> => {
   try {
     if (animationManager.isAnimating()) {
-      console.log('[滑入动画] 动画进行中,忽略滑入请求')
       return
     }
 
-    console.log('[滑入动画] 开始滑入动画')
-
-    // 不重置搜索状态,保持上次的搜索内容
-    // 只在搜索框不可见时重置样式
     if (!animationManager.isSearchVisible.value) {
       animationManager.resetSearchStyles()
     }
 
-    // 设置动画状态
     animationManager.setAnimationState(AnimationState.SLIDING_IN)
 
     const { play: playSlideIn, playState } = animationManager.createSlideInAnimation()
     playSlideIn()
 
-    // 等待滑入动画完成(带超时)
     await withTimeout(waitForAnimationFinish(playState), 5000, '滑入动画超时')
 
-    // 动画完成,设置为活动状态
     animationManager.setAnimationState(AnimationState.ACTIVE)
     setupCloseEventListeners()
     send('open-overlay-finished')
-
-    console.log('[滑入动画] 滑入动画完成')
   } catch (error) {
     console.error('[滑入动画] 滑入动画失败:', error)
     animationManager.resetOverlayState()
@@ -605,23 +552,16 @@ const triggerSlideInAnimation = async (): Promise<void> => {
  */
 const handleCloseWindow = async (force: boolean = false): Promise<void> => {
   try {
-    // 如果窗口不在活动状态，直接返回
     if (animationManager.currentAnimationState.value !== AnimationState.ACTIVE) {
-      console.log('[关闭窗口] 窗口不在活动状态，忽略关闭请求')
       return
     }
 
-    // 强制关闭处理
     if (force) {
-      console.log('[关闭窗口] 强制关闭窗口')
-
       const isSearchVisible = animationManager.isSearchVisible.value
       const hasSearchText = searchAndNavManager.searchText.value.trim()
 
-      // 如果搜索框可见且无文字，先隐藏搜索框再关闭窗口
       if (isSearchVisible && !hasSearchText) {
-        console.log('[关闭窗口] 强制关闭 - 先隐藏搜索框')
-        hideSearchBox()
+        await hideSearchBox()
       }
 
       await closeWindow()
@@ -631,36 +571,25 @@ const handleCloseWindow = async (force: boolean = false): Promise<void> => {
     const isSearchVisible = animationManager.isSearchVisible.value
     const hasSearchText = searchAndNavManager.searchText.value.trim()
 
-    console.log(`[关闭窗口] 当前搜索框状态: ${getSearchBoxStateDescription()}`)
-    console.log(`[关闭窗口] 详细状态 - 可见: ${isSearchVisible}, 有文字: ${!!hasSearchText}`)
-
-    // 情况1: 搜索框可见且有文字 -> 清空文字并重新搜索
     if (isSearchVisible && hasSearchText) {
-      console.log('[关闭窗口] 清空搜索文字并重新搜索')
       searchAndNavManager.resetSearchState()
       await performSearchCallback('')
       return
     }
 
-    // 情况2: 搜索框可见但无文字 -> 隐藏搜索框
     if (isSearchVisible && !hasSearchText) {
-      console.log('[关闭窗口] 隐藏搜索框')
       await hideSearchBox()
       return
     }
 
-    // 情况3: 搜索框不可见 -> 关闭窗口
-    console.log('[关闭窗口] 执行窗口关闭')
     await closeWindow()
   } catch (error) {
     console.error('[关闭窗口] 处理关闭窗口事件失败:', error)
 
-    // 错误恢复：尝试直接关闭窗口
     try {
-      console.log('[关闭窗口] 尝试错误恢复 - 直接关闭窗口')
       await closeWindow()
     } catch (closeError) {
-      console.error('[关闭窗口] 错误恢复失败，发送强制关闭信号:', closeError)
+      console.error('[关闭窗口] 错误恢复失败:', closeError)
       send('close-overlay-window')
     }
   }
@@ -672,19 +601,14 @@ const handleCloseWindow = async (force: boolean = false): Promise<void> => {
  * 处理键盘按下事件
  */
 const handleKeyboardEvent = (event: KeyboardEvent) => {
-  // 检查是否按下了 Ctrl (Windows/Linux) 或 Cmd (macOS)
   const isCtrlOrCmd = event.ctrlKey || event.metaKey
 
-  // 快捷选择功能：Ctrl/Cmd + 数字键
   if (isCtrlOrCmd) {
-    const keyCode = event.key
-    const numberKey = parseInt(keyCode)
+    const numberKey = Number(event.key)
 
     if (!isNaN(numberKey) && numberKey >= 1 && numberKey <= 9) {
-      // 计算对应的索引（从0开始）
       const targetIndex = numberKey - 1
 
-      // 检查索引是否有效
       if (targetIndex < clipboardHistory.value.length) {
         const targetItem = clipboardHistory.value[targetIndex]
         restoreClipboardContent(targetItem.id)
@@ -693,13 +617,11 @@ const handleKeyboardEvent = (event: KeyboardEvent) => {
       }
     }
 
-    // 进入快捷选择模式（显示快捷键标签）
     if (!isQuickSelectMode.value) {
       isQuickSelectMode.value = true
     }
   }
 
-  // 继续处理其他键盘导航
   searchAndNavManager.handleKeyNavigation(event)
 }
 
@@ -707,9 +629,7 @@ const handleKeyboardEvent = (event: KeyboardEvent) => {
  * 处理键盘释放事件
  */
 const handleKeyboardUpEvent = (event: KeyboardEvent) => {
-  // 检查是否释放了 Ctrl 或 Cmd 键
   if (!event.ctrlKey && !event.metaKey && isQuickSelectMode.value) {
-    // 退出快捷选择模式
     isQuickSelectMode.value = false
   }
 }
@@ -735,9 +655,7 @@ watch(selectedIndex, () => {
  */
 watch(searchAndNavManager.searchText, (newValue) => {
   const shouldTriggerSearch =
-    animationManager.isSearchVisible.value &&
-    !animationManager.isOpeningSearch.value &&
-    newValue !== undefined
+    animationManager.isSearchVisible.value && !animationManager.isOpeningSearch.value
 
   if (shouldTriggerSearch) {
     searchAndNavManager.debouncedSearch(newValue)
@@ -749,7 +667,6 @@ watch(searchAndNavManager.searchText, (newValue) => {
  */
 onMounted(async () => {
   try {
-    // 监听来自主进程的动画触发信号
     const removeSlideInListener = onSimple('trigger-slide-in-animation', () => {
       requestAnimationFrame(() => {
         requestAnimationFrame(() => {
@@ -757,18 +674,16 @@ onMounted(async () => {
         })
       })
     })
+    ipcUnsubscribers.push(removeSlideInListener)
 
-    // 绑定键盘事件监听器
     eventManager.addEventListener(document, 'keydown', (event: Event) => {
       handleKeyboardEvent(event as KeyboardEvent)
     })
 
-    // 绑定键盘释放事件监听器
     eventManager.addEventListener(document, 'keyup', (event: Event) => {
       handleKeyboardUpEvent(event as KeyboardEvent)
     })
 
-    // 绑定点击外部关闭下拉菜单的事件监听器
     eventManager.addEventListener(document, 'click', (event: Event) => {
       const target = event.target as HTMLElement
       const dropdownContainer = target.closest('.dropdown-container')
@@ -778,14 +693,11 @@ onMounted(async () => {
       }
     })
 
-    // 添加滚轮事件监听器（支持触摸板手势）
     wheelHandler = (event: WheelEvent) => scrollAndTagsManager.handleWheel(event)
     document.addEventListener('wheel', wheelHandler, { passive: false })
 
-    // 初始化搜索框和标签组的状态
     animationManager.initializeStyles()
 
-    // 并行预加载数据
     const preloadPromises = [
       loadClipboardHistory({
         tagIds: [],
@@ -796,41 +708,29 @@ onMounted(async () => {
 
     await Promise.allSettled(preloadPromises)
 
-    // 初始化 smooth-scrollbar
     nextTick(() => scrollAndTagsManager.initializeScrollbar())
 
-    // 监听剪贴板历史更新通知
     const removeClipboardUpdateListener = onSimple(
       'clipboard-history-updated',
       throttledLoadClipboardHistory
     )
+    ipcUnsubscribers.push(removeClipboardUpdateListener)
 
-    // 监听标签数据更新通知
     const removeTagsUpdateListener = onSimple('tags-updated', () => {
       scrollAndTagsManager.reloadTags().catch(console.error)
     })
+    ipcUnsubscribers.push(removeTagsUpdateListener)
 
-    // 监听单条记录OCR更新通知
     const removeOCRUpdateListener = onSimple(
       'record-ocr-updated',
       (data: { contentId: string; ocrText: string; timestamp: number }) => {
-        // 更新对应记录的OCR字段
         const targetItem = clipboardHistory.value.find((item) => item.id === data.contentId)
         if (targetItem && targetItem.content) {
           targetItem.content.ocr = data.ocrText
-          console.log('[前端] OCR更新:', data.contentId, '文本长度:', data.ocrText.length)
         }
       }
     )
-
-    // 将清理函数添加到事件管理器
-    eventManager.addEventListener(window, 'beforeunload', () => {
-      removeSlideInListener()
-      removeCloseListener?.()
-      removeClipboardUpdateListener()
-      removeTagsUpdateListener()
-      removeOCRUpdateListener()
-    })
+    ipcUnsubscribers.push(removeOCRUpdateListener)
   } catch (error) {
     console.error('[前端] Overlay 组件初始化失败:', error)
     throw new OverlayError('Overlay 组件初始化失败', OverlayErrorCode.INVALID_STATE, {
@@ -847,6 +747,12 @@ onUnmounted(() => {
     throttledLoadClipboardHistory.cancel()
     searchAndNavManager.cleanup()
     scrollAndTagsManager.destroyScrollbar()
+    ipcUnsubscribers.forEach((unsubscribe) => unsubscribe())
+    ipcUnsubscribers.length = 0
+
+    removeCloseListener?.()
+    removeCloseListener = null
+    isCloseListenerSetup = false
 
     if (wheelHandler) {
       document.removeEventListener('wheel', wheelHandler)
@@ -864,7 +770,7 @@ onUnmounted(() => {
       <!-- 顶部工具栏 -->
       <div class="top-toolbar">
         <!-- 搜索图标 -->
-        <button class="toolbar-icon search-icon" @click="() => toggleSearch(false)">
+        <button class="toolbar-icon search-icon" @click="toggleSearch(false)">
           <svg
             width="18"
             height="18"
@@ -890,7 +796,7 @@ onUnmounted(() => {
             placeholder="Search clipboard history..."
             :value="searchAndNavManager.searchText.value"
             @input="searchAndNavManager.handleSearchInput"
-            @keydown.escape="() => toggleSearch(false)"
+            @keydown.escape="toggleSearch(false)"
           />
         </div>
 
@@ -912,9 +818,9 @@ onUnmounted(() => {
             tabindex="0"
             role="button"
             :aria-label="`Switch to ${tab.label} tag${tab.count > 0 ? ` (${tab.count} items)` : ''}`"
-            @click="() => scrollAndTagsManager.switchTag(tab.id)"
-            @keydown.enter="() => scrollAndTagsManager.switchTag(tab.id)"
-            @keydown.space.prevent="() => scrollAndTagsManager.switchTag(tab.id)"
+            @click="scrollAndTagsManager.switchTag(tab.id)"
+            @keydown.enter="scrollAndTagsManager.switchTag(tab.id)"
+            @keydown.space.prevent="scrollAndTagsManager.switchTag(tab.id)"
           >
             <span class="tab-dot" :style="{ backgroundColor: tab.color }"></span>
             <span class="tab-label">{{ tab.label }}</span>
@@ -945,7 +851,7 @@ onUnmounted(() => {
             </button>
 
             <!-- 下拉菜单 -->
-            <div v-if="isDropdownVisible" ref="dropdownMenuRef" class="dropdown-menu">
+            <div v-if="isDropdownVisible" class="dropdown-menu">
               <div class="dropdown-item" @click="openSettings">
                 <span class="dropdown-icon">
                   <IconSettings />
@@ -984,13 +890,13 @@ onUnmounted(() => {
               :all-tags="scrollAndTagsManager.allTags.value"
               :active-tag-id="scrollAndTagsManager.activeTagId.value"
               :apps="clipboardApps"
-              @click="() => restoreClipboardContent(item.id)"
-              @restore-as-text="() => restoreClipboardContentAsText(item.id)"
-              @restore-ocr-text="() => restoreClipboardContentAsOcrText(item.id)"
-              @parse-ocr="() => parseOcrFromClipboardItem(item.id)"
-              @parse-q-r-code="() => parseQRCodeFromClipboardItem(item.id)"
-              @generateQRCode="() => generateQRCodeFromClipboardItem(item.id)"
-              @delete="() => deleteClipboardItem(item.id)"
+              @click="restoreClipboardContent(item.id)"
+              @restore-as-text="restoreClipboardContentAsText(item.id)"
+              @restore-ocr-text="restoreClipboardContentAsOcrText(item.id)"
+              @parse-ocr="parseOcrFromClipboardItem(item.id)"
+              @parse-q-r-code="parseQRCodeFromClipboardItem(item.id)"
+              @generate-q-r-code="generateQRCodeFromClipboardItem(item.id)"
+              @delete="deleteClipboardItem(item.id)"
             />
           </transition-group>
         </div>
@@ -1003,5 +909,5 @@ onUnmounted(() => {
 </template>
 
 <style scoped>
-  @import url('./index.css');
+@import url('./index.css');
 </style>
