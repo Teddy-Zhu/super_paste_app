@@ -40,9 +40,11 @@ export class MainWindowManager {
         minHeight: height,
         maxWidth: width,
         maxHeight: height,
+        frame: false,
         show: false, // 确保窗口创建时不显示
         center: true, // 窗口居中显示
         hasShadow: false,
+        backgroundColor: '#eef2f7',
         autoHideMenuBar: true,
         resizable: false, // 禁止调整大小
         skipTaskbar: true, // 在 Windows 和 Linux 上不显示在任务栏

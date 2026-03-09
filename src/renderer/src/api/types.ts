@@ -53,6 +53,11 @@ export interface IpcChannels {
   // 应用信息相关
   'get-all-apps': void
   'get-app-cache-stats': void
+
+  // 应用控制相关
+  'app:restart': void
+  'app:window-minimize': void
+  'app:window-close': void
 }
 
 // IPC 响应类型
@@ -84,6 +89,11 @@ export interface IpcResponses {
   // 应用信息相关响应
   'get-all-apps': { success: boolean; data?: AppInfo[]; error?: string }
   'get-app-cache-stats': { success: boolean; data?: AppCacheStats; error?: string }
+
+  // 应用控制相关响应
+  'app:restart': { success: boolean; error?: string }
+  'app:window-minimize': { success: boolean; error?: string }
+  'app:window-close': { success: boolean; error?: string }
 }
 
 // 类型安全的 IPC 方法接口
@@ -290,6 +300,8 @@ export interface AppOperations {
 // 应用控制操作类型
 export interface AppControlOperations {
   restart(): Promise<boolean>
+  minimizeWindow(): Promise<boolean>
+  closeWindow(): Promise<boolean>
 }
 
 // 完整的 API 接口

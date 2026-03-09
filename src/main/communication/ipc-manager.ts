@@ -1,4 +1,4 @@
-import { ipcMain, app } from 'electron'
+import { ipcMain, app, BrowserWindow } from 'electron'
 import type { IpcMainInvokeEvent } from 'electron'
 import clipboardManager from '../features/clipboard/manager/clipboard-manager'
 import clipboardHistoryService from '../services/clipboard-history-service'
@@ -156,7 +156,9 @@ class IpcManager {
       'scheduled-sync:update-config',
       'scheduled-sync:refresh',
       // 系统
-      'app:restart'
+      'app:restart',
+      'app:window-minimize',
+      'app:window-close'
     ]
 
     channels.forEach((channel) => {
@@ -602,6 +604,39 @@ class IpcManager {
         logger.error('[主进程] 打开主窗口失败:', error)
       }
     })
+
+    this.registerHandler(
+      'app:window-minimize',
+      async (event) => {
+        const targetWindow = BrowserWindow.fromWebContents(event.sender)
+        if (!targetWindow || targetWindow.isDestroyed()) {
+          return { success: false, error: '当前窗口不可用' }
+        }
+
+        if (targetWindow.minimizable) {
+          targetWindow.minimize()
+        } else {
+          targetWindow.hide()
+        }
+
+        return { success: true }
+      },
+      '最小化当前窗口'
+    )
+
+    this.registerHandler(
+      'app:window-close',
+      async (event) => {
+        const targetWindow = BrowserWindow.fromWebContents(event.sender)
+        if (!targetWindow || targetWindow.isDestroyed()) {
+          return { success: false, error: '当前窗口不可用' }
+        }
+
+        targetWindow.close()
+        return { success: true }
+      },
+      '关闭当前窗口'
+    )
   }
 
   // ==================== 存储相关 ====================

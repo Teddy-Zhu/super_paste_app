@@ -20,7 +20,7 @@ import SyncSettings from './components/SyncSettings.vue'
 // 导入API
 import { onSimple } from '@renderer/api/ipc'
 import { app } from '@renderer/api/renderer-api'
-import { ref, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 
 // 当前选中的设置项
 const activeSection = ref('general')
@@ -72,20 +72,38 @@ const settingSections = [
   }
 ]
 
+const currentSectionName = computed(() => {
+  return settingSections.find((section) => section.id === activeSection.value)?.name ?? '设置'
+})
+
 // 切换设置项
-const setActiveSection = (sectionId: string) => {
+const setActiveSection = (sectionId: string): void => {
   activeSection.value = sectionId
 }
 
+const minimizeWindow = async (): Promise<void> => {
+  const success = await app.minimizeWindow()
+  if (!success) {
+    console.error('最小化窗口失败')
+  }
+}
+
+const closeWindow = async (): Promise<void> => {
+  const success = await app.closeWindow()
+  if (!success) {
+    console.error('关闭窗口失败')
+  }
+}
+
 // 处理同步需要重启事件
-const handleSyncRequiresRestart = (data: { downloadedFiles: string[]; message: string }) => {
+const handleSyncRequiresRestart = (data: { downloadedFiles: string[]; message: string }): void => {
   console.log('收到同步需要重启通知:', data)
   restartDialogData.value = data
   showRestartDialog.value = true
 }
 
 // 确认重启应用
-const confirmRestart = async () => {
+const confirmRestart = async (): Promise<void> => {
   try {
     showRestartDialog.value = false
     const success = await app.restart()
@@ -99,7 +117,7 @@ const confirmRestart = async () => {
 }
 
 // 取消重启
-const cancelRestart = () => {
+const cancelRestart = (): void => {
   showRestartDialog.value = false
   restartDialogData.value = null
 }
@@ -107,112 +125,147 @@ const cancelRestart = () => {
 // IPC事件监听器清理函数
 let restartRequiredUnsubscribe: (() => void) | null = null
 
-onMounted(() => {
+const setupIpcListeners = (): void => {
   // 设置IPC事件监听器
   restartRequiredUnsubscribe = onSimple('sync-requires-restart', handleSyncRequiresRestart)
-})
+}
 
-onUnmounted(() => {
+const cleanupIpcListeners = (): void => {
   // 清理IPC事件监听器
   if (restartRequiredUnsubscribe) {
     restartRequiredUnsubscribe()
     restartRequiredUnsubscribe = null
   }
-})
+}
+
+onMounted(setupIpcListeners)
+onUnmounted(cleanupIpcListeners)
 </script>
 
 <template>
-  <div class="settings-container">
-    <!-- 左侧边栏 -->
-    <div class="sidebar">
-      <div class="sidebar-header">
-        <h2 class="app-title">Super Paste</h2>
-        <p class="app-subtitle">设置</p>
+  <div class="settings-shell">
+    <header class="custom-titlebar">
+      <div class="titlebar-drag-area">
+        <div class="titlebar-brand">
+          <span class="titlebar-mark" />
+          <span class="titlebar-app-name">Super Paste</span>
+          <span class="titlebar-divider" />
+          <span class="titlebar-page-name">{{ currentSectionName }}</span>
+        </div>
       </div>
 
-      <nav class="sidebar-nav">
-        <div
-          v-for="section in settingSections"
-          :key="section.id"
-          class="nav-item"
-          :class="{ active: activeSection === section.id }"
-          @click="setActiveSection(section.id)"
+      <div class="window-controls">
+        <button
+          type="button"
+          class="window-control-btn"
+          aria-label="最小化窗口"
+          @click="minimizeWindow"
         >
-          <component :is="section.icon" class="nav-icon" />
-          <span class="nav-text">{{ section.name }}</span>
-        </div>
-      </nav>
-    </div>
+          <span class="window-control-icon minimize-icon" />
+        </button>
+        <button
+          type="button"
+          class="window-control-btn close-btn"
+          aria-label="关闭窗口"
+          @click="closeWindow"
+        >
+          <span class="window-control-icon close-icon" />
+        </button>
+      </div>
+    </header>
 
-    <!-- 右侧内容区域 -->
-    <div class="main-content">
-      <!-- 通用设置 -->
-      <GeneralSettings v-if="activeSection === 'general'" :settings-store="settingsStore" />
-
-      <!-- 同步设置 -->
-      <SyncSettings v-if="activeSection === 'sync'" />
-
-      <!-- OCR设置 -->
-      <OCRSettings v-if="activeSection === 'ocr'" :settings-store="settingsStore" />
-
-      <!-- 标签管理 -->
-      <TagsManagement v-if="activeSection === 'tags'" />
-
-      <!-- 快捷键设置 -->
-      <ShortcutSettings v-if="activeSection === 'shortcuts'" :settings-store="settingsStore" />
-
-      <!-- 调试设置 -->
-      <DebugSettings v-if="activeSection === 'debug'" :settings-store="settingsStore" />
-
-      <!-- 关于 -->
-      <AboutSection v-if="activeSection === 'about'" />
-    </div>
-
-    <!-- 重启确认对话框 -->
-    <div v-if="showRestartDialog" class="restart-dialog-overlay" @click.self="cancelRestart">
-      <div class="restart-dialog">
-        <div class="restart-dialog-header">
-          <h3 class="restart-dialog-title">同步完成</h3>
+    <div class="settings-container">
+      <!-- 左侧边栏 -->
+      <div class="sidebar">
+        <div class="sidebar-header">
+          <h2 class="app-title">Super Paste</h2>
+          <p class="app-subtitle">设置</p>
         </div>
 
-        <div class="restart-dialog-body">
-          <div class="restart-icon">
-            <svg
-              width="48"
-              height="48"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="2"
-            >
-              <path d="M1 4l6 6-6 6" />
-              <path d="M11 4l6 6-6 6" />
-            </svg>
+        <nav class="sidebar-nav">
+          <div
+            v-for="section in settingSections"
+            :key="section.id"
+            class="nav-item"
+            :class="{ active: activeSection === section.id }"
+            @click="setActiveSection(section.id)"
+          >
+            <component :is="section.icon" class="nav-icon" />
+            <span class="nav-text">{{ section.name }}</span>
+          </div>
+        </nav>
+      </div>
+
+      <!-- 右侧内容区域 -->
+      <div class="main-content">
+        <!-- 通用设置 -->
+        <GeneralSettings v-if="activeSection === 'general'" :settings-store="settingsStore" />
+
+        <!-- 同步设置 -->
+        <SyncSettings v-if="activeSection === 'sync'" />
+
+        <!-- OCR设置 -->
+        <OCRSettings v-if="activeSection === 'ocr'" :settings-store="settingsStore" />
+
+        <!-- 标签管理 -->
+        <TagsManagement v-if="activeSection === 'tags'" />
+
+        <!-- 快捷键设置 -->
+        <ShortcutSettings v-if="activeSection === 'shortcuts'" :settings-store="settingsStore" />
+
+        <!-- 调试设置 -->
+        <DebugSettings v-if="activeSection === 'debug'" :settings-store="settingsStore" />
+
+        <!-- 关于 -->
+        <AboutSection v-if="activeSection === 'about'" />
+      </div>
+
+      <!-- 重启确认对话框 -->
+      <div v-if="showRestartDialog" class="restart-dialog-overlay" @click.self="cancelRestart">
+        <div class="restart-dialog">
+          <div class="restart-dialog-header">
+            <h3 class="restart-dialog-title">同步完成</h3>
           </div>
 
-          <p class="restart-message">{{ restartDialogData?.message }}</p>
+          <div class="restart-dialog-body">
+            <div class="restart-icon">
+              <svg
+                width="48"
+                height="48"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+              >
+                <path d="M1 4l6 6-6 6" />
+                <path d="M11 4l6 6-6 6" />
+              </svg>
+            </div>
 
-          <div v-if="restartDialogData?.downloadedFiles?.length" class="downloaded-files">
-            <p class="files-title">已下载的文件:</p>
-            <ul class="files-list">
-              <li v-for="file in restartDialogData.downloadedFiles" :key="file" class="file-item">
-                {{ file }}
-              </li>
-            </ul>
+            <p class="restart-message">{{ restartDialogData?.message }}</p>
+
+            <div v-if="restartDialogData?.downloadedFiles?.length" class="downloaded-files">
+              <p class="files-title">已下载的文件:</p>
+              <ul class="files-list">
+                <li v-for="file in restartDialogData.downloadedFiles" :key="file" class="file-item">
+                  {{ file }}
+                </li>
+              </ul>
+            </div>
+
+            <p class="restart-description">
+              为了应用这些更改，需要重启应用。重启后所有新的数据和配置将生效。
+            </p>
           </div>
 
-          <p class="restart-description">
-            为了应用这些更改，需要重启应用。重启后所有新的数据和配置将生效。
-          </p>
-        </div>
-
-        <div class="restart-dialog-footer">
-          <button type="button" @click="cancelRestart" class="restart-btn restart-btn-cancel">
-            稍后重启
-          </button>
-          <button type="button" @click="confirmRestart" class="restart-btn restart-btn-confirm">
-            立即重启
-          </button>
+          <div class="restart-dialog-footer">
+            <button type="button" class="restart-btn restart-btn-cancel" @click="cancelRestart">
+              稍后重启
+            </button>
+            <button type="button" class="restart-btn restart-btn-confirm" @click="confirmRestart">
+              立即重启
+            </button>
+          </div>
         </div>
       </div>
     </div>
@@ -220,6 +273,148 @@ onUnmounted(() => {
 </template>
 
 <style scoped>
+.settings-shell {
+  height: 100vh;
+  width: 100vw;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.custom-titlebar {
+  height: 52px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 12px 0 18px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.92) 0%, rgba(244, 247, 251, 0.88) 100%);
+  border-bottom: 1px solid rgba(15, 23, 42, 0.08);
+  backdrop-filter: blur(14px);
+  -webkit-app-region: drag;
+}
+
+.titlebar-drag-area {
+  min-width: 0;
+  flex: 1;
+  display: flex;
+  align-items: center;
+}
+
+.titlebar-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.titlebar-mark {
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  background: linear-gradient(135deg, #0ea5e9 0%, #2563eb 100%);
+  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.14);
+}
+
+.titlebar-app-name {
+  font-size: 14px;
+  color: #0f172a;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.titlebar-divider {
+  width: 1px;
+  height: 14px;
+  background: rgba(100, 116, 139, 0.35);
+}
+
+.titlebar-page-name {
+  font-size: 13px;
+  color: #475569;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.window-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  -webkit-app-region: no-drag;
+}
+
+.window-control-btn {
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  border: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  background: rgba(15, 23, 42, 0.08);
+  color: #1e293b;
+  transition: all 0.2s ease;
+}
+
+.window-control-btn:hover {
+  background: rgba(15, 23, 42, 0.14);
+}
+
+.window-control-btn:active {
+  transform: translateY(1px);
+}
+
+.close-btn:hover {
+  background: #ef4444;
+  color: #ffffff;
+}
+
+.window-control-icon {
+  display: block;
+  position: relative;
+}
+
+.minimize-icon {
+  width: 12px;
+  height: 2px;
+  border-radius: 999px;
+  background: currentColor;
+}
+
+.close-icon {
+  width: 12px;
+  height: 12px;
+}
+
+.close-icon::before,
+.close-icon::after {
+  content: '';
+  position: absolute;
+  left: 5px;
+  top: 0;
+  width: 2px;
+  height: 12px;
+  border-radius: 999px;
+  background: currentColor;
+}
+
+.close-icon::before {
+  transform: rotate(45deg);
+}
+
+.close-icon::after {
+  transform: rotate(-45deg);
+}
+
+.settings-container {
+  flex: 1;
+  height: calc(100vh - 52px);
+  padding: var(--spacing-4);
+  gap: var(--spacing-4);
+}
+
 /* 重启确认对话框样式 */
 .restart-dialog-overlay {
   position: fixed;

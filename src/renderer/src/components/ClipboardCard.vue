@@ -44,7 +44,6 @@ const sourceAppInfo = computed(() => {
   return props.apps[props.item.source_app] || null
 })
 
-console.log(props.item)
 // 计算 RTF 内容的 HTML 表示（使用 rtf-to-html-converter 和 DOMPurify）
 const rtfToHtml = computed(() => {
   if (!props.item.content.rtf) return ''
