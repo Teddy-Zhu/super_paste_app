@@ -279,7 +279,14 @@ class ClipboardManagerWorker extends BaseWorker {
         const appInfo = await this.getCurrentAppInfo()
         const result = await this.repository.saveItem(content, hash, {
           appInfo,
-          enableLocalOCR: this.config.enableLocalOCR
+          enableLocalOCR: this.config.enableLocalOCR,
+          onOCRUpdated: ({ contentId, ocrText }) => {
+            this.sendEvent('record-ocr-updated', {
+              contentId,
+              ocrText,
+              timestamp: Date.now()
+            })
+          }
         })
 
         if (result.isNew || result.id !== this.getLastItemId()) { // Logic check

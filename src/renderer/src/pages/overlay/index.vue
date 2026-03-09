@@ -810,9 +810,16 @@ onMounted(async () => {
     const removeOCRUpdateListener = onSimple(
       'record-ocr-updated',
       (data: { contentId: string; ocrText: string; timestamp: number }) => {
-        const targetItem = clipboardHistory.value.find((item) => item.id === data.contentId)
-        if (targetItem && targetItem.content) {
-          targetItem.content.ocr = data.ocrText
+        const targetIndex = clipboardHistory.value.findIndex((item) => item.id === data.contentId)
+        if (targetIndex >= 0) {
+          const targetItem = clipboardHistory.value[targetIndex]
+          clipboardHistory.value[targetIndex] = {
+            ...targetItem,
+            content: {
+              ...targetItem.content,
+              ocr: data.ocrText
+            }
+          }
         }
       }
     )

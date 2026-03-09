@@ -71,6 +71,7 @@ export class ClipboardRepository {
         options?: {
             appInfo?: AppInfo
             enableLocalOCR?: boolean
+            onOCRUpdated?: (payload: { contentId: string; ocrText: string }) => void
         }
     ): Promise<{ saved: boolean; id: string; isNew: boolean }> {
         if (!content || ClipboardDataConverter.isEmptyContent(content)) {
@@ -129,7 +130,7 @@ export class ClipboardRepository {
 
         // Async OCR
         if (options?.enableLocalOCR && content.image) {
-            this.performAsyncOCR(newItemId, content.image)
+            this.performAsyncOCR(newItemId, content.image, options.onOCRUpdated)
         }
 
         return { saved: true, id: newItemId, isNew: true }
@@ -220,7 +221,11 @@ export class ClipboardRepository {
     }
 
     // Moved from worker
-    private async performAsyncOCR(contentId: string, imageBuffer: Buffer): Promise<void> {
+    private async performAsyncOCR(
+        contentId: string,
+        imageBuffer: Buffer,
+        onOCRUpdated?: (payload: { contentId: string; ocrText: string }) => void
+    ): Promise<void> {
         try {
             if (!ocrService.ready) {
                 // OCR service should be initialized from worker or elsewhere
@@ -231,10 +236,7 @@ export class ClipboardRepository {
             const ocrResult = await ocrService.recognizeText(imageBuffer)
             if (ocrResult.success && ocrResult.text && ocrResult.text.trim()) {
                 this.database.updateOCR(contentId, ocrResult.text)
-                // Need to notify frontend? Repo shouldn't emit events directly maybe?
-                // Return result or let worker listen to change?
-                // Async nature makes it hard to return. 
-                // Maybe we just do DB update here, and Worker can have a callback?
+                onOCRUpdated?.({ contentId, ocrText: ocrResult.text })
             }
         } catch (error) {
             logger.error('[ClipboardRepository] OCR failed:', error)
