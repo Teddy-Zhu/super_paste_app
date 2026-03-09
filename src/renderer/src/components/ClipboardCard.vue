@@ -10,8 +10,10 @@ import IconTag from '~icons/mdi/tag'
 import IconCheck from '~icons/mdi/check'
 import IconDelete from '~icons/mdi/delete'
 import IconCircle from '~icons/mdi/circle'
+import IconOpenInNew from '~icons/mdi/open-in-new'
 import { useContextMenu, type ContextMenuItem } from '@renderer/composables/useContextMenu'
 import { tags, clipboard } from '@renderer/api/renderer-api'
+import { send } from '@renderer/api'
 import ImageDisplay from './ImageDisplay.vue'
 
 interface Props {
@@ -314,6 +316,14 @@ const handleContextMenu = (event: MouseEvent) => {
     })
   }
 
+  if (props.item.primaryType === 'url') {
+    menuItems.push({
+      label: '在浏览器中打开',
+      icon: IconOpenInNew,
+      action: handleOpenInBrowser
+    })
+  }
+
   if (props.allTags && props.allTags.length > 0) {
     const currentTagIds = new Set(props.item.tags?.map((tag) => tag.id) || [])
     const tagSubmenu: ContextMenuItem[] = props.allTags.map((tag) => {
@@ -381,6 +391,12 @@ const handleParseOcr = () => {
 
 const handleGenerateQRCode = () => {
   emit('generateQRCode', props.item.id)
+}
+
+const handleOpenInBrowser = () => {
+  const url = props.item.content.text?.trim()
+  if (!url) return
+  send('open-external-url', url)
 }
 
 const handleDeleteItem = async () => {

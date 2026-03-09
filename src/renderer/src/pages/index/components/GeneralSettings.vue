@@ -152,21 +152,15 @@ const clearHistory = async () => {
       <!-- Overlay 出现位置 -->
       <div class="setting-card">
         <div class="setting-info">
-          <h4 class="setting-title">Overlay 出现位置</h4>
+          <h4 class="setting-title">粘贴面板出现位置</h4>
           <p class="setting-description">设置快捷面板从屏幕的哪个方向出现，默认底部</p>
         </div>
         <div class="setting-control">
           <div class="overlay-position-grid">
-            <button
-              v-for="option in overlayPositionOptions"
-              :key="option.value"
-              type="button"
-              :class="[
-                'overlay-position-button',
-                { active: getCurrentOverlayPosition() === option.value }
-              ]"
-              @click="updateOverlayPosition(option.value)"
-            >
+            <button v-for="option in overlayPositionOptions" :key="option.value" type="button" :class="[
+              'overlay-position-button',
+              { active: getCurrentOverlayPosition() === option.value }
+            ]" @click="updateOverlayPosition(option.value)">
               <span class="overlay-position-label">{{ option.label }}</span>
             </button>
           </div>
@@ -181,17 +175,9 @@ const clearHistory = async () => {
         </div>
         <div class="setting-control">
           <div class="number-input-container">
-            <input
-              type="number"
-              :value="settingsStore.maxHistorySize"
-              @input="
-                updateMaxHistorySize(parseInt(($event.target as HTMLInputElement).value) || 100)
-              "
-              min="10"
-              max="1000"
-              step="10"
-              class="number-input"
-            />
+            <input type="number" :value="settingsStore.maxHistorySize" @input="
+              updateMaxHistorySize(parseInt(($event.target as HTMLInputElement).value) || 100)
+              " min="10" max="1000" step="10" class="number-input" />
             <span class="number-unit">条</span>
           </div>
         </div>
@@ -208,58 +194,34 @@ const clearHistory = async () => {
           <div class="keep-time-inline-section">
             <!-- 快速选择按钮 -->
             <div class="keep-time-presets-compact">
-              <button
-                v-for="preset in keepTimePresets"
-                :key="preset.value"
-                :class="[
-                  'preset-button-compact',
-                  { active: settingsStore.maxKeepTime === preset.value }
-                ]"
-                @click="updateMaxKeepTime(preset.value)"
-              >
+              <button v-for="preset in keepTimePresets" :key="preset.value" :class="[
+                'preset-button-compact',
+                { active: settingsStore.maxKeepTime === preset.value }
+              ]" @click="updateMaxKeepTime(preset.value)">
                 {{ preset.label }}
               </button>
             </div>
 
             <!-- 输入框在右边 -->
             <div class="number-input-container">
-              <input
-                type="number"
-                :value="settingsStore.maxKeepTime === -1 ? '' : settingsStore.maxKeepTime"
-                @input="
-                  updateMaxKeepTime(parseInt(($event.target as HTMLInputElement).value) || -1)
-                "
-                :placeholder="settingsStore.maxKeepTime === -1 ? '不限制' : '输入天数'"
-                min="1"
-                max="365"
-                step="1"
-                class="number-input"
-                :disabled="settingsStore.maxKeepTime === -1"
-              />
+              <input type="number" :value="settingsStore.maxKeepTime === -1 ? '' : settingsStore.maxKeepTime" @input="
+                updateMaxKeepTime(parseInt(($event.target as HTMLInputElement).value) || -1)
+                " :placeholder="settingsStore.maxKeepTime === -1 ? '不限制' : '输入天数'" min="1" max="365" step="1"
+                class="number-input" :disabled="settingsStore.maxKeepTime === -1" />
               <span class="number-unit">{{
                 settingsStore.maxKeepTime === -1 ? '不限制' : '天'
-              }}</span>
+                }}</span>
             </div>
           </div>
 
           <!-- 紧凑的滑块控制 -->
           <div class="keep-time-slider-compact" v-if="settingsStore.maxKeepTime !== -1">
-            <input
-              type="range"
-              :value="settingsStore.maxKeepTime"
-              @input="updateMaxKeepTime(parseInt(($event.target as HTMLInputElement).value))"
-              min="1"
-              max="365"
-              step="1"
-              class="keep-time-slider"
-            />
+            <input type="range" :value="settingsStore.maxKeepTime"
+              @input="updateMaxKeepTime(parseInt(($event.target as HTMLInputElement).value))" min="1" max="365" step="1"
+              class="keep-time-slider" />
             <div class="slider-marks">
-              <div
-                class="slider-mark"
-                v-for="mark in sliderMarks"
-                :key="mark.value"
-                :style="{ left: `${getMarkPosition(mark.value)}%` }"
-              >
+              <div class="slider-mark" v-for="mark in sliderMarks" :key="mark.value"
+                :style="{ left: `${getMarkPosition(mark.value)}%` }">
                 <span class="mark-label">{{ mark.label }}</span>
               </div>
             </div>

@@ -1,11 +1,14 @@
-import { ipcMain, app, BrowserWindow } from 'electron'
+import { ipcMain, app, BrowserWindow, shell } from 'electron'
 import type { IpcMainInvokeEvent } from 'electron'
 import clipboardManager from '../features/clipboard/manager/clipboard-manager'
 import clipboardHistoryService from '../services/clipboard-history-service'
 import clipboardTagService from '../services/clipboard-tag-service'
 import { qrCodeService } from '../services/qrcode-service'
 import { NotificationService } from '../services/notification-service'
-import type { ClipboardItem, ClipboardManagerConfig } from '../features/clipboard/types/clipboard-types'
+import type {
+  ClipboardItem,
+  ClipboardManagerConfig
+} from '../features/clipboard/types/clipboard-types'
 import type { BaseWorkerManager } from '../workers/base-worker-manager'
 import { mainWindowManager, overlayWindowManager } from '../ui/windows/window-managers'
 import { windowStateManager, OverlayState } from '../ui/windows/window-state'
@@ -32,7 +35,7 @@ class IpcManager {
   private static instance: IpcManager
   private isInitialized: boolean = false
 
-  private constructor() { }
+  private constructor() {}
 
   public static getInstance(): IpcManager {
     if (!IpcManager.instance) {
@@ -605,6 +608,26 @@ class IpcManager {
       }
     })
 
+    // 在系统默认浏览器中打开链接
+    ipcMain.on('open-external-url', (_, url: string) => {
+      try {
+        const targetUrl = (url || '').trim()
+        if (!targetUrl) return
+
+        const parsed = new URL(targetUrl)
+        if (!['http:', 'https:'].includes(parsed.protocol)) {
+          logger.warn('[主进程] 拒绝打开非 http(s) 链接:', targetUrl)
+          return
+        }
+
+        shell.openExternal(parsed.toString()).catch((error) => {
+          logger.error('[主进程] 打开外部链接失败:', error)
+        })
+      } catch (error) {
+        logger.error('[主进程] 解析外部链接失败:', error)
+      }
+    })
+
     this.registerHandler(
       'app:window-minimize',
       async (event) => {
@@ -772,10 +795,7 @@ class IpcManager {
             ocrRemoteConfig: {
               url: store.get(STORE_KEY.SETTINGS_OCR_REMOTE_URL, ''),
               extraParams: store.get(STORE_KEY.SETTINGS_OCR_REMOTE_EXTRA_PARAMS, '{}'),
-              imageFieldName: store.get(
-                STORE_KEY.SETTINGS_OCR_REMOTE_IMAGE_FIELD_NAME,
-                'image'
-              ),
+              imageFieldName: store.get(STORE_KEY.SETTINGS_OCR_REMOTE_IMAGE_FIELD_NAME, 'image'),
               requestFormat: store.get(STORE_KEY.SETTINGS_OCR_REMOTE_REQUEST_FORMAT, 'json'),
               resultPath: store.get(STORE_KEY.SETTINGS_OCR_REMOTE_RESULT_PATH, 'data.result')
             }
