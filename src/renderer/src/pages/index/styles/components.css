@@ -84,6 +84,43 @@
   box-shadow: var(--shadow-soft-xs);
 }
 
+/* Overlay 位置选择 */
+.overlay-position-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(48px, 1fr));
+  gap: var(--spacing-2);
+}
+
+.overlay-position-button {
+  border: 1px solid var(--color-border-medium);
+  border-radius: var(--radius-md);
+  background: var(--color-bg-primary);
+  color: var(--color-text-secondary);
+  min-height: 36px;
+  min-width: 48px;
+  cursor: pointer;
+  transition: all var(--duration-fast) var(--ease-in-out);
+  box-shadow: var(--shadow-soft-xs);
+}
+
+.overlay-position-button:hover {
+  border-color: var(--color-border-strong);
+  background: var(--color-neutral-50);
+  color: var(--color-primary);
+}
+
+.overlay-position-button.active {
+  border-color: transparent;
+  background: var(--gradient-primary);
+  color: var(--color-text-inverse);
+  box-shadow: var(--shadow-soft-md);
+}
+
+.overlay-position-label {
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+}
+
 /* 保存时间设置 - 轻拟物风格 */
 .keep-time-card {
   flex-direction: column;

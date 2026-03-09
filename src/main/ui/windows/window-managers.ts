@@ -1,7 +1,12 @@
 import { BrowserWindow, shell } from 'electron'
 import { join } from 'path'
 import { is } from '@electron-toolkit/utils'
-import { WindowConfigCalculator, IconSelector } from './window-config'
+import {
+  WindowConfigCalculator,
+  IconSelector,
+  DEFAULT_OVERLAY_POSITION,
+  type OverlayPosition
+} from './window-config'
 import { WindowUtils, windowStateManager, OverlayState } from './window-state'
 import { globalShortcutManager } from '../../system/global-shortcut-manager'
 import { appLifecycleManager } from '../../system/app-lifecycle-manager'
@@ -210,7 +215,7 @@ export class OverlayWindowManager {
   private static readonly SLIDE_IN_DELAY_MS = 16
   private overlayWindow: BrowserWindow | null = null
   private slideInTimer: NodeJS.Timeout | null = null
-  private cachedWindowBounds: Electron.Rectangle | null = null
+  private currentOverlayPosition: OverlayPosition = DEFAULT_OVERLAY_POSITION
 
   /**
    * 获取 overlay 窗口实例
@@ -230,21 +235,14 @@ export class OverlayWindowManager {
 
       logger.debug('[主进程] 开始创建 Overlay 窗口')
 
-      // 计算并缓存窗口位置
-      const position = WindowConfigCalculator.calculateWindowPosition()
-      this.cachedWindowBounds = {
-        x: position.x,
-        y: position.y,
-        width: position.width,
-        height: position.height
-      }
+      const { hiddenBounds } = this.calculateOverlayWindowLayout()
 
       // 创建覆盖层窗口
       this.overlayWindow = new BrowserWindow({
-        width: position.width,
-        height: position.height,
-        x: position.x,
-        y: position.y,
+        width: hiddenBounds.width,
+        height: hiddenBounds.height,
+        x: hiddenBounds.x,
+        y: hiddenBounds.y,
         frame: false,
         alwaysOnTop: true,
         skipTaskbar: true,
@@ -322,7 +320,6 @@ export class OverlayWindowManager {
       // 重置overlay状态
       windowStateManager.setOverlayState(OverlayState.CLOSED)
 
-      this.cachedWindowBounds = null
       this.overlayWindow = null
     })
 
@@ -334,8 +331,8 @@ export class OverlayWindowManager {
     })
 
     this.overlayWindow.on('will-resize', (event) => {
-      event.preventDefault();
-    });
+      event.preventDefault()
+    })
     this.overlayWindow.setSkipTaskbar(true)
   }
 
@@ -355,13 +352,34 @@ export class OverlayWindowManager {
   }
 
   /**
-   * 获取目标窗口边界(使用缓存或重新计算)
+   * 读取 overlay 位置配置
    */
-  private getTargetBounds(): Electron.Rectangle {
-    if (!this.cachedWindowBounds) {
-      this.cachedWindowBounds = WindowConfigCalculator.calculateWindowPosition()
+  private getOverlayPositionSetting(): OverlayPosition {
+    const value = store.get(
+      STORE_KEY.SETTINGS_OVERLAY_POSITION,
+      DEFAULT_OVERLAY_POSITION
+    ) as unknown
+    return WindowConfigCalculator.normalizeOverlayPosition(value)
+  }
+
+  /**
+   * 计算 overlay 的显示与隐藏位置
+   */
+  private calculateOverlayWindowLayout(): {
+    position: OverlayPosition
+    visibleBounds: Electron.Rectangle
+    hiddenBounds: Electron.Rectangle
+  } {
+    const position = this.getOverlayPositionSetting()
+    const { visibleBounds, hiddenBounds } = WindowConfigCalculator.calculateOverlayBounds(position)
+
+    this.currentOverlayPosition = position
+
+    return {
+      position,
+      visibleBounds,
+      hiddenBounds
     }
-    return this.cachedWindowBounds
   }
 
   /**
@@ -380,7 +398,11 @@ export class OverlayWindowManager {
 
     this.slideInTimer = setTimeout(() => {
       this.slideInTimer = null
-      WindowUtils.safelyEmitToWindow(this.overlayWindow, 'trigger-slide-in-animation')
+      WindowUtils.safelyEmitToWindow(
+        this.overlayWindow,
+        'trigger-slide-in-animation',
+        this.currentOverlayPosition
+      )
     }, OverlayWindowManager.SLIDE_IN_DELAY_MS)
   }
 
@@ -428,13 +450,14 @@ export class OverlayWindowManager {
     // 设置状态为正在打开
     windowStateManager.setOverlayState(OverlayState.OPENING)
     const windowInstance = this.overlayWindow
-    const targetBounds = this.getTargetBounds()
+    const { visibleBounds, position } = this.calculateOverlayWindowLayout()
 
-    logger.debug('[主进程] Overlay 窗口目标边界:', targetBounds)
+    logger.debug('[主进程] Overlay 窗口目标边界:', visibleBounds)
+    logger.debug('[主进程] Overlay 窗口位置:', position)
 
     try {
       // 设置窗口边界
-      windowInstance.setBounds(targetBounds)
+      windowInstance.setBounds(visibleBounds)
 
       // 显示并聚焦窗口
       WindowUtils.safelyShowWindow(windowInstance)
@@ -495,6 +518,10 @@ export class OverlayWindowManager {
       // 失焦并隐藏窗口
       windowInstance.blur()
       WindowUtils.safelyHideWindow(windowInstance)
+
+      // 隐藏后同步到屏幕外起始位置，避免下次显示出现位置闪动
+      const { hiddenBounds } = this.calculateOverlayWindowLayout()
+      windowInstance.setBounds(hiddenBounds)
     } catch (error) {
       logger.error('[主进程] 隐藏 Overlay 窗口失败:', error)
     }
@@ -543,7 +570,6 @@ export class OverlayWindowManager {
   destroy(): void {
     this.clearSlideInTimer()
     WindowUtils.safelyDestroyWindow(this.overlayWindow)
-    this.cachedWindowBounds = null
     this.overlayWindow = null
   }
 
@@ -564,6 +590,29 @@ export class OverlayWindowManager {
     )
   }
 
+  /**
+   * 根据当前设置更新窗口位置
+   */
+  updateWindowPositionBySettings(): void {
+    if (!this.overlayWindow || this.overlayWindow.isDestroyed()) {
+      return
+    }
+
+    const currentState = windowStateManager.getOverlayState()
+    const { visibleBounds, hiddenBounds } = this.calculateOverlayWindowLayout()
+    const targetBounds = currentState === OverlayState.CLOSED ? hiddenBounds : visibleBounds
+
+    try {
+      this.overlayWindow.setBounds(targetBounds)
+      WindowUtils.safelyEmitToWindow(
+        this.overlayWindow,
+        'overlay-position-updated',
+        this.currentOverlayPosition
+      )
+    } catch (error) {
+      logger.error('[主进程] 更新 Overlay 窗口位置失败:', error)
+    }
+  }
 }
 
 // 导出单例实例

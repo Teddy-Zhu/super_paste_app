@@ -7,28 +7,111 @@ import iconIco from '../../../../build/icon/icons/icon.ico?asset'
 import iconIcns from '../../../../build/icon/icons/16x16.png?asset'
 import iconLinux from '../../../../build/icon/icons/32x32.png?asset'
 
+export type OverlayPosition = 'top' | 'bottom' | 'left' | 'right'
+export const DEFAULT_OVERLAY_POSITION: OverlayPosition = 'bottom'
+
 /**
  * 窗口配置计算工具
  */
 export class WindowConfigCalculator {
+  static normalizeOverlayPosition(value: unknown): OverlayPosition {
+    if (value === 'top' || value === 'bottom' || value === 'left' || value === 'right') {
+      return value
+    }
+    return DEFAULT_OVERLAY_POSITION
+  }
+
+  private static getCurrentDisplayWorkArea() {
+    const cursorPoint = screen.getCursorScreenPoint()
+    const currentDisplay = screen.getDisplayNearestPoint(cursorPoint)
+    return currentDisplay.workArea
+  }
+
+  private static calculateVisibleBoundsByWorkArea(
+    workArea: Electron.Rectangle,
+    overlayPosition: OverlayPosition
+  ): { x: number; y: number; width: number; height: number } {
+    const { x: displayX, y: displayY, width: displayWidth, height: displayHeight } = workArea
+
+    switch (overlayPosition) {
+      case 'top':
+        return {
+          x: displayX,
+          y: displayY,
+          width: displayWidth,
+          height: WINDOW_HEIGHT
+        }
+      case 'bottom':
+        return {
+          x: displayX,
+          y: displayY + displayHeight - WINDOW_HEIGHT,
+          width: displayWidth,
+          height: WINDOW_HEIGHT
+        }
+      case 'left':
+        return {
+          x: displayX,
+          y: displayY,
+          width: WINDOW_HEIGHT,
+          height: displayHeight
+        }
+      case 'right':
+        return {
+          x: displayX + displayWidth - WINDOW_HEIGHT,
+          y: displayY,
+          width: WINDOW_HEIGHT,
+          height: displayHeight
+        }
+      default:
+        return {
+          x: displayX,
+          y: displayY + displayHeight - WINDOW_HEIGHT,
+          width: displayWidth,
+          height: WINDOW_HEIGHT
+        }
+    }
+  }
+
   /**
    * 获取当前显示器的窗口位置信息
    */
-  static calculateWindowPosition(): { x: number; y: number; width: number; height: number } {
-    const cursorPoint = screen.getCursorScreenPoint()
-    const currentDisplay = screen.getDisplayNearestPoint(cursorPoint)
-    const { x: displayX, y: displayY, width, height } = currentDisplay.workArea
+  static calculateWindowPosition(overlayPosition: OverlayPosition = DEFAULT_OVERLAY_POSITION): {
+    x: number
+    y: number
+    width: number
+    height: number
+  } {
+    return this.calculateOverlayBounds(overlayPosition).visibleBounds
+  }
 
-    // 窗口宽度为屏幕宽度，位置在屏幕最底部
-    const windowWidth = width
-    const windowX = displayX
-    const windowY = displayY + height - WINDOW_HEIGHT
+  static calculateHiddenWindowPosition(
+    overlayPosition: OverlayPosition = DEFAULT_OVERLAY_POSITION
+  ): { x: number; y: number; width: number; height: number } {
+    return this.calculateOverlayBounds(overlayPosition).hiddenBounds
+  }
+
+  static calculateOverlayBounds(overlayPosition: OverlayPosition = DEFAULT_OVERLAY_POSITION): {
+    visibleBounds: { x: number; y: number; width: number; height: number }
+    hiddenBounds: { x: number; y: number; width: number; height: number }
+  } {
+    const workArea = this.getCurrentDisplayWorkArea()
+    const visibleBounds = this.calculateVisibleBoundsByWorkArea(workArea, overlayPosition)
+    const { x: displayX, y: displayY, width: displayWidth, height: displayHeight } = workArea
+
+    const hiddenBounds =
+      overlayPosition === 'top'
+        ? { ...visibleBounds, y: displayY - visibleBounds.height }
+        : overlayPosition === 'bottom'
+          ? { ...visibleBounds, y: displayY + displayHeight }
+          : overlayPosition === 'left'
+            ? { ...visibleBounds, x: displayX - visibleBounds.width }
+            : overlayPosition === 'right'
+              ? { ...visibleBounds, x: displayX + displayWidth }
+              : { ...visibleBounds, y: displayY + displayHeight }
 
     return {
-      x: windowX,
-      y: windowY,
-      width: windowWidth,
-      height: WINDOW_HEIGHT
+      visibleBounds,
+      hiddenBounds
     }
   }
 

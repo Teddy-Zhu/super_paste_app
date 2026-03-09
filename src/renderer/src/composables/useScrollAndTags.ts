@@ -56,10 +56,6 @@ export interface ScrollAndTagsManager {
 
 // ==================== 常量定义 ====================
 
-const CARD_WIDTH = 300
-const CARD_GAP = 16 // 修正为实际的 CSS gap 值
-const CONTAINER_PADDING_LEFT = 20 // 容器左侧 padding
-const TOTAL_CARD_WIDTH = CARD_WIDTH + CARD_GAP
 const SCROLL_MARGIN = 40 // 滚动时的边距，确保选中项不会紧贴边缘
 
 const SCROLLBAR_OPTIONS: Partial<ScrollbarOptions> = {
@@ -77,7 +73,8 @@ export function useScrollAndTags(
   selectedIndex: Ref<number>,
   currentAnimationState: Ref<AnimationState>,
   loadClipboardHistory: (options?: ClipboardHistoryQueryOptions) => Promise<void>,
-  getSearchText: () => string
+  getSearchText: () => string,
+  isVerticalLayout: Ref<boolean>
 ): ScrollAndTagsManager {
   // ==================== 状态管理 ====================
 
@@ -163,6 +160,66 @@ export function useScrollAndTags(
     }
   }
 
+  const getSelectedCardElement = (): HTMLElement | null => {
+    if (!clipboardScrollRef.value || selectedIndex.value < 0) {
+      return null
+    }
+
+    const cardElements = clipboardScrollRef.value.querySelectorAll<HTMLElement>('.clipboard-card')
+    return cardElements[selectedIndex.value] ?? null
+  }
+
+  const getScrollMetrics = () => {
+    if (scrollbarInstance) {
+      return {
+        scrollLeft: scrollbarInstance.scrollLeft,
+        scrollTop: scrollbarInstance.scrollTop,
+        containerWidth: scrollbarInstance.size.container.width,
+        containerHeight: scrollbarInstance.size.container.height,
+        contentWidth: scrollbarInstance.size.content.width,
+        contentHeight: scrollbarInstance.size.content.height
+      }
+    }
+
+    if (!clipboardScrollRef.value) {
+      return null
+    }
+
+    return {
+      scrollLeft: clipboardScrollRef.value.scrollLeft,
+      scrollTop: clipboardScrollRef.value.scrollTop,
+      containerWidth: clipboardScrollRef.value.clientWidth,
+      containerHeight: clipboardScrollRef.value.clientHeight,
+      contentWidth: clipboardScrollRef.value.scrollWidth,
+      contentHeight: clipboardScrollRef.value.scrollHeight
+    }
+  }
+
+  const scrollToAxisPosition = (target: number, axis: 'x' | 'y') => {
+    hideContextMenu()
+
+    if (scrollbarInstance) {
+      try {
+        const targetX = axis === 'x' ? target : scrollbarInstance.scrollLeft
+        const targetY = axis === 'y' ? target : scrollbarInstance.scrollTop
+        scrollbarInstance.scrollTo(targetX, targetY, 300)
+        return
+      } catch (error) {
+        console.warn('[滚动标签管理] scrollbar 滚动失败，回退到原生滚动:', error)
+      }
+    }
+
+    if (!clipboardScrollRef.value) {
+      return
+    }
+
+    clipboardScrollRef.value.scrollTo({
+      left: axis === 'x' ? target : clipboardScrollRef.value.scrollLeft,
+      top: axis === 'y' ? target : clipboardScrollRef.value.scrollTop,
+      behavior: 'smooth'
+    })
+  }
+
   const scrollToSelectedItem = useRafThrottle(() => {
     if (!clipboardScrollRef.value || clipboardHistory.value.length === 0 || selectedIndex.value < 0)
       return
@@ -175,83 +232,39 @@ export function useScrollAndTags(
     ) {
       initializeScrollbar()
     }
-
-    // 计算选中卡片的实际位置（考虑容器的 padding-left）
-    const selectedCardLeft = CONTAINER_PADDING_LEFT + selectedIndex.value * TOTAL_CARD_WIDTH
-    const selectedCardRight = selectedCardLeft + CARD_WIDTH
-
-    let containerScrollLeft: number
-    let containerWidth: number
-    let maxScrollLeft: number
-
-    if (scrollbarInstance) {
-      containerScrollLeft = scrollbarInstance.scrollLeft
-      containerWidth = scrollbarInstance.size.container.width
-      maxScrollLeft = Math.max(
-        0,
-        scrollbarInstance.size.content.width - scrollbarInstance.size.container.width
-      )
-    } else {
-      const container = clipboardScrollRef.value
-      containerScrollLeft = container.scrollLeft
-      containerWidth = container.clientWidth
-      maxScrollLeft = Math.max(0, container.scrollWidth - container.clientWidth)
+    const selectedCardElement = getSelectedCardElement()
+    const metrics = getScrollMetrics()
+    if (!selectedCardElement || !metrics) {
+      return
     }
 
-    const containerScrollRight = containerScrollLeft + containerWidth
+    const verticalLayout = isVerticalLayout.value
+    const containerStart = verticalLayout ? metrics.scrollTop : metrics.scrollLeft
+    const containerSize = verticalLayout ? metrics.containerHeight : metrics.containerWidth
+    const contentSize = verticalLayout ? metrics.contentHeight : metrics.contentWidth
+    const maxScroll = Math.max(0, contentSize - containerSize)
 
-    // 检查选中的卡片是否在可视区域内，并添加适当的边距
-    let targetScrollLeft: number | null = null
+    const selectedStart = verticalLayout
+      ? selectedCardElement.offsetTop
+      : selectedCardElement.offsetLeft
+    const selectedSize = verticalLayout
+      ? selectedCardElement.offsetHeight
+      : selectedCardElement.offsetWidth
+    const selectedEnd = selectedStart + selectedSize
+    const containerEnd = containerStart + containerSize
 
-    if (selectedCardLeft < containerScrollLeft + SCROLL_MARGIN) {
-      // 选中卡片在左侧外部或太靠近左边缘
-      targetScrollLeft = Math.max(0, selectedCardLeft - SCROLL_MARGIN)
-    } else if (selectedCardRight > containerScrollRight - SCROLL_MARGIN) {
-      // 选中卡片在右侧外部或太靠近右边缘
-      targetScrollLeft = Math.min(maxScrollLeft, selectedCardRight - containerWidth + SCROLL_MARGIN)
+    let targetScroll: number | null = null
+
+    if (selectedStart < containerStart + SCROLL_MARGIN) {
+      targetScroll = Math.max(0, selectedStart - SCROLL_MARGIN)
+    } else if (selectedEnd > containerEnd - SCROLL_MARGIN) {
+      targetScroll = Math.min(maxScroll, selectedEnd - containerSize + SCROLL_MARGIN)
     }
 
-    // 只有在需要滚动时才执行滚动
-    if (targetScrollLeft !== null && Math.abs(targetScrollLeft - containerScrollLeft) > 1) {
-      scrollToPosition(targetScrollLeft)
-      // console.log('[滚动标签管理] 滚动到选中项:', {
-      //   selectedIndex: selectedIndex.value,
-      //   selectedCardLeft,
-      //   selectedCardRight,
-      //   containerScrollLeft,
-      //   containerScrollRight,
-      //   targetScrollLeft,
-      //   containerWidth
-      // })
+    if (targetScroll !== null && Math.abs(targetScroll - containerStart) > 1) {
+      scrollToAxisPosition(targetScroll, verticalLayout ? 'y' : 'x')
     }
   })
-
-  const scrollToPosition = (targetLeft: number) => {
-    // 程序化滚动时也隐藏菜单
-    hideContextMenu()
-
-    if (scrollbarInstance) {
-      try {
-        // 使用 smooth-scrollbar 的平滑滚动，动画时间设为 300ms
-        scrollbarInstance.scrollTo(targetLeft, 0, 300)
-      } catch (error) {
-        console.warn('[滚动标签管理] scrollbar 滚动失败，回退到原生滚动:', error)
-        // 如果 scrollbar 操作失败，回退到原生滚动
-        if (clipboardScrollRef.value) {
-          clipboardScrollRef.value.scrollTo({
-            left: targetLeft,
-            behavior: 'smooth'
-          })
-        }
-      }
-    } else if (clipboardScrollRef.value) {
-      // 回退到原生滚动
-      clipboardScrollRef.value.scrollTo({
-        left: targetLeft,
-        behavior: 'smooth'
-      })
-    }
-  }
 
   // 辅助方法：检查选中项是否在可视区域内
   const isSelectedItemVisible = (): boolean => {
@@ -263,27 +276,28 @@ export function useScrollAndTags(
       return false
     }
 
-    const selectedCardLeft = CONTAINER_PADDING_LEFT + selectedIndex.value * TOTAL_CARD_WIDTH
-    const selectedCardRight = selectedCardLeft + CARD_WIDTH
-
-    let containerScrollLeft: number
-    let containerWidth: number
-
-    if (scrollbarInstance) {
-      containerScrollLeft = scrollbarInstance.scrollLeft
-      containerWidth = scrollbarInstance.size.container.width
-    } else {
-      const container = clipboardScrollRef.value
-      containerScrollLeft = container.scrollLeft
-      containerWidth = container.clientWidth
+    const selectedCardElement = getSelectedCardElement()
+    const metrics = getScrollMetrics()
+    if (!selectedCardElement || !metrics) {
+      return false
     }
 
-    const containerScrollRight = containerScrollLeft + containerWidth
+    const verticalLayout = isVerticalLayout.value
+    const containerStart = verticalLayout ? metrics.scrollTop : metrics.scrollLeft
+    const containerSize = verticalLayout ? metrics.containerHeight : metrics.containerWidth
+    const containerEnd = containerStart + containerSize
+
+    const selectedStart = verticalLayout
+      ? selectedCardElement.offsetTop
+      : selectedCardElement.offsetLeft
+    const selectedSize = verticalLayout
+      ? selectedCardElement.offsetHeight
+      : selectedCardElement.offsetWidth
+    const selectedEnd = selectedStart + selectedSize
 
     // 检查是否完全在可视区域内（包含边距）
     return (
-      selectedCardLeft >= containerScrollLeft + SCROLL_MARGIN &&
-      selectedCardRight <= containerScrollRight - SCROLL_MARGIN
+      selectedStart >= containerStart + SCROLL_MARGIN && selectedEnd <= containerEnd - SCROLL_MARGIN
     )
   }
 
@@ -317,28 +331,28 @@ export function useScrollAndTags(
 
     event.preventDefault()
 
-    // 检查是否为水平滚动
-    const isHorizontalScroll = Math.abs(event.deltaX) > Math.abs(event.deltaY)
-
-    let scrollAmount = 0
-    if (isHorizontalScroll && Math.abs(event.deltaX) > 3) {
-      scrollAmount = event.deltaX * 3
-    } else {
-      scrollAmount = event.deltaY * 5
-    }
+    const verticalLayout = isVerticalLayout.value
+    const primaryDelta = verticalLayout ? event.deltaY : event.deltaX
+    const fallbackDelta = verticalLayout ? event.deltaX : event.deltaY
+    const dominantDelta =
+      Math.abs(primaryDelta) > 3 ? primaryDelta : Math.abs(fallbackDelta) > 3 ? fallbackDelta : 0
+    const scrollAmount = dominantDelta * (verticalLayout ? 2.5 : 3.5)
 
     if (scrollbarInstance) {
       try {
-        const currentScrollLeft = scrollbarInstance.scrollLeft
-        const maxScrollLeft =
-          scrollbarInstance.size.content.width - scrollbarInstance.size.container.width
-        const targetScrollLeft = Math.max(
-          0,
-          Math.min(maxScrollLeft, currentScrollLeft + scrollAmount)
-        )
+        const currentScroll = verticalLayout
+          ? scrollbarInstance.scrollTop
+          : scrollbarInstance.scrollLeft
+        const maxScroll =
+          (verticalLayout
+            ? scrollbarInstance.size.content.height - scrollbarInstance.size.container.height
+            : scrollbarInstance.size.content.width - scrollbarInstance.size.container.width) || 0
+        const targetScroll = Math.max(0, Math.min(maxScroll, currentScroll + scrollAmount))
 
-        if (targetScrollLeft !== currentScrollLeft) {
-          scrollbarInstance.scrollTo(targetScrollLeft, 0, 0)
+        if (targetScroll !== currentScroll) {
+          const targetX = verticalLayout ? scrollbarInstance.scrollLeft : targetScroll
+          const targetY = verticalLayout ? targetScroll : scrollbarInstance.scrollTop
+          scrollbarInstance.scrollTo(targetX, targetY, 0)
         }
       } catch (error) {
         console.warn('[滚动标签管理] scrollbar 实例操作失败，尝试重新初始化:', error)
@@ -346,16 +360,16 @@ export function useScrollAndTags(
       }
     } else if (clipboardScrollRef.value) {
       const container = clipboardScrollRef.value
-      const currentScrollLeft = container.scrollLeft
-      const maxScrollLeft = container.scrollWidth - container.clientWidth
-      const targetScrollLeft = Math.max(
-        0,
-        Math.min(maxScrollLeft, currentScrollLeft + scrollAmount)
-      )
+      const currentScroll = verticalLayout ? container.scrollTop : container.scrollLeft
+      const maxScroll = verticalLayout
+        ? container.scrollHeight - container.clientHeight
+        : container.scrollWidth - container.clientWidth
+      const targetScroll = Math.max(0, Math.min(maxScroll, currentScroll + scrollAmount))
 
-      if (targetScrollLeft !== currentScrollLeft) {
+      if (targetScroll !== currentScroll) {
         container.scrollTo({
-          left: targetScrollLeft,
+          left: verticalLayout ? container.scrollLeft : targetScroll,
+          top: verticalLayout ? targetScroll : container.scrollTop,
           behavior: 'smooth'
         })
       }

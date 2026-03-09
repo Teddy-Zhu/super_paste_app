@@ -27,6 +27,15 @@ const sliderMarks = [
   { label: '365天', value: 365 }
 ]
 
+type OverlayPosition = 'top' | 'bottom' | 'left' | 'right'
+
+const overlayPositionOptions: Array<{ label: string; value: OverlayPosition }> = [
+  { label: '上', value: 'top' },
+  { label: '下', value: 'bottom' },
+  { label: '左', value: 'left' },
+  { label: '右', value: 'right' }
+]
+
 // 计算滑块标记位置的函数
 const getMarkPosition = (value: number): number => {
   // 滑块范围是 1-365
@@ -77,6 +86,25 @@ const updateMaxKeepTime = (value: number): void => {
   console.log('最大保存时间:', clampedValue === -1 ? '不限制' : `${clampedValue}天`)
 }
 
+const normalizeOverlayPosition = (value: unknown): OverlayPosition => {
+  if (value === 'top' || value === 'bottom' || value === 'left' || value === 'right') {
+    return value
+  }
+  return 'bottom'
+}
+
+const getCurrentOverlayPosition = (): OverlayPosition => {
+  return normalizeOverlayPosition(props.settingsStore.overlayPosition)
+}
+
+const updateOverlayPosition = (value: OverlayPosition): void => {
+  const normalized = normalizeOverlayPosition(value)
+  props.settingsStore.overlayPosition = normalized
+  console.log('overlay 出现位置:', normalized)
+}
+
+props.settingsStore.overlayPosition = getCurrentOverlayPosition()
+
 // 清除历史记录
 const clearHistory = async () => {
   if (!confirm('确定要清除所有剪贴板历史记录吗？此操作不可撤销。')) {
@@ -118,6 +146,30 @@ const clearHistory = async () => {
             <input type="checkbox" :checked="settingsStore.autoStart" @change="toggleAutoStart" />
             <span class="toggle-slider"></span>
           </label>
+        </div>
+      </div>
+
+      <!-- Overlay 出现位置 -->
+      <div class="setting-card">
+        <div class="setting-info">
+          <h4 class="setting-title">Overlay 出现位置</h4>
+          <p class="setting-description">设置快捷面板从屏幕的哪个方向出现，默认底部</p>
+        </div>
+        <div class="setting-control">
+          <div class="overlay-position-grid">
+            <button
+              v-for="option in overlayPositionOptions"
+              :key="option.value"
+              type="button"
+              :class="[
+                'overlay-position-button',
+                { active: getCurrentOverlayPosition() === option.value }
+              ]"
+              @click="updateOverlayPosition(option.value)"
+            >
+              <span class="overlay-position-label">{{ option.label }}</span>
+            </button>
+          </div>
         </div>
       </div>
 

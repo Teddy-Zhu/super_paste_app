@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { ref, nextTick, watch, onMounted, onUnmounted, type Ref } from 'vue'
+import { ref, computed, nextTick, watch, onMounted, onUnmounted, type Ref } from 'vue'
 import { send, onSimple } from '@renderer/api'
-import { clipboard } from '@renderer/api/renderer-api'
+import { clipboard, store } from '@renderer/api/renderer-api'
 import type { ClipboardItem, ClipboardHistoryQueryOptions, AppInfo } from '@renderer/api/types'
 import { OverlayError, OverlayErrorCode, isClipboardItem } from '@renderer/types/overlay'
 
@@ -55,6 +55,27 @@ type RestoreMethod =
   | 'parseQRCode'
   | 'generateQRCode'
 type PlayStateRef = Ref<'idle' | 'running' | 'paused' | 'finished'>
+type OverlayPosition = 'top' | 'bottom' | 'left' | 'right'
+
+const OVERLAY_POSITION_STORE_KEY = 'settings.overlayPosition'
+const overlayPosition = ref<OverlayPosition>('bottom')
+
+const normalizeOverlayPosition = (value: unknown): OverlayPosition => {
+  if (value === 'top' || value === 'bottom' || value === 'left' || value === 'right') {
+    return value
+  }
+  return 'bottom'
+}
+
+const applyOverlayPosition = (value: unknown): void => {
+  const normalized = normalizeOverlayPosition(value)
+  overlayPosition.value = normalized
+  animationManager.setSlideDirection(normalized)
+}
+
+const isSideLayout = computed(() => {
+  return overlayPosition.value === 'left' || overlayPosition.value === 'right'
+})
 
 // ==================== 剪贴板历史加载 ====================
 
@@ -500,7 +521,8 @@ scrollAndTagsManager = useScrollAndTags(
   selectedIndex,
   animationManager.currentAnimationState,
   loadClipboardHistory,
-  () => searchAndNavManager.searchText.value || ''
+  () => searchAndNavManager.searchText.value || '',
+  isSideLayout
 )
 
 // ==================== 动画流程函数 ====================
@@ -634,6 +656,29 @@ const handleKeyboardUpEvent = (event: KeyboardEvent) => {
   }
 }
 
+const handleTabsContainerWheel = (event: WheelEvent): boolean => {
+  const target = event.target as HTMLElement | null
+  const tabsElement = target?.closest('.tabs-container') as HTMLElement | null
+  if (!tabsElement) {
+    return false
+  }
+
+  const hasHorizontalOverflow = tabsElement.scrollWidth > tabsElement.clientWidth + 1
+  if (!hasHorizontalOverflow) {
+    return false
+  }
+
+  const delta =
+    Math.abs(event.deltaX) > Math.abs(event.deltaY) ? event.deltaX : event.deltaY
+  if (Math.abs(delta) < 1) {
+    return true
+  }
+
+  event.preventDefault()
+  tabsElement.scrollLeft += delta
+  return true
+}
+
 // ==================== 样式初始化 ====================
 
 // ==================== 生命周期钩子 ====================
@@ -662,19 +707,54 @@ watch(searchAndNavManager.searchText, (newValue) => {
   }
 })
 
+watch(isSideLayout, () => {
+  nextTick(() => {
+    scrollAndTagsManager.initializeScrollbar()
+    scrollAndTagsManager.scrollToSelectedItem()
+  })
+})
+
 /**
  * 组件挂载时的初始化逻辑
  */
 onMounted(async () => {
   try {
-    const removeSlideInListener = onSimple('trigger-slide-in-animation', () => {
-      requestAnimationFrame(() => {
+    applyOverlayPosition(overlayPosition.value)
+    const savedOverlayPosition = await store
+      .get<string>(OVERLAY_POSITION_STORE_KEY, 'bottom')
+      .catch(() => 'bottom')
+    applyOverlayPosition(savedOverlayPosition)
+
+    const removeSlideInListener = onSimple(
+      'trigger-slide-in-animation',
+      (position?: OverlayPosition) => {
+        applyOverlayPosition(position)
         requestAnimationFrame(() => {
-          triggerSlideInAnimation().catch(console.error)
+          requestAnimationFrame(() => {
+            triggerSlideInAnimation().catch(console.error)
+          })
         })
-      })
-    })
+      }
+    )
     ipcUnsubscribers.push(removeSlideInListener)
+
+    const removeOverlayPositionUpdatedListener = onSimple(
+      'overlay-position-updated',
+      (position?: OverlayPosition) => {
+        applyOverlayPosition(position)
+      }
+    )
+    ipcUnsubscribers.push(removeOverlayPositionUpdatedListener)
+
+    const removeStoreValueChangedListener = onSimple(
+      'store-value-changed',
+      (data: { key?: string; value?: unknown }) => {
+        if (data?.key === OVERLAY_POSITION_STORE_KEY) {
+          applyOverlayPosition(data.value)
+        }
+      }
+    )
+    ipcUnsubscribers.push(removeStoreValueChangedListener)
 
     eventManager.addEventListener(document, 'keydown', (event: Event) => {
       handleKeyboardEvent(event as KeyboardEvent)
@@ -693,7 +773,13 @@ onMounted(async () => {
       }
     })
 
-    wheelHandler = (event: WheelEvent) => scrollAndTagsManager.handleWheel(event)
+    wheelHandler = (event: WheelEvent) => {
+      if (handleTabsContainerWheel(event)) {
+        return
+      }
+
+      scrollAndTagsManager.handleWheel(event)
+    }
     document.addEventListener('wheel', wheelHandler, { passive: false })
 
     animationManager.initializeStyles()
@@ -765,8 +851,15 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="overlay-container">
-    <div ref="overlayContentRef" class="overlay-content">
+  <div class="overlay-container" :class="`overlay-container--${overlayPosition}`">
+    <div
+      ref="overlayContentRef"
+      :class="[
+        'overlay-content',
+        `overlay-content--${overlayPosition}`,
+        { 'overlay-content--side': isSideLayout }
+      ]"
+    >
       <!-- 顶部工具栏 -->
       <div class="top-toolbar">
         <!-- 搜索图标 -->
@@ -878,8 +971,19 @@ onUnmounted(() => {
         </div>
 
         <!-- 剪贴板历史横向滚动 -->
-        <div v-else ref="clipboardScrollRef" class="clipboard-scroll-container">
-          <transition-group name="clipboard-list" tag="div" class="clipboard-list-wrapper">
+        <div
+          v-else
+          ref="clipboardScrollRef"
+          :class="[
+            'clipboard-scroll-container',
+            { 'clipboard-scroll-container--side': isSideLayout }
+          ]"
+        >
+          <transition-group
+            name="clipboard-list"
+            tag="div"
+            :class="['clipboard-list-wrapper', { 'clipboard-list-wrapper--side': isSideLayout }]"
+          >
             <ClipboardCard
               v-for="(item, index) in clipboardHistory"
               :key="item.id"

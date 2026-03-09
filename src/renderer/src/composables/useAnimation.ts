@@ -16,6 +16,8 @@ export enum AnimationState {
   SLIDING_OUT = 'SLIDING_OUT'
 }
 
+export type OverlaySlideDirection = 'top' | 'bottom' | 'left' | 'right'
+
 export interface AnimationConfig {
   readonly OVERLAY_DURATION: number
   readonly SEARCH_DURATION: number
@@ -35,6 +37,7 @@ export interface AnimationManager {
   // Overlay 动画状态
   readonly currentAnimationState: Ref<AnimationState>
   readonly isSlideInComplete: Ref<boolean>
+  readonly currentSlideDirection: Ref<OverlaySlideDirection>
 
   // 搜索动画状态
   readonly isSearchVisible: Ref<boolean>
@@ -50,6 +53,7 @@ export interface AnimationManager {
   createSlideInAnimation: () => AnimationControls
   createSlideOutAnimation: () => AnimationControls
   resetOverlayState: () => void
+  setSlideDirection: (direction: OverlaySlideDirection) => void
 
   // 搜索动画方法
   createSearchExpandAnimation: () => AnimationControls
@@ -86,6 +90,7 @@ export function useAnimation(
 
   // Overlay 动画状态
   const overlayStateManager = useStateManager<AnimationState>(AnimationState.IDLE)
+  const slideDirection = ref<OverlaySlideDirection>('bottom')
   const isSlideInComplete = computed(
     () => overlayStateManager.state.value === AnimationState.ACTIVE
   )
@@ -114,10 +119,48 @@ export function useAnimation(
     return state === AnimationState.SLIDING_IN || state === AnimationState.SLIDING_OUT
   }
 
+  const getHiddenTransform = (direction: OverlaySlideDirection): string => {
+    switch (direction) {
+      case 'top':
+        return 'translateY(-100%)'
+      case 'bottom':
+        return 'translateY(100%)'
+      case 'left':
+        return 'translateX(-100%)'
+      case 'right':
+        return 'translateX(100%)'
+      default:
+        return 'translateY(100%)'
+    }
+  }
+
+  const getSearchTargetWidth = (): string => {
+    const overlayWidth = overlayContentRef.value?.clientWidth ?? 1000
+    const maxAvailableWidth = Math.max(180, overlayWidth - 140)
+    const targetWidth = Math.min(parseInt(ANIMATION_CONFIG.SEARCH_WIDTH, 10), maxAvailableWidth)
+    return `${targetWidth}px`
+  }
+
+  const getSearchCollapseWidth = (): string => {
+    const overlayWidth = overlayContentRef.value?.clientWidth ?? 1000
+    const maxAvailableWidth = Math.max(140, overlayWidth - 180)
+    const collapseWidth = Math.min(parseInt(ANIMATION_CONFIG.COLLAPSE_WIDTH, 10), maxAvailableWidth)
+    return `${collapseWidth}px`
+  }
+
+  const setSlideDirection = (direction: OverlaySlideDirection): void => {
+    slideDirection.value = direction
+
+    if (overlayStateManager.state.value === AnimationState.IDLE && overlayContentRef.value) {
+      overlayContentRef.value.style.transform = getHiddenTransform(direction)
+    }
+  }
+
   const createSlideInAnimation = (): AnimationControls => {
+    const hiddenTransform = getHiddenTransform(slideDirection.value)
     return useAnimate(
       overlayContentRef,
-      [{ transform: 'translateY(100%)' }, { transform: 'translateY(0%)' }],
+      [{ transform: hiddenTransform }, { transform: 'translate3d(0, 0, 0)' }],
       {
         duration: ANIMATION_CONFIG.OVERLAY_DURATION,
         easing: ANIMATION_CONFIG.SLIDE_IN_EASING,
@@ -127,9 +170,10 @@ export function useAnimation(
   }
 
   const createSlideOutAnimation = (): AnimationControls => {
+    const hiddenTransform = getHiddenTransform(slideDirection.value)
     return useAnimate(
       overlayContentRef,
-      [{ transform: 'translateY(0%)' }, { transform: 'translateY(100%)' }],
+      [{ transform: 'translate3d(0, 0, 0)' }, { transform: hiddenTransform }],
       {
         duration: ANIMATION_CONFIG.OVERLAY_DURATION,
         easing: ANIMATION_CONFIG.SLIDE_OUT_EASING,
@@ -149,7 +193,7 @@ export function useAnimation(
 
     // 重置元素位置到初始状态
     if (overlayContentRef.value) {
-      overlayContentRef.value.style.transform = 'translateY(100%)'
+      overlayContentRef.value.style.transform = getHiddenTransform(slideDirection.value)
     }
 
     // 重置搜索框样式
@@ -159,6 +203,7 @@ export function useAnimation(
   // ==================== 搜索动画方法 ====================
 
   const createSearchExpandAnimation = (): AnimationControls => {
+    const searchTargetWidth = getSearchTargetWidth()
     return useAnimate(
       searchContainerRef,
       [
@@ -171,7 +216,7 @@ export function useAnimation(
         },
         // 添加中间关键帧，让动画更自然
         {
-          width: ANIMATION_CONFIG.SEARCH_WIDTH,
+          width: searchTargetWidth,
           opacity: 0.8,
           transform: 'scaleX(0.95)',
           paddingLeft: '6px',
@@ -179,7 +224,7 @@ export function useAnimation(
           offset: 0.7
         },
         {
-          width: ANIMATION_CONFIG.SEARCH_WIDTH,
+          width: searchTargetWidth,
           opacity: 1,
           transform: 'scaleX(1)',
           paddingLeft: '8px',
@@ -195,11 +240,12 @@ export function useAnimation(
   }
 
   const createSearchCollapseAnimation = (): AnimationControls => {
+    const collapseWidth = getSearchCollapseWidth()
     return useAnimate(
       searchContainerRef,
       [
         {
-          width: ANIMATION_CONFIG.COLLAPSE_WIDTH,
+          width: collapseWidth,
           opacity: 1,
           transform: 'scaleX(1)',
           paddingLeft: '8px',
@@ -311,6 +357,9 @@ export function useAnimation(
   }
 
   const initializeStyles = () => {
+    if (overlayContentRef.value) {
+      overlayContentRef.value.style.transform = getHiddenTransform(slideDirection.value)
+    }
     resetSearchStyles()
   }
 
@@ -334,6 +383,7 @@ export function useAnimation(
     // Overlay 动画状态
     currentAnimationState: readonly(overlayStateManager.state),
     isSlideInComplete: readonly(isSlideInComplete),
+    currentSlideDirection: readonly(slideDirection),
 
     // 搜索动画状态
     isSearchVisible: readonly(isSearchVisible),
@@ -349,6 +399,7 @@ export function useAnimation(
     createSlideInAnimation,
     createSlideOutAnimation,
     resetOverlayState,
+    setSlideDirection,
 
     // 搜索动画方法
     createSearchExpandAnimation,

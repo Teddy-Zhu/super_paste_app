@@ -10,6 +10,8 @@ export type IpcRendererListener = (event: IpcRendererEvent, ...args: any[]) => v
 export type SimpleListener = (...args: any[]) => void
 
 // 常用 IPC 频道定义
+export type OverlayPosition = 'top' | 'bottom' | 'left' | 'right'
+
 export interface IpcChannels {
   // 窗口相关
   'open-overlay-window': void
@@ -17,7 +19,8 @@ export interface IpcChannels {
   'open-overlay-finished': void
 
   // 动画相关
-  'trigger-slide-in-animation': void
+  'trigger-slide-in-animation': OverlayPosition
+  'overlay-position-updated': OverlayPosition
   'trigger-slide-out-animation': void
   'trigger-close-window': void
 

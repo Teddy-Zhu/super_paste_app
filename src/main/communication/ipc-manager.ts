@@ -747,6 +747,11 @@ class IpcManager {
         trayManager.updateMenu()
       }
 
+      if (key === STORE_KEY.SETTINGS_OVERLAY_POSITION) {
+        logger.debug('[主进程] Overlay 位置配置已更新，刷新窗口边界')
+        overlayWindowManager.updateWindowPositionBySettings()
+      }
+
       const ocrSettingKeys = new Set([
         STORE_KEY.SETTINGS_ENABLE_LOCAL_OCR,
         STORE_KEY.SETTINGS_OCR_MODE,

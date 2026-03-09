@@ -7,9 +7,25 @@
     height: 100vh;
     display: flex;
     justify-content: center;
-    align-items: flex-end;
+    align-items: stretch;
     z-index: var(--z-overlay);
     background: transparent;
+}
+
+.overlay-container--top {
+    align-items: flex-start;
+}
+
+.overlay-container--bottom {
+    align-items: flex-end;
+}
+
+.overlay-container--left {
+    justify-content: flex-start;
+}
+
+.overlay-container--right {
+    justify-content: flex-end;
 }
 
 .overlay-content {
@@ -22,6 +38,55 @@
     position: relative;
     transform: translateY(100%);
     font-family: var(--font-family-base);
+}
+
+.overlay-content--top {
+    transform: translateY(-100%);
+}
+
+.overlay-content--bottom {
+    transform: translateY(100%);
+}
+
+.overlay-content--left {
+    transform: translateX(-100%);
+}
+
+.overlay-content--right {
+    transform: translateX(100%);
+}
+
+.overlay-content--side .top-toolbar {
+    height: 52px;
+    max-height: 52px;
+    min-height: 52px;
+    padding: var(--spacing-2) var(--spacing-2);
+    gap: var(--spacing-2);
+    flex-wrap: nowrap;
+    overflow: visible;
+}
+
+.overlay-content--side .search-container {
+    flex: 1 1 auto;
+    min-width: 0;
+    max-width: 100%;
+}
+
+.overlay-content--side .tabs-container {
+    order: 0;
+    flex: 1 1 auto;
+    min-width: 0;
+    margin-top: 0;
+    padding: 0 var(--spacing-1);
+    max-width: none;
+    overflow-x: auto;
+    overflow-y: hidden;
+    white-space: nowrap;
+}
+
+.overlay-content--side .toolbar-buttons {
+    margin-left: auto;
+    flex-shrink: 0;
 }
 
 /* 顶部工具栏样式 - 轻拟物风格 */
@@ -80,6 +145,7 @@
     position: absolute;
     top: 100%;
     right: 0;
+    z-index: 1000;
     margin-top: var(--spacing-2);
     background: var(--color-bg-primary);
     border: 1px solid var(--color-border-light);
@@ -334,6 +400,10 @@
     background: transparent;
 }
 
+.overlay-content--side .overlay-body {
+    overflow: hidden;
+}
+
 /* 空状态样式 - 轻拟物风格 */
 .empty-container {
     display: flex;
@@ -369,20 +439,45 @@
 .clipboard-scroll-container {
     padding-top: var(--spacing-4);
     padding-left: var(--spacing-5);
+    padding-right: var(--spacing-5);
     padding-bottom: 0px;
     overflow: hidden;
-    height: 100vh;
+    height: 100%;
+    width: 100%;
 }
 
 .clipboard-list-wrapper {
     display: flex;
     gap: var(--spacing-4);
+    width: max-content;
+}
+
+.clipboard-scroll-container--side {
+    padding-top: var(--spacing-3);
+    padding-left: var(--spacing-3);
+    padding-right: var(--spacing-3);
+    padding-bottom: var(--spacing-3);
+}
+
+.clipboard-list-wrapper--side {
+    flex-direction: column;
+    align-items: center;
+    width: 100%;
+}
+
+.overlay-content--side :deep(.clipboard-card) {
+    height: min(76vh, 76vw);
 }
 
 .clipboard-list-wrapper::after {
     content: '';
     width: 4px;
     flex-shrink: 0;
+}
+
+.clipboard-list-wrapper--side::after {
+    width: 0;
+    height: 4px;
 }
 
 /* 剪贴板列表过渡动画 */
