@@ -4,6 +4,7 @@ pub mod system;
 pub mod store;
 pub mod tags;
 pub mod apps;
+pub mod sync;
 
 use serde::Serialize;
 

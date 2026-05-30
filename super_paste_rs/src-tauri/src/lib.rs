@@ -106,6 +106,8 @@ pub fn run() {
             commands::system::minimize_window,
             commands::system::close_window,
             commands::system::restart_app,
+            // 状态同步命令
+            commands::sync::sync_state_update,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
