@@ -69,14 +69,32 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
-            // 剪贴板命令
+            // 剪贴板命令（原项目兼容格式）
             commands::clipboard::get_clipboard_history,
-            commands::clipboard::get_clipboard_item,
-            commands::clipboard::search_clipboard,
-            commands::clipboard::delete_clipboard_item,
-            commands::clipboard::clear_clipboard_history,
-            commands::clipboard::update_clipboard_flags,
-            commands::clipboard::get_clipboard_count,
+            commands::clipboard::restore_clipboard_item,
+            commands::clipboard::restore_clipboard_as_text,
+            commands::clipboard::get_clipboard_status,
+            commands::clipboard::delete_clipboard_item_compat,
+            commands::clipboard::clear_clipboard_history_compat,
+            commands::clipboard::start_clipboard_listening,
+            commands::clipboard::stop_clipboard_listening,
+            commands::clipboard::update_clipboard_config,
+            // 剪贴板命令（原有 - 已合并到兼容命令中）
+            // 存储命令
+            commands::store::store_get,
+            commands::store::store_set,
+            commands::store::store_get_value,
+            // 标签命令
+            commands::tags::get_all_tags,
+            commands::tags::create_tag,
+            commands::tags::update_tag,
+            commands::tags::delete_tag,
+            commands::tags::get_tag_stats,
+            commands::tags::bind_tag_to_record,
+            commands::tags::unbind_tag_from_record,
+            // 应用信息命令
+            commands::apps::get_all_apps,
+            commands::apps::get_app_cache_stats,
             // 配置命令
             commands::config::get_config,
             commands::config::set_config_value,
@@ -85,6 +103,9 @@ pub fn run() {
             commands::system::show_overlay_window,
             commands::system::hide_overlay_window,
             commands::system::toggle_overlay_window,
+            commands::system::minimize_window,
+            commands::system::close_window,
+            commands::system::restart_app,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
