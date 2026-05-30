@@ -1,0 +1,186 @@
+/**
+ * 设计系统 - CSS变量定义
+ * macOS原生现代轻拟物风格
+ */
+
+:root {
+    /* ========== 颜色系统 ========== */
+
+    /* 主色调 - macOS蓝 */
+    --color-primary: #007aff;
+    --color-primary-hover: #0056cc;
+    --color-primary-active: #004999;
+    --color-primary-light: #5ac8fa;
+
+    /* 辅助色系 - 增加活力 */
+    --color-secondary: #5ac8fa;
+    --color-accent-purple: #af52de;
+    --color-accent-pink: #ff2d55;
+    --color-accent-orange: #ff9500;
+    --color-accent-green: #34c759;
+    --color-accent-teal: #5ac8fa;
+    --color-accent-indigo: #5856d6;
+
+    /* 渐变色系 */
+    --gradient-primary: linear-gradient(135deg, #007aff 0%, #5ac8fa 100%);
+    --gradient-purple: linear-gradient(135deg, #af52de 0%, #ff2d55 100%);
+    --gradient-orange: linear-gradient(135deg, #ff9500 0%, #ff6b6b 100%);
+    --gradient-green: linear-gradient(135deg, #34c759 0%, #30d158 100%);
+    --gradient-teal: linear-gradient(135deg, #5ac8fa 0%, #64d2ff 100%);
+    --gradient-indigo: linear-gradient(135deg, #5856d6 0%, #af52de 100%);
+    --gradient-sunset: linear-gradient(135deg, #ff6b6b 0%, #ff9500 50%, #ffd60a 100%);
+    --gradient-ocean: linear-gradient(135deg, #007aff 0%, #5ac8fa 50%, #34c759 100%);
+    --gradient-lavender: linear-gradient(135deg, #af52de 0%, #5ac8fa 100%);
+
+    /* 背景渐变 */
+    --gradient-bg-primary: linear-gradient(135deg, #f5f7fa 0%, #e9ecef 100%);
+    --gradient-bg-secondary: linear-gradient(135deg, #fafbfc 0%, #f0f3f7 100%);
+    --gradient-bg-accent: linear-gradient(135deg, rgba(0, 122, 255, 0.05) 0%, rgba(90, 200, 250, 0.05) 100%);
+
+    /* 中性色 */
+    --color-neutral-50: #fafbfc;
+    --color-neutral-100: #f5f7fa;
+    --color-neutral-200: #e9ecef;
+    --color-neutral-300: #dee2e6;
+    --color-neutral-400: #ced4da;
+    --color-neutral-500: #adb5bd;
+    --color-neutral-600: #86868b;
+    --color-neutral-700: #6b7280;
+    --color-neutral-800: #495057;
+    --color-neutral-900: #1d1d1f;
+
+    /* 语义色 */
+    --color-success: #34c759;
+    --color-warning: #ff9500;
+    --color-error: #ff3b30;
+    --color-info: #5ac8fa;
+
+    /* 背景色 */
+    --color-bg-primary: #ffffff;
+    --color-bg-secondary: #f5f7fa;
+    --color-bg-tertiary: #fafbfc;
+    --color-bg-elevated: #ffffff;
+
+    /* 文字色 */
+    --color-text-primary: #1d1d1f;
+    --color-text-secondary: #86868b;
+    --color-text-tertiary: #6b7280;
+    --color-text-inverse: #ffffff;
+
+    /* 边框色 */
+    --color-border-light: rgba(0, 0, 0, 0.04);
+    --color-border-medium: rgba(0, 0, 0, 0.08);
+    --color-border-strong: rgba(0, 0, 0, 0.12);
+
+    /* ========== 阴影系统 ========== */
+
+    /* 轻拟物阴影 - 极弱 */
+    --shadow-soft-xs: 0 1px 2px rgba(0, 0, 0, 0.04);
+    --shadow-soft-sm: 0 1px 3px rgba(0, 0, 0, 0.08);
+    --shadow-soft-md: 0 2px 8px rgba(0, 0, 0, 0.12);
+    --shadow-soft-lg: 0 4px 16px rgba(0, 0, 0, 0.12);
+    --shadow-soft-xl: 0 8px 24px rgba(0, 0, 0, 0.15);
+
+    /* 内阴影 */
+    --shadow-inset-sm: inset 0 1px 2px rgba(0, 0, 0, 0.05);
+    --shadow-inset-md: inset 0 2px 4px rgba(0, 0, 0, 0.08);
+
+    /* 悬浮阴影 */
+    --shadow-elevated: 0 2px 8px rgba(0, 0, 0, 0.12), 0 1px 3px rgba(0, 0, 0, 0.08);
+    --shadow-elevated-hover: 0 4px 12px rgba(0, 0, 0, 0.15), 0 2px 6px rgba(0, 0, 0, 0.1);
+
+    /* 焦点阴影 */
+    --shadow-focus-primary: 0 0 0 3px rgba(0, 122, 255, 0.12);
+    --shadow-focus-error: 0 0 0 3px rgba(255, 59, 48, 0.12);
+
+    /* ========== 圆角系统 ========== */
+
+    --radius-xs: 4px;
+    --radius-sm: 6px;
+    --radius-md: 8px;
+    --radius-lg: 10px;
+    --radius-xl: 12px;
+    --radius-2xl: 16px;
+    --radius-full: 9999px;
+
+    /* ========== 间距系统 ========== */
+
+    --spacing-1: 4px;
+    --spacing-2: 8px;
+    --spacing-3: 12px;
+    --spacing-4: 16px;
+    --spacing-5: 20px;
+    --spacing-6: 24px;
+    --spacing-7: 28px;
+    --spacing-8: 32px;
+    --spacing-10: 40px;
+    --spacing-12: 48px;
+
+    /* ========== 字体系统 ========== */
+
+    /* 字体族 */
+    --font-family-base: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+    --font-family-mono: 'SF Mono', 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+
+    /* 字体大小 */
+    --font-size-xs: 11px;
+    --font-size-sm: 13px;
+    --font-size-base: 14px;
+    --font-size-md: 15px;
+    --font-size-lg: 17px;
+    --font-size-xl: 20px;
+    --font-size-2xl: 24px;
+    --font-size-3xl: 28px;
+
+    /* 字重 */
+    --font-weight-normal: 400;
+    --font-weight-medium: 500;
+    --font-weight-semibold: 600;
+    --font-weight-bold: 700;
+
+    /* 行高 */
+    --line-height-tight: 1.2;
+    --line-height-normal: 1.4;
+    --line-height-relaxed: 1.6;
+
+    /* 字间距 */
+    --letter-spacing-tight: -0.02em;
+    --letter-spacing-normal: -0.01em;
+    --letter-spacing-wide: 0.5px;
+
+    /* ========== 动画系统 ========== */
+
+    /* 时间 */
+    --duration-fast: 150ms;
+    --duration-normal: 200ms;
+    --duration-slow: 300ms;
+    --duration-slower: 400ms;
+
+    /* 缓动函数 */
+    --ease-in-out: cubic-bezier(0.25, 0.46, 0.45, 0.94);
+    --ease-out: cubic-bezier(0.25, 0.1, 0.25, 1);
+    --ease-in: cubic-bezier(0.42, 0, 1, 1);
+    --ease-bounce: cubic-bezier(0.68, -0.55, 0.265, 1.55);
+
+    /* ========== Z-index系统 ========== */
+
+    --z-dropdown: 1000;
+    --z-sticky: 1020;
+    --z-fixed: 1030;
+    --z-modal-backdrop: 1040;
+    --z-modal: 1050;
+    --z-popover: 1060;
+    --z-tooltip: 1070;
+    --z-overlay: 9999;
+
+    /* ========== 其他 ========== */
+
+    /* 模糊效果 */
+    --blur-sm: 4px;
+    --blur-md: 8px;
+    --blur-lg: 16px;
+
+    /* 透明度 */
+    --opacity-disabled: 0.5;
+    --opacity-hover: 0.8;
+}

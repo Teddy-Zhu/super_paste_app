@@ -1,17 +1,25 @@
 import { defineConfig } from "vite";
 import vue from "@vitejs/plugin-vue";
 import path from "path";
+import Icons from 'unplugin-icons/vite';
 
 // @ts-expect-error process is a nodejs global
 const host = process.env.TAURI_DEV_HOST;
 
 // https://vite.dev/config/
 export default defineConfig(async () => ({
-  plugins: [vue()],
+  plugins: [
+    vue(),
+    Icons({
+      compiler: 'vue3',
+      autoInstall: true,
+    }),
+  ],
 
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),
+      "~icons": path.resolve(__dirname, "./node_modules/.pnpm/node_modules/@iconify-icons"),
     },
   },
 
