@@ -1,4 +1,4 @@
-use tauri::{Manager, State};
+use tauri::{Emitter, Manager, State};
 
 use super::SimpleResponse;
 use crate::app::state::AppState;
@@ -9,7 +9,13 @@ use crate::system::overlay;
 pub fn show_overlay_window(app: tauri::AppHandle, state: State<AppState>) -> SimpleResponse {
     let position = state.config.get().overlay_position;
     match overlay::show_overlay(&app, &position) {
-        Ok(_) => SimpleResponse::ok(),
+        Ok(_) => {
+            // 通知前端执行滑入动画
+            if let Some(overlay_win) = app.get_webview_window("overlay") {
+                let _ = overlay_win.emit("trigger-slide-in-animation", &position);
+            }
+            SimpleResponse::ok()
+        }
         Err(e) => SimpleResponse::err(format!("显示 Overlay 失败: {}", e)),
     }
 }

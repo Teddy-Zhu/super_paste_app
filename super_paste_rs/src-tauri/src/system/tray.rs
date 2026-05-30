@@ -59,8 +59,13 @@ fn handle_menu_event(app: &AppHandle, event: MenuEvent) {
             }
         }
         "overlay" => {
-            // 触发 overlay 显示
-            let _ = app.emit("toggle-overlay", ());
+            // 显示 overlay 窗口并触发滑入动画
+            if let Some(overlay) = app.get_webview_window("overlay") {
+                let _ = overlay.show();
+                let _ = overlay.set_focus();
+                // 通知前端执行滑入动画
+                let _ = overlay.emit("trigger-slide-in-animation", "bottom");
+            }
         }
         "auto_start" => {
             // TODO: 切换开机自启
