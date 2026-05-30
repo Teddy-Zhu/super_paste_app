@@ -22,8 +22,9 @@ pub fn show_overlay_window(app: tauri::AppHandle, state: State<AppState>) -> Sim
 
 /// 隐藏 Overlay 窗口。
 #[tauri::command]
-pub fn hide_overlay_window(app: tauri::AppHandle) -> SimpleResponse {
-    match overlay::hide_overlay(&app) {
+pub fn hide_overlay_window(app: tauri::AppHandle, state: State<AppState>) -> SimpleResponse {
+    let position = state.config.get().overlay_position;
+    match overlay::hide_overlay(&app, &position) {
         Ok(_) => SimpleResponse::ok(),
         Err(e) => SimpleResponse::err(format!("隐藏 Overlay 失败: {}", e)),
     }
@@ -33,15 +34,19 @@ pub fn hide_overlay_window(app: tauri::AppHandle) -> SimpleResponse {
 #[tauri::command]
 pub fn toggle_overlay_window(app: tauri::AppHandle, state: State<AppState>) -> SimpleResponse {
     if let Some(overlay_win) = app.get_webview_window("overlay") {
+        let position = state.config.get().overlay_position;
         if overlay_win.is_visible().unwrap_or(false) {
-            match overlay::hide_overlay(&app) {
+            match overlay::hide_overlay(&app, &position) {
                 Ok(_) => SimpleResponse::ok(),
                 Err(e) => SimpleResponse::err(format!("隐藏 Overlay 失败: {}", e)),
             }
         } else {
-            let position = state.config.get().overlay_position;
             match overlay::show_overlay(&app, &position) {
-                Ok(_) => SimpleResponse::ok(),
+                Ok(_) => {
+                    // 通知前端执行滑入动画
+                    let _ = overlay_win.emit("trigger-slide-in-animation", &position);
+                    SimpleResponse::ok()
+                }
                 Err(e) => SimpleResponse::err(format!("显示 Overlay 失败: {}", e)),
             }
         }

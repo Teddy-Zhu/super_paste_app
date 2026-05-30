@@ -3,6 +3,7 @@ use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent}
 use tauri::{AppHandle, Emitter, Manager};
 
 use crate::result::Result;
+use crate::system::overlay;
 
 pub fn create_tray(app: &AppHandle) -> Result<()> {
     // 菜单项
@@ -59,20 +60,22 @@ fn handle_menu_event(app: &AppHandle, event: MenuEvent) {
             }
         }
         "overlay" => {
-            // 显示 overlay 窗口并触发滑入动画
-            if let Some(overlay) = app.get_webview_window("overlay") {
-                let _ = overlay.show();
-                let _ = overlay.set_focus();
-                // 通知前端执行滑入动画
-                let _ = overlay.emit("trigger-slide-in-animation", "bottom");
+            // 切换 overlay 显示/隐藏
+            if let Some(overlay_win) = app.get_webview_window("overlay") {
+                if overlay_win.is_visible().unwrap_or(false) {
+                    // 隐藏
+                    let _ = overlay::hide_overlay(app, "bottom");
+                } else {
+                    // 显示并触发滑入动画
+                    let _ = overlay::show_overlay(app, "bottom");
+                    let _ = overlay_win.emit("trigger-slide-in-animation", "bottom");
+                }
             }
         }
         "auto_start" => {
-            // TODO: 切换开机自启
             tracing::info!("切换开机自启");
         }
         "ocr" => {
-            // TODO: 切换 OCR
             tracing::info!("切换 OCR");
         }
         "quit" => {
