@@ -1,5 +1,9 @@
 # 阶段 1：数据库层
 
+> 总入口：[`../tauri-migration-implementation-plan.md`](../tauri-migration-implementation-plan.md) ｜ 上一阶段：[`phase-0.md`](./phase-0.md) → [`phase-0-part2.md`](./phase-0-part2.md) ｜ 本阶段续篇：[`phase-1-part2.md`](./phase-1-part2.md) ｜ 下一阶段：[`phase-2-to-5.md`](./phase-2-to-5.md)
+>
+> ⚠️ 路径以 `super_paste_rs/` 为基准（`src-tauri/...` 即 `super_paste_rs/src-tauri/...`）。
+
 ## 步骤 1.1：实现数据库迁移系统
 
 **创建 `src-tauri/src/infrastructure/database/migrations.rs`**：

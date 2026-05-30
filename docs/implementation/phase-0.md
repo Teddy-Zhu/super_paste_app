@@ -1,5 +1,9 @@
 # 阶段 0：环境准备与基础设施
 
+> 总入口：[`../tauri-migration-implementation-plan.md`](../tauri-migration-implementation-plan.md) ｜ 本阶段续篇：[`phase-0-part2.md`](./phase-0-part2.md) ｜ 下一阶段：[`phase-1.md`](./phase-1.md)
+>
+> ⚠️ **本阶段所有命令与路径均以新项目根目录 `super_paste_rs/` 为基准**：新项目创建在仓库子目录 `super_paste_rs/` 中，不要在仓库根目录创建。下文出现的 `src-tauri/...`、`src/...` 实际指 `super_paste_rs/src-tauri/...`、`super_paste_rs/src/...`。
+
 ## 步骤 0.1：安装 Rust 工具链
 
 ```bash
@@ -45,11 +49,23 @@ xcode-select --install
 
 ## 步骤 0.3：初始化 Tauri 项目
 
+> 在仓库根目录 `super_paste_app/` 下新建子目录 `super_paste_rs/` 作为全新 Tauri 项目，**不要污染根目录的现有 Electron 项目**。后续所有命令都在 `super_paste_rs/` 内执行。
+
 ```bash
+# 进入仓库根目录
+cd /home/teddy/workspace/code/super_paste_app
+
+# 创建并进入新项目子目录
+mkdir -p super_paste_rs
+cd super_paste_rs
+
+# 初始化前端项目（Vue 3 + TS + Vite）
+pnpm create vite . --template vue-ts
+
 # 安装 Tauri CLI
 pnpm add -D @tauri-apps/cli@latest
 
-# 初始化 Tauri
+# 初始化 Tauri（在 super_paste_rs/ 内生成 src-tauri/）
 pnpm tauri init
 # App name: SuperPaste
 # Window title: SuperPaste
@@ -58,6 +74,8 @@ pnpm tauri init
 # Frontend dev command: pnpm dev
 # Frontend build command: pnpm build
 ```
+
+完成后，新项目结构应为 `super_paste_rs/`（前端）+ `super_paste_rs/src-tauri/`（Rust 后端）。
 
 **配置 `src-tauri/Cargo.toml`**：
 ```toml

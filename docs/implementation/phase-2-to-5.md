@@ -1,5 +1,9 @@
 # 阶段 2-5：完整实施步骤
 
+> 总入口：[`../tauri-migration-implementation-plan.md`](../tauri-migration-implementation-plan.md) ｜ 上一阶段：[`phase-1.md`](./phase-1.md) → [`phase-1-part2.md`](./phase-1-part2.md)
+>
+> ⚠️ 路径以 `super_paste_rs/` 为基准（`src-tauri/...` 即 `super_paste_rs/src-tauri/...`、`src/...` 即 `super_paste_rs/src/...`）。
+
 ## 阶段 2：剪贴板核心功能
 
 ### 2.1 实现剪贴板监听器

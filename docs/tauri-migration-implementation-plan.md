@@ -4,6 +4,32 @@
 
 ---
 
+## 项目位置（重要）
+
+> ⚠️ **全新项目必须创建在子目录 `super_paste_rs/` 中，不要在仓库根目录创建。**
+
+- 现有 Electron 项目保留在仓库根目录 `/home/teddy/workspace/code/super_paste_app/`，作为功能参考。
+- Tauri 新项目的根目录为：`/home/teddy/workspace/code/super_paste_app/super_paste_rs/`。
+- **本计划及所有子计划中出现的相对路径，均以 `super_paste_rs/` 为根**。例如：
+  - 文档写 `src-tauri/src/main.rs` → 实际路径为 `super_paste_rs/src-tauri/src/main.rs`
+  - 文档写 `src/main.ts` → 实际路径为 `super_paste_rs/src/main.ts`
+
+最终目录布局：
+
+```
+super_paste_app/                 # 仓库根目录（保留现有 Electron 项目）
+├── src/                         # 现有 Electron 源码（参考用，不改动）
+├── docs/                        # 迁移计划文档
+│   ├── tauri-migration-implementation-plan.md   # 本文件（总入口）
+│   └── implementation/          # 分阶段详细子计划
+└── super_paste_rs/              # ★ 新建：Tauri 项目根目录
+    ├── package.json
+    ├── src/                     # Vue 前端
+    └── src-tauri/               # Rust 后端
+```
+
+---
+
 ## 技术栈
 
 ### 后端（Rust）
@@ -174,6 +200,8 @@ CREATE INDEX idx_items_hash ON clipboard_items(content_hash);
 
 ## 目录结构
 
+> 以下路径均以新项目根目录 `super_paste_rs/` 为基准。
+
 ### Rust 后端
 ```
 src-tauri/src/
@@ -294,15 +322,25 @@ src/
 
 ---
 
-## 阶段划分
+## 阶段划分与子计划入口
 
-- **阶段 0**：环境准备与基础设施
-- **阶段 1**：数据库层
-- **阶段 2**：剪贴板核心
-- **阶段 3**：高级功能
-- **阶段 4**：UI/UX 优化
-- **阶段 5**：打包发布
+每个阶段的**详细实施步骤、完整代码与验收标准**位于 `docs/implementation/` 目录下的对应文件中。请按顺序阅读和执行：
+
+| 阶段 | 内容 | 详细子计划文件 |
+| --- | --- | --- |
+| **阶段 0** | 环境准备与基础设施（工具链、错误处理、日志、配置、事件总线、类型、工具函数） | [`implementation/phase-0.md`](./implementation/phase-0.md) → [`implementation/phase-0-part2.md`](./implementation/phase-0-part2.md) |
+| **阶段 1** | 数据库层（迁移系统、连接池、各仓库、性能基准与测试） | [`implementation/phase-1.md`](./implementation/phase-1.md) → [`implementation/phase-1-part2.md`](./implementation/phase-1-part2.md) |
+| **阶段 2** | 剪贴板核心（监听器、转换器、去重、管理器、托盘、快捷键、Overlay 定位） | [`implementation/phase-2-to-5.md`](./implementation/phase-2-to-5.md)（阶段 2 部分） |
+| **阶段 3** | 高级功能（OCR 模型下载、WebDAV 同步、冲突解决） | [`implementation/phase-2-to-5.md`](./implementation/phase-2-to-5.md)（阶段 3 部分） |
+| **阶段 4** | UI/UX 优化（前端 API 封装、Pinia Store、交互） | [`implementation/phase-2-to-5.md`](./implementation/phase-2-to-5.md)（阶段 4 部分） |
+| **阶段 5** | 打包发布（打包配置、构建命令、三平台产物） | [`implementation/phase-2-to-5.md`](./implementation/phase-2-to-5.md)（阶段 5 部分） |
+
+执行顺序：**阶段 0 → 1 → 2 → 3 → 4 → 5**，每个阶段完成后对照该子计划末尾的「验收标准」勾选确认，再进入下一阶段。
 
 ---
 
-接下来将分阶段详细说明实施步骤。
+## 开始执行
+
+1. 先阅读本文件，确认技术栈、架构分层、数据库 Schema 与目录结构。
+2. 按上表进入 [`docs/implementation/phase-0.md`](./implementation/phase-0.md) 开始第一阶段：**在仓库根目录下创建并初始化 `super_paste_rs/` 子目录项目**。
+3. 之后依序完成各阶段子计划。

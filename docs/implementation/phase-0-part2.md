@@ -1,3 +1,7 @@
+> 总入口：[`../tauri-migration-implementation-plan.md`](../tauri-migration-implementation-plan.md) ｜ 上接：[`phase-0.md`](./phase-0.md) ｜ 下一阶段：[`phase-1.md`](./phase-1.md)
+>
+> ⚠️ 路径以 `super_paste_rs/` 为基准（`src-tauri/...` 即 `super_paste_rs/src-tauri/...`）。
+
 ## 步骤 0.7：实现事件总线
 
 **创建 `src-tauri/src/infrastructure/event_bus.rs`**：

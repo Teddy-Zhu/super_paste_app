@@ -1,3 +1,7 @@
+> 总入口：[`../tauri-migration-implementation-plan.md`](../tauri-migration-implementation-plan.md) ｜ 上接：[`phase-1.md`](./phase-1.md) ｜ 下一阶段：[`phase-2-to-5.md`](./phase-2-to-5.md)
+>
+> ⚠️ 路径以 `super_paste_rs/` 为基准（`src-tauri/...` 即 `super_paste_rs/src-tauri/...`）。
+
 ## 步骤 1.4：实现其他仓库
 
 **创建 `src-tauri/src/infrastructure/database/repositories/tag_repo.rs`**：
