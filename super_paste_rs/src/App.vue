@@ -1,20 +1,13 @@
 <template>
-  <router-view />
+  <SettingsPage />
 </template>
 
 <script setup lang="ts">
 import { onMounted } from 'vue';
 import { listen } from '@tauri-apps/api/event';
-import { useSystemStore } from '@/stores';
-
-const systemStore = useSystemStore();
+import SettingsPage from '@/pages/SettingsPage.vue';
 
 onMounted(async () => {
-  // 监听后端发出的 toggle-overlay 事件
-  await listen('toggle-overlay', async () => {
-    await systemStore.toggleOverlay();
-  });
-
   // 监听快捷键变更事件
   await listen('shortcut:changed', (event) => {
     console.log('快捷键已变更:', event.payload);

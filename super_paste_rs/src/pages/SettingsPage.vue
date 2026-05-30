@@ -2,9 +2,6 @@
   <div class="settings-page">
     <header class="header">
       <h1>{{ t('settings.title') }}</h1>
-      <button @click="goBack" class="btn-back">
-        {{ t('common.close') }}
-      </button>
     </header>
 
     <main class="content">
@@ -117,23 +114,17 @@
 
 <script setup lang="ts">
 import { ref, onMounted } from 'vue';
-import { useRouter } from 'vue-router';
 import { useI18n } from 'vue-i18n';
 import { useConfigStore } from '@/stores';
 import type { AppConfig } from '@/api';
 
 const { t } = useI18n();
-const router = useRouter();
 const configStore = useConfigStore();
 
 const localConfig = ref<AppConfig>({ ...configStore.config });
 
 const handleSave = async () => {
   await configStore.updateConfig(localConfig.value);
-};
-
-const goBack = () => {
-  router.push('/');
 };
 
 onMounted(async () => {
@@ -144,51 +135,50 @@ onMounted(async () => {
 
 <style scoped>
 .settings-page {
-  padding: 1rem;
-  max-width: 800px;
+  padding: 2rem;
+  max-width: 900px;
   margin: 0 auto;
+  height: 100vh;
+  overflow-y: auto;
 }
 
 .header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
   margin-bottom: 2rem;
 }
 
-.btn-back {
-  padding: 0.5rem 1rem;
-  border: none;
-  border-radius: 4px;
-  background: #6c757d;
-  color: white;
-  cursor: pointer;
-}
-
-.btn-back:hover {
-  background: #5a6268;
+.header h1 {
+  font-size: 2rem;
+  font-weight: 600;
 }
 
 .section {
   margin-bottom: 2rem;
-  padding: 1rem;
-  border: 1px solid #eee;
-  border-radius: 8px;
+  padding: 1.5rem;
+  background: white;
+  border-radius: 12px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
 }
 
 .section h2 {
-  margin-bottom: 1rem;
-  font-size: 1.2rem;
+  margin-bottom: 1.5rem;
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: #333;
 }
 
 .form-group {
-  margin-bottom: 1rem;
+  margin-bottom: 1.25rem;
+}
+
+.form-group:last-child {
+  margin-bottom: 0;
 }
 
 .form-group label {
   display: block;
   margin-bottom: 0.5rem;
   font-weight: 500;
+  color: #555;
 }
 
 .form-group input[type='text'],
@@ -196,12 +186,31 @@ onMounted(async () => {
 .form-group input[type='password'],
 .form-group select {
   width: 100%;
-  padding: 0.5rem;
-  border: 1px solid #ccc;
-  border-radius: 4px;
+  padding: 0.625rem 0.875rem;
+  border: 1px solid #d0d0d0;
+  border-radius: 8px;
+  font-size: 14px;
+  transition: border-color 0.2s;
+}
+
+.form-group input[type='text']:focus,
+.form-group input[type='number']:focus,
+.form-group input[type='password']:focus,
+.form-group select:focus {
+  outline: none;
+  border-color: #007bff;
 }
 
 .form-group input[type='checkbox'] {
   margin-right: 0.5rem;
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+}
+
+.form-group label:has(input[type='checkbox']) {
+  display: flex;
+  align-items: center;
+  cursor: pointer;
 }
 </style>
