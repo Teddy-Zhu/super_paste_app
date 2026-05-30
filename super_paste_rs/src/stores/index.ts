@@ -1,12 +1,13 @@
-import { createPinia } from 'pinia';
+import { createPinia } from 'pinia'
+import { createPersistedState } from 'pinia-plugin-persistedstate'
 
-const store = createPinia();
+const store = createPinia()
 
-// TODO: 实现 Tauri 版本的持久化和字段变更监听
-// Tauri 不支持同步 IPC，需要使用异步方式
+// 使用 localStorage 作为持久化存储（Tauri 不支持同步 IPC）
+store.use(
+  createPersistedState({
+    storage: localStorage
+  })
+)
 
-export default store;
-
-// 导出所有 stores
-export * from './common';
-
+export default store

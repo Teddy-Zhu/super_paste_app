@@ -19,7 +19,7 @@ export default defineConfig(async () => ({
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),
-      "~icons": path.resolve(__dirname, "./node_modules/.pnpm/node_modules/@iconify-icons"),
+      "@renderer": path.resolve(__dirname, "./src"),
     },
   },
 

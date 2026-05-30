@@ -1,383 +1,203 @@
 /**
  * 渲染进程 API 封装 - Tauri 版本
- * 兼容原 Electron 项目的 API 接口
  */
 
-import { invoke } from '@tauri-apps/api/core';
+import { invoke } from './ipc'
 import type {
+  StoreOperations,
+  ClipboardOperations,
   ClipboardItem,
-  ClipboardContent,
-  QueryOptions,
-  AppConfig,
-} from './types';
+  ClipboardStatus,
+  ClipboardManagerConfig,
+  ClipboardIpcResponse,
+  ClipboardHistoryQueryOptions,
+  ClipboardHistoryResult,
+  TagGroup,
+  TagStats,
+  AppInfo,
+  AppCacheStats,
+  AppOperations
+} from './types'
 
-// ==================== 类型定义（兼容原项目）====================
-
-export interface ClipboardHistoryQueryOptions {
-  limit?: number;
-  offset?: number;
-  tagIds?: string[];
-  searchText?: string;
-  orderBy?: string;
-  orderDirection?: 'ASC' | 'DESC';
-}
-
-export interface ClipboardHistoryResult {
-  items: ClipboardItem[];
-  apps: Record<string, AppInfo>;
-}
-
-export interface AppInfo {
-  id: string;
-  name: string;
-  icon?: string;
-}
-
-export interface TagGroup {
-  id: string;
-  name: string;
-  color: string;
-  count: number;
-}
-
-export interface ClipboardIpcResponse<T = any> {
-  success: boolean;
-  data?: T;
-  apps?: Record<string, AppInfo>;
-  error?: string;
-  message?: string;
-}
-
-// ==================== Store 操作 ====================
-
-export const store = {
+export const store: StoreOperations = {
   async get<T = any>(key: string, defaultValue?: T): Promise<T> {
-    try {
-      const value = await invoke<T | null>('get_config_value', { key });
-      return value ?? defaultValue!;
-    } catch (error) {
-      console.error('Store get error:', error);
-      return defaultValue!;
-    }
+    const result = await invoke<{ success: boolean; data?: T; error?: string }>('store-get', {
+      key,
+      defaultValue
+    })
+    if (result.success) return result.data ?? defaultValue!
+    throw new Error(result.error || '获取存储值失败')
   },
 
   async set<T = any>(key: string, value: T): Promise<void> {
-    await invoke('set_config_value', { key, value });
-  },
-};
+    const result = await invoke<{ success: boolean; error?: string }>('store-set', { key, value })
+    if (!result.success) throw new Error(result.error || '设置存储值失败')
+  }
+}
 
-// ==================== Clipboard 操作 ====================
-
-export const clipboard = {
-  async getHistory(
-    options?: ClipboardHistoryQueryOptions | number
-  ): Promise<ClipboardHistoryResult> {
-    const queryOptions: QueryOptions =
-      typeof options === 'number'
-        ? { limit: options }
-        : {
-            limit: options?.limit,
-            offset: options?.offset,
-            // tag_ids: options?.tagIds,
-            // search_text: options?.searchText,
-          };
-
-    try {
-      const items = await invoke<ClipboardItem[]>('get_clipboard_history', {
-        options: queryOptions,
-      });
-      return {
-        items: items || [],
-        apps: {}, // TODO: 实现应用信息获取
-      };
-    } catch (error) {
-      console.error('Get clipboard history error:', error);
-      return { items: [], apps: {} };
-    }
+export const clipboard: ClipboardOperations = {
+  async getHistory(options?: ClipboardHistoryQueryOptions | number): Promise<ClipboardHistoryResult> {
+    const queryOptions = typeof options === 'number' ? { limit: options } : options
+    const result: ClipboardIpcResponse<ClipboardItem[]> = await invoke('clipboard-get-history', queryOptions)
+    if (result.success) return { items: result.data || [], apps: result.apps || {} }
+    throw new Error(result.error || '获取剪贴板历史失败')
   },
 
   searchHistory(options: ClipboardHistoryQueryOptions): Promise<ClipboardHistoryResult> {
-    return this.getHistory(options);
+    return this.getHistory(options)
   },
 
   async restore(itemId: string): Promise<boolean> {
-    try {
-      await invoke('restore_clipboard_item', { itemId });
-      return true;
-    } catch (error) {
-      console.error('Restore clipboard error:', error);
-      return false;
-    }
+    const result: ClipboardIpcResponse = await invoke('clipboard-restore', { itemId })
+    return result.success
   },
 
   async restoreAsText(itemId: string): Promise<boolean> {
-    try {
-      await invoke('restore_clipboard_as_text', { itemId });
-      return true;
-    } catch (error) {
-      console.error('Restore as text error:', error);
-      return false;
-    }
+    const result: ClipboardIpcResponse = await invoke('clipboard-restore-as-text', { itemId })
+    return result.success
   },
 
   async restoreOcrText(itemId: string): Promise<boolean> {
-    try {
-      await invoke('restore_clipboard_ocr_text', { itemId });
-      return true;
-    } catch (error) {
-      console.error('Restore OCR text error:', error);
-      return false;
-    }
+    const result: ClipboardIpcResponse = await invoke('clipboard-restore-ocr-text', { itemId })
+    return result.success
   },
 
   async parseOcr(itemId: string): Promise<boolean> {
-    try {
-      await invoke('parse_clipboard_ocr', { itemId });
-      return true;
-    } catch (error) {
-      console.error('Parse OCR error:', error);
-      return false;
-    }
+    const result: ClipboardIpcResponse = await invoke('clipboard-parse-ocr', { itemId })
+    return result.success
   },
 
   async parseQRCode(itemId: string): Promise<boolean> {
-    try {
-      await invoke('parse_clipboard_qrcode', { itemId });
-      return true;
-    } catch (error) {
-      console.error('Parse QR code error:', error);
-      return false;
-    }
+    const result: ClipboardIpcResponse = await invoke('clipboard-parse-qrcode', { itemId })
+    return result.success
   },
 
-  async generateQRCode(itemId: string): Promise<boolean> {
-    try {
-      await invoke('generate_clipboard_qrcode', { itemId });
-      return true;
-    } catch (error) {
-      console.error('Generate QR code error:', error);
-      return false;
-    }
+  async generateQRCode(itemId: string): Promise<{ success: boolean; message?: string; data?: { qrCodeDataUrl: string } }> {
+    const result: ClipboardIpcResponse<{ qrCodeDataUrl: string }> = await invoke('clipboard-generate-qrcode', { itemId })
+    return { success: result.success, message: result.success ? result.message || '二维码生成成功' : result.error, data: result.success ? result.data : undefined }
   },
 
   async deleteItem(itemId: string): Promise<boolean> {
-    try {
-      const id = parseInt(itemId, 10);
-      await invoke('delete_clipboard_item', { id });
-      return true;
-    } catch (error) {
-      console.error('Delete clipboard item error:', error);
-      return false;
-    }
+    const result: ClipboardIpcResponse = await invoke('clipboard-delete-item', { itemId })
+    return result.success
   },
 
   async clearHistory(): Promise<boolean> {
-    try {
-      await invoke('clear_clipboard_history');
-      return true;
-    } catch (error) {
-      console.error('Clear clipboard history error:', error);
-      return false;
-    }
+    const result: ClipboardIpcResponse = await invoke('clipboard-clear-history')
+    return result.success
   },
 
-  async togglePin(itemId: string): Promise<boolean> {
-    try {
-      const id = parseInt(itemId, 10);
-      // TODO: 需要先获取当前状态，然后切换
-      await invoke('update_clipboard_flags', { id, isPinned: true });
-      return true;
-    } catch (error) {
-      console.error('Toggle pin error:', error);
-      return false;
-    }
+  async getStatus(): Promise<ClipboardStatus> {
+    const result: ClipboardIpcResponse<ClipboardStatus> = await invoke('clipboard-get-status')
+    if (result.success) return result.data!
+    throw new Error(result.error || '获取剪贴板状态失败')
   },
 
-  async toggleFavorite(itemId: string): Promise<boolean> {
-    try {
-      const id = parseInt(itemId, 10);
-      // TODO: 需要先获取当前状态，然后切换
-      await invoke('update_clipboard_flags', { id, isFavorite: true });
-      return true;
-    } catch (error) {
-      console.error('Toggle favorite error:', error);
-      return false;
-    }
+  async startListening(): Promise<boolean> {
+    const result: ClipboardIpcResponse = await invoke('clipboard-start-listening')
+    return result.success
   },
-};
 
-// ==================== Tags 操作 ====================
+  async stopListening(): Promise<boolean> {
+    const result: ClipboardIpcResponse = await invoke('clipboard-stop-listening')
+    return result.success
+  },
+
+  async updateConfig(config: Partial<ClipboardManagerConfig>): Promise<boolean> {
+    const result: ClipboardIpcResponse = await invoke('clipboard-update-config', config)
+    return result.success
+  }
+}
 
 export const tags = {
-  async getAll(): Promise<TagGroup[]> {
-    try {
-      // TODO: 实现标签获取
-      return [];
-    } catch (error) {
-      console.error('Get all tags error:', error);
-      return [];
-    }
+  async getAllTags(): Promise<TagGroup[]> {
+    const result: { success: boolean; data?: TagGroup[]; error?: string } = await invoke('get-all-tags')
+    if (result.success) return result.data || []
+    throw new Error(result.error || '获取标签列表失败')
   },
 
-  async create(name: string, color: string, description?: string): Promise<string> {
-    try {
-      // TODO: 实现标签创建
-      return '';
-    } catch (error) {
-      console.error('Create tag error:', error);
-      throw error;
-    }
+  async createTag(name: string, color: string, description?: string): Promise<string> {
+    const result: { success: boolean; data?: { tagId: string }; error?: string } = await invoke('create-tag', { name, color, description })
+    if (result.success && result.data) return result.data.tagId
+    throw new Error(result.error || '创建标签失败')
   },
 
-  async update(
-    tagId: string,
-    updates: { name?: string; color?: string; description?: string }
-  ): Promise<boolean> {
-    try {
-      // TODO: 实现标签更新
-      return true;
-    } catch (error) {
-      console.error('Update tag error:', error);
-      return false;
-    }
+  async updateTag(tagId: string, updates: { name?: string; color?: string; description?: string }): Promise<boolean> {
+    const result: { success: boolean; error?: string } = await invoke('update-tag', { tagId, updates })
+    if (result.success) return true
+    throw new Error(result.error || '更新标签失败')
   },
 
-  async delete(tagId: string): Promise<boolean> {
-    try {
-      // TODO: 实现标签删除
-      return true;
-    } catch (error) {
-      console.error('Delete tag error:', error);
-      return false;
-    }
+  async deleteTag(tagId: string): Promise<boolean> {
+    const result: { success: boolean; error?: string } = await invoke('delete-tag', { tagId })
+    if (result.success) return true
+    throw new Error(result.error || '删除标签失败')
   },
 
-  async bindToRecord(contentId: string, tagId: string): Promise<boolean> {
-    try {
-      // TODO: 实现标签绑定
-      return true;
-    } catch (error) {
-      console.error('Bind tag error:', error);
-      return false;
-    }
+  async getTagStats(): Promise<TagStats[]> {
+    const result: { success: boolean; data?: TagStats[]; error?: string } = await invoke('get-tag-stats')
+    if (result.success) return result.data || []
+    throw new Error(result.error || '获取标签统计失败')
   },
 
-  async unbindFromRecord(contentId: string, tagId: string): Promise<boolean> {
-    try {
-      // TODO: 实现标签解绑
-      return true;
-    } catch (error) {
-      console.error('Unbind tag error:', error);
-      return false;
-    }
+  async bindTagToRecord(contentId: string, tagId: string): Promise<boolean> {
+    const result: { success: boolean; error?: string } = await invoke('bind-tag-to-record', { contentId, tagId })
+    if (result.success) return true
+    throw new Error(result.error || '绑定标签失败')
   },
-};
 
-// ==================== App 操作 ====================
+  async unbindTagFromRecord(contentId: string, tagId: string): Promise<boolean> {
+    const result: { success: boolean; error?: string } = await invoke('unbind-tag-from-record', { contentId, tagId })
+    if (result.success) return true
+    throw new Error(result.error || '解绑标签失败')
+  }
+}
+
+export const apps: AppOperations = {
+  async getAllApps(): Promise<AppInfo[]> {
+    const result: { success: boolean; data?: AppInfo[]; error?: string } = await invoke('get-all-apps')
+    if (result.success) return result.data || []
+    throw new Error(result.error || '获取应用列表失败')
+  },
+
+  async getCacheStats(): Promise<AppCacheStats> {
+    const result: { success: boolean; data?: AppCacheStats; error?: string } = await invoke('get-app-cache-stats')
+    if (result.success && result.data) return result.data
+    throw new Error(result.error || '获取缓存统计失败')
+  }
+}
 
 export const app = {
   async restart(): Promise<boolean> {
     try {
-      await invoke('restart_app');
-      return true;
+      const { relaunch } = await import('@tauri-apps/plugin-process')
+      await relaunch()
+      return true
     } catch (error) {
-      console.error('Restart app error:', error);
-      return false;
+      console.error('重启应用失败:', error)
+      return false
     }
   },
 
   async minimizeWindow(): Promise<boolean> {
     try {
-      const { getCurrentWindow } = await import('@tauri-apps/api/window');
-      await getCurrentWindow().minimize();
-      return true;
+      const { getCurrentWindow } = await import('@tauri-apps/api/window')
+      await getCurrentWindow().minimize()
+      return true
     } catch (error) {
-      console.error('Minimize window error:', error);
-      return false;
+      console.error('最小化窗口失败:', error)
+      return false
     }
   },
 
   async closeWindow(): Promise<boolean> {
     try {
-      const { getCurrentWindow } = await import('@tauri-apps/api/window');
-      await getCurrentWindow().hide();
-      return true;
+      const { getCurrentWindow } = await import('@tauri-apps/api/window')
+      await getCurrentWindow().hide()
+      return true
     } catch (error) {
-      console.error('Close window error:', error);
-      return false;
+      console.error('关闭窗口失败:', error)
+      return false
     }
-  },
-};
-
-// ==================== IPC 事件监听（兼容层）====================
-
-export function on(channel: string, callback: (...args: any[]) => void): () => void {
-  // Tauri 使用事件系统
-  import('@tauri-apps/api/event').then(({ listen }) => {
-    listen(channel, (event) => {
-      callback(event, event.payload);
-    });
-  });
-  return () => {}; // TODO: 返回取消监听函数
+  }
 }
-
-export function onSimple(channel: string, callback: (...args: any[]) => void): () => void {
-  import('@tauri-apps/api/event').then(({ listen }) => {
-    listen(channel, (event) => {
-      callback(event.payload);
-    });
-  });
-  return () => {};
-}
-
-export function once(channel: string, callback: (...args: any[]) => void): () => void {
-  import('@tauri-apps/api/event').then(({ once }) => {
-    once(channel, (event) => {
-      callback(event, event.payload);
-    });
-  });
-  return () => {};
-}
-
-export function onceSimple(channel: string, callback: (...args: any[]) => void): () => void {
-  import('@tauri-apps/api/event').then(({ once }) => {
-    once(channel, (event) => {
-      callback(event.payload);
-    });
-  });
-  return () => {};
-}
-
-export function send(channel: string, ...args: any[]): void {
-  import('@tauri-apps/api/event').then(({ emit }) => {
-    emit(channel, args);
-  });
-}
-
-export async function invokeIpc<T = any>(channel: string, ...args: any[]): Promise<T> {
-  return invoke(channel, args[0]);
-}
-
-export function removeListener(channel: string, callback: (...args: any[]) => void): void {
-  // TODO: 实现移除监听器
-}
-
-export function removeAllListeners(channel: string): void {
-  // TODO: 实现移除所有监听器
-}
-
-// 导出兼容的 API
-export default {
-  store,
-  clipboard,
-  tags,
-  app,
-  on,
-  onSimple,
-  once,
-  onceSimple,
-  send,
-  invoke: invokeIpc,
-  removeListener,
-  removeAllListeners,
-};
