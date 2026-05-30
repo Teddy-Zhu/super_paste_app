@@ -20,27 +20,28 @@
         "visible": false,
         "center": true,
         "decorations": false,
-        "resizable": true,
-        "minWidth": 800,
-        "minHeight": 600
+        "resizable": false,
+        "skipTaskbar": true
       },
       {
         "label": "overlay",
         "title": "",
         "url": "overlay.html",
-        "width": 350,
+        "width": 1920,
         "height": 350,
         "visible": false,
         "center": false,
         "x": 0,
-        "y": 0,
+        "y": -400,
         "alwaysOnTop": true,
         "skipTaskbar": true,
         "decorations": false,
         "transparent": true,
         "resizable": false,
         "minimizable": false,
-        "maximizable": false
+        "maximizable": false,
+        "closable": false,
+        "focusable": true
       }
     ],
     "trayIcon": {
