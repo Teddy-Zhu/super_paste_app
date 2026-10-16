@@ -1,0 +1,21 @@
+{
+  "name": "@super-paste/active-window-kwin",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Node-API bindings for kdotool's KDE Plasma 6 active window API",
+  "main": "index.cjs",
+  "types": "index.d.ts",
+  "files": [
+    "index.cjs",
+    "index.d.ts",
+    "*.node",
+    "README.md",
+    "licenses/**"
+  ],
+  "scripts": {
+    "build": "node scripts/build.cjs"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

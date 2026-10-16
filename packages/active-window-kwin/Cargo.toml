@@ -1,0 +1,26 @@
+[package]
+name = "active_window_kwin"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+napi = { version = "3", default-features = false, features = ["napi8"] }
+napi-derive = "3"
+
+[target.'cfg(target_os = "linux")'.dependencies]
+# The library API is not yet released on crates.io. Pin the upstream revision.
+kdotool = { git = "https://github.com/jinliu/kdotool", rev = "be03ce90c09350898556436bac74ed35fe928617", default-features = false }
+# Unify this feature with kdotool's dependency to avoid requiring libdbus headers.
+dbus = { version = "0.9.10", features = ["vendored"] }
+
+[build-dependencies]
+napi-build = "2"
+
+[profile.release]
+lto = true
+codegen-units = 1
+strip = "symbols"

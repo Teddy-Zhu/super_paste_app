@@ -25,6 +25,14 @@ module.exports = async function (context) {
     throw new Error(`[afterPack] Missing native clipboard module: ${clipboardBinary}`)
   }
 
+  if (targetPlatform === 'linux') {
+    const kwinBinary = `active_window_kwin.linux-${targetArch}-gnu.node`
+    const kwinDir = path.join(unpackedDir, 'node_modules', '@super-paste', 'active-window-kwin')
+    if (!fs.existsSync(path.join(kwinDir, kwinBinary))) {
+      throw new Error(`[afterPack] Missing native KWin module: ${kwinBinary}`)
+    }
+  }
+
   console.log(`[afterPack] Keeping only napi-v6/${targetPlatform}/${targetArch} binaries`)
 
   if (!fs.existsSync(napiBinBase)) {

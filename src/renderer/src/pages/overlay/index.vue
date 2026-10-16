@@ -6,7 +6,12 @@ import type { ClipboardItem, ClipboardHistoryQueryOptions, AppInfo } from '@rend
 import { OverlayError, OverlayErrorCode, isClipboardItem } from '@renderer/types/overlay'
 
 // 导入优化后的 composables
-import { useAnimation, AnimationState } from '@renderer/composables/useAnimation'
+import {
+  useAnimation,
+  AnimationState,
+  type AnimationControls
+} from '@renderer/composables/useAnimation'
+import type { OverlayRendererTrace } from '../../../../shared/overlay-events'
 import { useSearchAndNavigation } from '@renderer/composables/useSearchAndNavigation'
 import { useScrollAndTags, type ScrollAndTagsManager } from '@renderer/composables/useScrollAndTags'
 import { useEventManager, useThrottle } from '@renderer/composables/useUtils'
@@ -44,12 +49,31 @@ let transitionId = 0
 let animationVersion = 0
 let historyRequestId = 0
 let overlayVisible = false
+let preparedOpening: { id: number; animation: AnimationControls } | null = null
+let closingTransitionId: number | null = null
 let historyDirty = false
 let wheelHandler: ((event: WheelEvent) => void) | null = null
 const ipcUnsubscribers: Array<() => void> = []
 
 // ==================== 初始化 Composables ====================
 const animationManager = useAnimation(overlayContentRef, searchContainerRef, tabsContainerRef)
+
+const traceOverlay = (
+  event: OverlayRendererTrace['event'],
+  details: Partial<OverlayRendererTrace> = {}
+): void => {
+  send('overlay-trace', {
+    event,
+    transitionId,
+    animationVersion,
+    animationState: animationManager.currentAnimationState.value,
+    sentAt: Date.now(),
+    overlayVisible,
+    documentHidden: document.hidden,
+    documentFocused: document.hasFocus(),
+    ...details
+  } satisfies OverlayRendererTrace)
+}
 
 type RestoreMethod =
   | 'restore'
@@ -334,14 +358,31 @@ const clearClipboardHistory = async (): Promise<void> => {
 
 /** 关闭动画不等待搜索框收起或重新查询历史。 */
 const closeWindow = async () => {
-  if (animationManager.currentAnimationState.value === AnimationState.IDLE) return
+  const id = transitionId
+  if (closingTransitionId === id) return
+  closingTransitionId = id
+  preparedOpening = null
   const version = ++animationVersion
+  const startedAt = performance.now()
+  traceOverlay('closing')
+  // 关闭一开始同步目标状态，紧接着的全局快捷键就能反向打开。
+  send('overlay-close-started', id)
+  if (!overlayVisible || animationManager.currentAnimationState.value === AnimationState.IDLE) {
+    animationManager.resetOverlayState()
+    traceOverlay('closed', { reason: 'already-hidden' })
+    send('close-overlay-window', id)
+    return
+  }
   animationManager.setAnimationState(AnimationState.SLIDING_OUT)
   const animation = animationManager.createSlideOutAnimation()
   animation.play()
   const finished = await animation.finished
-  if (!finished || version !== animationVersion) return
-  send('close-overlay-window', transitionId)
+  if (!finished || version !== animationVersion || id !== transitionId) {
+    traceOverlay('cancelled', { receivedId: id, reason: 'close-superseded' })
+    return
+  }
+  traceOverlay('closed', { elapsedMs: Math.round(performance.now() - startedAt) })
+  send('close-overlay-window', id)
 }
 
 /**
@@ -483,24 +524,77 @@ scrollAndTagsManager = useScrollAndTags(
 
 // ==================== 动画流程函数 ====================
 
+const prepareOpening = async (position: OverlayPosition, id: number): Promise<void> => {
+  if (id < transitionId) {
+    traceOverlay('ignored', { receivedId: id, reason: 'stale-prepare' })
+    return
+  }
+  transitionId = id
+  const version = ++animationVersion
+  const startedAt = performance.now()
+  overlayVisible = false
+  closingTransitionId = null
+  animationManager.resetOverlayState()
+  applyOverlayPosition(position)
+  await nextTick()
+  if (id !== transitionId || version !== animationVersion) return
+  const animation = animationManager.createSlideInAnimation()
+  animation.prepare()
+  preparedOpening = { id, animation }
+  traceOverlay('prepare')
+  // 等隐藏首帧完成一次绘制后才允许原生窗口显示。
+  await new Promise<void>((resolve) =>
+    requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
+  )
+  if (id !== transitionId || version !== animationVersion) {
+    traceOverlay('cancelled', { receivedId: id, reason: 'prepare-superseded' })
+    return
+  }
+  if (!overlayContentRef.value) throw new Error('Overlay animation target is unavailable')
+  traceOverlay('prepared', {
+    elapsedMs: Math.round(performance.now() - startedAt),
+    transform: getComputedStyle(overlayContentRef.value).transform
+  })
+  send('overlay-open-prepared', id)
+}
+
 /**
  * 触发滑入动画
  */
 const triggerSlideInAnimation = async (id: number): Promise<void> => {
+  if (id < transitionId) {
+    traceOverlay('ignored', { receivedId: id, reason: 'stale-open' })
+    return
+  }
   transitionId = id
   overlayVisible = true
+  closingTransitionId = null
   const version = ++animationVersion
+  const startedAt = performance.now()
+  const animation =
+    preparedOpening?.id === id
+      ? preparedOpening.animation
+      : animationManager.createSlideInAnimation()
+  preparedOpening = null
   animationManager.setAnimationState(AnimationState.SLIDING_IN)
-  const animation = animationManager.createSlideInAnimation()
+  traceOverlay('opening')
   animation.play()
   const finished = await animation.finished
-  if (!finished || version !== animationVersion) return
+  if (!finished || version !== animationVersion || id !== transitionId) {
+    traceOverlay('cancelled', { receivedId: id, reason: 'open-superseded' })
+    return
+  }
   animationManager.setAnimationState(AnimationState.ACTIVE)
+  traceOverlay('opened', { elapsedMs: Math.round(performance.now() - startedAt) })
   send('open-overlay-finished', id)
   if (historyDirty) throttledLoadClipboardHistory()
 }
 
 const handleCloseWindow = async (force = false, id = transitionId): Promise<void> => {
+  if (id < transitionId) {
+    traceOverlay('ignored', { receivedId: id, reason: 'stale-close' })
+    return
+  }
   transitionId = id
   if (force) {
     await closeWindow()
@@ -610,10 +704,25 @@ onMounted(async () => {
     applyOverlayPosition(overlayPosition.value)
     ipcUnsubscribers.push(onSimple('trigger-close-window', handleCloseWindow))
     ipcUnsubscribers.push(
+      onSimple('prepare-overlay-open', (position: OverlayPosition, id: number) => {
+        prepareOpening(position, id).catch((error) => {
+          traceOverlay('error', { receivedId: id, reason: 'prepare-failed' })
+          console.error('[Overlay] 准备打开失败:', error)
+          send('close-overlay-window', id)
+        })
+      })
+    )
+    ipcUnsubscribers.push(
       onSimple('overlay-hidden', (id: number) => {
-        if (id !== transitionId) return
+        if (id < transitionId) {
+          traceOverlay('ignored', { receivedId: id, reason: 'stale-hidden' })
+          return
+        }
+        transitionId = id
         ++animationVersion
         overlayVisible = false
+        closingTransitionId = null
+        preparedOpening = null
         ++historyRequestId
         historyDirty = true
         throttledLoadClipboardHistory.cancel()
@@ -621,12 +730,18 @@ onMounted(async () => {
         hideDropdownMenu()
         searchAndNavManager.resetSearchState()
         animationManager.resetOverlayState()
+        traceOverlay('hidden')
       })
     )
     ipcUnsubscribers.push(
       onSimple('trigger-slide-in-animation', (position: OverlayPosition, id: number) => {
+        if (id < transitionId) {
+          traceOverlay('ignored', { receivedId: id, reason: 'stale-open' })
+          return
+        }
         applyOverlayPosition(position)
         triggerSlideInAnimation(id).catch((error) => {
+          traceOverlay('error', { receivedId: id, reason: 'open-failed' })
           console.error('[Overlay] 打开动画失败:', error)
           send('close-overlay-window', id)
         })

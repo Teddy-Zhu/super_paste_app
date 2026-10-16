@@ -63,8 +63,6 @@ const getMarkPosition = (value: number): number => {
 // 切换开机自启
 const toggleAutoStart = () => {
   props.settingsStore.autoStart = !props.settingsStore.autoStart
-  // TODO: 发送到主进程设置开机自启
-  console.log('开机自启:', props.settingsStore.autoStart)
 }
 
 // 更新最大历史记录数量
@@ -72,7 +70,6 @@ const updateMaxHistorySize = (value: number): void => {
   // 确保值在合理范围内
   const clampedValue = Math.max(10, Math.min(1000, value))
   props.settingsStore.maxHistorySize = clampedValue
-  console.log('最大历史记录数量:', clampedValue)
 }
 
 // 更新最大保存时间
@@ -83,7 +80,6 @@ const updateMaxKeepTime = (value: number): void => {
     clampedValue = Math.max(1, Math.min(365, value))
   }
   props.settingsStore.maxKeepTime = clampedValue
-  console.log('最大保存时间:', clampedValue === -1 ? '不限制' : `${clampedValue}天`)
 }
 
 const normalizeOverlayPosition = (value: unknown): OverlayPosition => {
@@ -100,7 +96,6 @@ const getCurrentOverlayPosition = (): OverlayPosition => {
 const updateOverlayPosition = (value: OverlayPosition): void => {
   const normalized = normalizeOverlayPosition(value)
   props.settingsStore.overlayPosition = normalized
-  console.log('overlay 出现位置:', normalized)
 }
 
 props.settingsStore.overlayPosition = getCurrentOverlayPosition()
@@ -115,7 +110,6 @@ const clearHistory = async () => {
     const success = await clipboard.clearHistory()
     if (success) {
       alert('历史记录已清除')
-      console.log('剪贴板历史记录已清除')
     } else {
       alert('清除历史记录失败')
       console.error('清除历史记录失败')

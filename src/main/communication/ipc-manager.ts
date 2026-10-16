@@ -171,6 +171,17 @@ class IpcManager {
     channels.forEach((channel) => {
       ipcMain.removeHandler(channel)
     })
+    for (const channel of [
+      'open-overlay-window',
+      'close-overlay-window',
+      'overlay-ready',
+      'open-overlay-finished',
+      'overlay-open-prepared',
+      'overlay-close-started',
+      'overlay-trace'
+    ]) {
+      ipcMain.removeAllListeners(channel)
+    }
 
     this.isInitialized = false
     logger.debug('[IPC管理器] 所有 IPC 事件处理器已清理')
@@ -694,12 +705,11 @@ class IpcManager {
     this.registerHandler(
       'store-set',
       async (_, key: string, value: unknown) => {
-        logger.debug(`[主进程] 设置存储值 [${key}]:`, value)
         if (key === STORE_KEY.SETTINGS_GLOBAL_SHORTCUT) {
           if (typeof value !== 'string') throw new Error('快捷键必须是字符串')
           if (
             !globalShortcutManager.registerGlobalShortcut(value, () =>
-              overlayWindowManager.toggleWindow(true)
+              overlayWindowManager.toggleWindow(true, 'global-shortcut')
             )
           ) {
             throw new Error(globalShortcutManager.getStatus().error || '快捷键注册失败')
@@ -858,6 +868,27 @@ class IpcManager {
         overlayWindowManager.finishOpening(id)
       }
     })
+    ipcMain.on('overlay-open-prepared', (event, id: number) => {
+      if (
+        event.sender === overlayWindowManager.getWindow()?.webContents &&
+        Number.isSafeInteger(id)
+      ) {
+        overlayWindowManager.showPreparedWindow(id)
+      }
+    })
+    ipcMain.on('overlay-close-started', (event, id: number) => {
+      if (
+        event.sender === overlayWindowManager.getWindow()?.webContents &&
+        Number.isSafeInteger(id)
+      ) {
+        overlayWindowManager.beginClosing(id)
+      }
+    })
+    ipcMain.on('overlay-trace', (event, data: unknown) => {
+      if (event.sender === overlayWindowManager.getWindow()?.webContents) {
+        overlayWindowManager.recordRendererTrace(data)
+      }
+    })
   }
 
   // ==================== 定时同步相关 ====================
@@ -999,7 +1030,7 @@ class IpcManager {
           available: false,
           error: error instanceof Error ? error.message : String(error)
         })),
-      sourceTracking: !isWayland,
+      sourceTracking: activeWindowService.getStatus().available,
       executable: process.execPath
     })
     this.registerHandler(
@@ -1017,7 +1048,7 @@ class IpcManager {
         } catch (error) {
           clipboardError = error instanceof Error ? error.message : String(error)
         }
-        activeWindowService.initialize()
+        await activeWindowService.initialize()
         return { success: true, data: await getAccessStatus(), shortcutRegistered, clipboardError }
       },
       '重试系统权限'

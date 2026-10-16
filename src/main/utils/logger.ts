@@ -44,6 +44,8 @@ class Logger {
 
       // 配置文件传输
       log.transports.file.level = 'info'
+      // 切换诊断日志异步落盘，避免文件写入阻塞主进程快捷键回调。
+      log.transports.file.sync = false
       log.transports.file.maxSize = 10 * 1024 * 1024 // 10MB
       log.transports.file.format = '[{y}-{m}-{d} {h}:{i}:{s}.{ms}] [{level}] {text}'
 

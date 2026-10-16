@@ -23,7 +23,6 @@ const toggleClipboardListening = async () => {
       const success = await clipboard.startListening()
       if (success) {
         props.settingsStore.clipboardListening = true
-        console.log('剪贴板监听已开启')
       } else {
         console.error('开启剪贴板监听失败')
       }
@@ -31,7 +30,6 @@ const toggleClipboardListening = async () => {
       const success = await clipboard.stopListening()
       if (success) {
         props.settingsStore.clipboardListening = false
-        console.log('剪贴板监听已关闭')
       } else {
         console.error('关闭剪贴板监听失败')
       }
@@ -47,7 +45,6 @@ const syncClipboardListeningStatus = async () => {
     const status = await clipboard.getStatus()
     if (status && typeof status.isListening === 'boolean') {
       props.settingsStore.clipboardListening = status.isListening
-      console.log('剪贴板监听状态已同步:', status.isListening)
     }
   } catch (error) {
     console.error('获取剪贴板监听状态失败:', error)
@@ -73,7 +70,6 @@ const exportHeapdump = async () => {
       }
 
       alert(message)
-      console.log('heapdump 导出成功:', result)
     } else {
       alert(`导出失败: ${result.error}`)
       console.error('heapdump 导出失败:', result.error)

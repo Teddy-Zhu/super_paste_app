@@ -351,8 +351,6 @@ let syncStatusUnsubscribe: (() => void) | null = null
 
 // 处理同步状态更新事件
 const handleSyncStatusUpdate = (data: any) => {
-  console.log('收到同步状态更新:', data)
-
   switch (data.type) {
     case 'sync-started':
     case 'manual-sync-started':
@@ -397,9 +395,6 @@ const handleSyncStatusUpdate = (data: any) => {
 }
 
 onMounted(async () => {
-  // 组件挂载时的初始化逻辑
-  console.log('同步设置组件已挂载', syncStore)
-
   // 初始化本地配置
   initializeLocalConfig()
 

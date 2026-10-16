@@ -20,7 +20,9 @@ export const SYSTEM_ACCESS_TEXT = {
   disabled: '尚未设置全局快捷键',
   clipboardReady: '剪贴板监听已启动',
   clipboardStopped: '剪贴板监听未启动',
+  sourceReady: '活动窗口来源识别已启用',
+  sourceUnavailable: '活动窗口来源识别不可用',
   wayland:
-    'Wayland 的全局快捷键由桌面授权；后台剪贴板监听需要桌面提供相应协议，无法通过普通权限对话框开启。活动窗口来源识别暂不可用。',
+    'Wayland 的全局快捷键由桌面授权；后台剪贴板监听需要桌面提供相应协议。活动窗口来源识别支持 KDE Plasma 6，其他桌面暂不支持。',
   fallback: '若桌面不支持全局快捷键授权，可在系统自定义快捷键中设置以下启动命令：'
 } as const

@@ -7,6 +7,8 @@ import type { ShortcutStatus } from '../../shared/system-access'
 export class GlobalShortcutManager {
   private currentGlobalShortcut: string | null = null
   private status: ShortcutStatus = { accelerator: '', state: 'disabled' }
+  private activationSequence = 0
+  private lastActivationAt: number | null = null
 
   getStatus(): ShortcutStatus {
     return { ...this.status }
@@ -28,13 +30,29 @@ export class GlobalShortcutManager {
     }
     try {
       // 新键注册成功才释放旧键，避免冲突或非法组合导致原有快捷键丢失。
-      if (!globalShortcut.register(accelerator, callback)) {
+      if (
+        !globalShortcut.register(accelerator, () => {
+          const now = performance.now()
+          logger.info(
+            `[Overlay] ${JSON.stringify({
+              event: 'shortcut-received',
+              accelerator,
+              sequence: ++this.activationSequence,
+              sincePreviousMs:
+                this.lastActivationAt === null ? null : Math.round(now - this.lastActivationAt)
+            })}`
+          )
+          this.lastActivationAt = now
+          callback()
+        })
+      ) {
         throw new Error('快捷键被占用，或桌面未提供全局快捷键服务')
       }
       if (this.currentGlobalShortcut) globalShortcut.unregister(this.currentGlobalShortcut)
       this.currentGlobalShortcut = accelerator
       // Portal 授权是异步的，Electron 37 的返回值不能证明用户已授权。
       this.status = { accelerator, state: isWayland ? 'portal-requested' : 'registered' }
+      logger.info('[快捷键] 注册完成:', this.status)
       return true
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)

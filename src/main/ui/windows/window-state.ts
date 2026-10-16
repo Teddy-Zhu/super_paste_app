@@ -1,5 +1,4 @@
 import { BrowserWindow } from 'electron'
-import logger from '../../utils/logger'
 
 /**
  * 窗口状态枚举
@@ -22,7 +21,6 @@ class WindowStateManager {
    * @param newState 新状态
    */
   setOverlayState(newState: OverlayState): void {
-    logger.debug(`[主进程] Overlay状态变更: ${this.currentOverlayState} -> ${newState}`)
     this.currentOverlayState = newState
   }
 

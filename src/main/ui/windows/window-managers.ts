@@ -13,6 +13,8 @@ import { appLifecycleManager } from '../../system/app-lifecycle-manager'
 import store from '../../config/store'
 import { STORE_KEY } from '../../config/common'
 import logger from '../../utils/logger'
+import { isWayland } from '../../system/session'
+import { OVERLAY_RENDERER_EVENTS, type OverlayRendererTrace } from '../../../shared/overlay-events'
 
 /**
  * 主窗口管理器
@@ -217,6 +219,10 @@ export class OverlayWindowManager {
   private wantsVisible = false
   private transitionId = 0
   private transitionTimer: NodeJS.Timeout | null = null
+  private pendingOpenId: number | null = null
+  private blurTimer: NodeJS.Timeout | null = null
+  private pendingBlurId: number | null = null
+  private transitionStartedAt = performance.now()
   private currentOverlayPosition: OverlayPosition = DEFAULT_OVERLAY_POSITION
 
   getWindow(): BrowserWindow | null {
@@ -252,30 +258,49 @@ export class OverlayWindowManager {
       }
     })
     const window = this.overlayWindow
-    window.once('ready-to-show', () => this.registerGlobalShortcut())
+    this.trace('window-created', {
+      platform: process.platform,
+      electron: process.versions.electron,
+      session: process.env.XDG_SESSION_TYPE,
+      desktop: process.env.XDG_CURRENT_DESKTOP,
+      wayland: isWayland,
+      development: is.dev
+    })
+    window.once('ready-to-show', () => {
+      this.trace('native-ready')
+      this.registerGlobalShortcut()
+    })
     window.on('close', (event) => {
       event.preventDefault()
-      this.hideWindow()
+      this.hideWindow(undefined, 'native-close')
     })
     window.on('closed', () => {
+      this.trace('window-destroyed')
       this.clearTransitionTimer()
+      this.clearBlurTimer()
+      this.pendingOpenId = null
       this.rendererReady = false
       this.wantsVisible = false
       windowStateManager.reset()
       this.overlayWindow = null
     })
-    window.on('blur', () => {
-      if (!is.dev) this.hideWindowBackend(true)
+    window.on('show', () => this.trace('native-show'))
+    window.on('hide', () => this.trace('native-hide'))
+    window.on('focus', () => {
+      this.clearBlurTimer()
+      this.trace('native-focus')
     })
+    window.on('blur', () => this.handleBlur())
     window.webContents.on('did-start-loading', () => {
       const pendingShow = this.wantsVisible
       this.rendererReady = false
-      this.hideWindow()
+      this.hideWindow(undefined, 'renderer-loading')
       this.wantsVisible = pendingShow
     })
-    window.webContents.on('render-process-gone', () => {
+    window.webContents.on('render-process-gone', (_event, details) => {
+      this.trace('renderer-gone', { reason: details.reason, exitCode: details.exitCode })
       this.rendererReady = false
-      this.hideWindow()
+      this.hideWindow(undefined, 'renderer-gone')
     })
     const loading =
       is.dev && process.env['ELECTRON_RENDERER_URL']
@@ -286,7 +311,8 @@ export class OverlayWindowManager {
 
   markRendererReady(): void {
     this.rendererReady = true
-    if (this.wantsVisible) this.showWindow()
+    this.trace('renderer-ready')
+    if (this.wantsVisible) this.showWindow('renderer-ready')
   }
 
   private getOverlayPositionSetting(): OverlayPosition {
@@ -298,20 +324,29 @@ export class OverlayWindowManager {
   registerGlobalShortcut(retry = false): boolean {
     return globalShortcutManager.registerGlobalShortcut(
       store.get<string>(STORE_KEY.SETTINGS_GLOBAL_SHORTCUT, ''),
-      () => this.toggleWindow(true),
+      () => this.toggleWindow(true, 'global-shortcut'),
       retry
     )
   }
 
-  showWindow(): void {
+  showWindow(source = 'api'): void {
     if (!this.isValid()) this.createWindow()
     this.wantsVisible = true
-    if (!this.rendererReady || !this.overlayWindow) return
+    if (!this.rendererReady || !this.overlayWindow) {
+      this.trace('show-pending', { source, reason: 'renderer-not-ready' })
+      return
+    }
     const state = windowStateManager.getOverlayState()
-    if (state === OverlayState.OPENING || state === OverlayState.OPENED) return
+    if (state === OverlayState.OPENING || state === OverlayState.OPENED) {
+      this.trace('show-ignored', { source, reason: 'already-opening-or-opened' })
+      return
+    }
 
     this.clearTransitionTimer()
+    this.clearBlurTimer()
+    this.pendingOpenId = null
     const id = ++this.transitionId
+    this.transitionStartedAt = performance.now()
     this.currentOverlayPosition = this.getOverlayPositionSetting()
     try {
       const bounds = WindowConfigCalculator.calculateWindowPosition(this.currentOverlayPosition)
@@ -320,59 +355,217 @@ export class OverlayWindowManager {
         this.overlayWindow.setBounds(bounds)
       }
       windowStateManager.setOverlayState(OverlayState.OPENING)
-      this.overlayWindow.show()
-      this.overlayWindow.focus()
-      WindowUtils.safelyEmitToWindow(
-        this.overlayWindow,
-        'trigger-slide-in-animation',
-        this.currentOverlayPosition,
-        id
-      )
-      // 渲染进程停顿时也允许下一次快捷键关闭窗口。
-      this.transitionTimer = setTimeout(() => this.finishOpening(id), 250)
+      if (this.overlayWindow.isVisible()) {
+        // 反向切换沿用当前画面，避免再次 show() 触发原生窗口动画。
+        this.startOpening(id, false)
+      } else {
+        // 完全隐藏时先提交透明的动画首帧，防止 show() 暴露上一轮画面。
+        this.pendingOpenId = id
+        this.trace('prepare-request', { source, position: this.currentOverlayPosition })
+        WindowUtils.safelyEmitToWindow(
+          this.overlayWindow,
+          'prepare-overlay-open',
+          this.currentOverlayPosition,
+          id
+        )
+        this.transitionTimer = setTimeout(() => {
+          this.trace('prepare-timeout', { requestedId: id })
+          this.hideWindow(id, 'prepare-timeout')
+        }, 1000)
+      }
     } catch (error) {
       logger.error('[Overlay] 显示失败:', error)
-      this.hideWindow(id)
+      this.hideWindow(id, 'show-error')
     }
   }
 
-  finishOpening(id: number): void {
-    if (id !== this.transitionId || !this.wantsVisible) return
-    this.clearTransitionTimer()
-    windowStateManager.setOverlayState(OverlayState.OPENED)
+  showPreparedWindow(id: number): void {
+    if (id !== this.transitionId || id !== this.pendingOpenId || !this.wantsVisible) {
+      this.trace('prepare-ignored', { receivedId: id, reason: 'superseded' })
+      return
+    }
+    try {
+      this.startOpening(id, true)
+    } catch (error) {
+      logger.error('[Overlay] 显示准备好的窗口失败:', error)
+      this.hideWindow(id, 'show-error')
+    }
   }
 
-  hideWindowBackend(force = false): void {
-    if (!this.wantsVisible) return
+  private startOpening(id: number, show: boolean): void {
+    if (!this.overlayWindow || id !== this.transitionId || !this.wantsVisible) return
+    this.clearTransitionTimer()
+    this.pendingOpenId = null
+    this.trace('open-start', { show })
+    if (show) this.overlayWindow.show()
+    else if (!this.overlayWindow.isFocused()) this.overlayWindow.focus()
+    WindowUtils.safelyEmitToWindow(
+      this.overlayWindow,
+      'trigger-slide-in-animation',
+      this.currentOverlayPosition,
+      id
+    )
+    this.transitionTimer = setTimeout(() => this.finishOpening(id, 'animation-timeout'), 250)
+  }
+
+  finishOpening(id: number, source = 'renderer'): void {
+    if (id !== this.transitionId || !this.wantsVisible || this.pendingOpenId !== null) {
+      this.trace('open-ack-ignored', { receivedId: id, source, reason: 'superseded' })
+      return
+    }
+    this.clearTransitionTimer()
+    windowStateManager.setOverlayState(OverlayState.OPENED)
+    this.trace('open-finished', { source })
+    if (this.pendingBlurId === id) {
+      this.pendingBlurId = null
+      if (this.isVisible() && !this.overlayWindow?.isFocused()) {
+        this.hideWindowBackend(true, 'blur-after-opening')
+      }
+    }
+  }
+
+  hideWindowBackend(force = false, source = 'api'): void {
+    if (!this.wantsVisible) {
+      this.trace('close-ignored', { source, reason: 'already-closing-or-closed' })
+      return
+    }
     if (!this.rendererReady) {
-      this.hideWindow()
+      this.hideWindow(undefined, 'renderer-not-ready')
       return
     }
     this.clearTransitionTimer()
     if (force) {
+      this.clearBlurTimer()
+      this.pendingOpenId = null
       this.wantsVisible = false
       windowStateManager.setOverlayState(OverlayState.CLOSING)
     }
     const id = force ? ++this.transitionId : this.transitionId
+    if (force) this.transitionStartedAt = performance.now()
+    if (force && !this.isVisible()) {
+      this.hideWindow(id, 'closed-before-show')
+      return
+    }
+    this.trace('close-command', { force, source })
     WindowUtils.safelyEmitToWindow(this.overlayWindow, 'trigger-close-window', force, id)
     if (force) {
       // 动画完成确认丢失时仍能归还焦点，后续打开会取消这个兜底。
-      this.transitionTimer = setTimeout(() => this.hideWindow(id), 250)
+      this.transitionTimer = setTimeout(() => this.hideWindow(id, 'animation-timeout'), 250)
     }
   }
 
-  hideWindow(id?: number): void {
-    if (id !== undefined && id !== this.transitionId) return
+  beginClosing(id: number): void {
+    if (id !== this.transitionId) {
+      this.trace('close-start-ignored', { receivedId: id, reason: 'superseded' })
+      return
+    }
+    if (!this.wantsVisible) return
     this.clearTransitionTimer()
+    this.clearBlurTimer()
+    this.pendingOpenId = null
+    this.wantsVisible = false
+    this.transitionStartedAt = performance.now()
+    windowStateManager.setOverlayState(OverlayState.CLOSING)
+    this.trace('close-start', { source: 'renderer' })
+    this.transitionTimer = setTimeout(() => this.hideWindow(id, 'animation-timeout'), 250)
+  }
+
+  hideWindow(id?: number, source = 'renderer'): void {
+    if (id !== undefined && id !== this.transitionId) {
+      this.trace('hide-ignored', { receivedId: id, source, reason: 'superseded' })
+      return
+    }
+    this.clearTransitionTimer()
+    this.clearBlurTimer()
+    this.pendingOpenId = null
     this.wantsVisible = false
     windowStateManager.setOverlayState(OverlayState.CLOSED)
+    this.trace('hide', { source })
     WindowUtils.safelyHideWindow(this.overlayWindow)
     WindowUtils.safelyEmitToWindow(this.overlayWindow, 'overlay-hidden', this.transitionId)
   }
 
-  toggleWindow(force = false): void {
-    if (this.wantsVisible) this.hideWindowBackend(force)
-    else this.showWindow()
+  toggleWindow(force = false, source = 'api'): void {
+    this.trace('toggle', { source, force, action: this.wantsVisible ? 'close' : 'open' })
+    if (this.wantsVisible) this.hideWindowBackend(force, source)
+    else this.showWindow(source)
+  }
+
+  private handleBlur(): void {
+    this.trace('native-blur')
+    if (is.dev) {
+      this.trace('blur-ignored', { reason: 'development' })
+      return
+    }
+    this.clearBlurTimer()
+    const id = this.transitionId
+    // 焦点事件可能晚于 hide/show；下一轮核对当前焦点和切换编号。
+    this.blurTimer = setTimeout(() => {
+      this.blurTimer = null
+      if (id !== this.transitionId || !this.wantsVisible || !this.isVisible()) {
+        this.trace('blur-ignored', { receivedId: id, reason: 'superseded-or-hidden' })
+      } else if (this.overlayWindow?.isFocused()) {
+        this.trace('blur-ignored', { reason: 'already-focused' })
+      } else if (windowStateManager.getOverlayState() === OverlayState.OPENING) {
+        this.pendingBlurId = id
+        this.trace('blur-deferred', { reason: 'opening' })
+      } else {
+        this.hideWindowBackend(true, 'native-blur')
+      }
+    }, 0)
+  }
+
+  private clearBlurTimer(): void {
+    if (this.blurTimer) clearTimeout(this.blurTimer)
+    this.blurTimer = null
+    this.pendingBlurId = null
+  }
+
+  private trace(event: string, details: Record<string, unknown> = {}): void {
+    const window = this.isValid() ? this.overlayWindow : null
+    logger.info(
+      `[Overlay] ${JSON.stringify({
+        event,
+        id: this.transitionId,
+        state: windowStateManager.getOverlayState(),
+        wantsVisible: this.wantsVisible,
+        visible: window?.isVisible() ?? false,
+        focused: window?.isFocused() ?? false,
+        rendererReady: this.rendererReady,
+        pendingOpenId: this.pendingOpenId,
+        elapsedMs: Math.round(performance.now() - this.transitionStartedAt),
+        ...details
+      })}`
+    )
+  }
+
+  recordRendererTrace(data: unknown): void {
+    if (!data || typeof data !== 'object') return
+    const trace = data as Partial<OverlayRendererTrace>
+    if (
+      !trace.event ||
+      !OVERLAY_RENDERER_EVENTS.includes(trace.event) ||
+      !Number.isSafeInteger(trace.transitionId) ||
+      typeof trace.sentAt !== 'number' ||
+      !Number.isFinite(trace.sentAt)
+    )
+      return
+    this.trace(`renderer-${trace.event}`, {
+      rendererId: trace.transitionId,
+      rendererVersion: Number.isSafeInteger(trace.animationVersion)
+        ? trace.animationVersion
+        : undefined,
+      rendererState:
+        typeof trace.animationState === 'string' ? trace.animationState.slice(0, 24) : undefined,
+      rendererVisible: trace.overlayVisible === true,
+      documentHidden: trace.documentHidden === true,
+      documentFocused: trace.documentFocused === true,
+      ipcDelayMs: Date.now() - trace.sentAt,
+      rendererElapsedMs: Number.isFinite(trace.elapsedMs) ? trace.elapsedMs : undefined,
+      receivedId: Number.isSafeInteger(trace.receivedId) ? trace.receivedId : undefined,
+      reason: typeof trace.reason === 'string' ? trace.reason.slice(0, 160) : undefined,
+      transform: typeof trace.transform === 'string' ? trace.transform.slice(0, 100) : undefined
+    })
   }
 
   private clearTransitionTimer(): void {
@@ -382,6 +575,7 @@ export class OverlayWindowManager {
 
   destroy(): void {
     this.clearTransitionTimer()
+    this.clearBlurTimer()
     WindowUtils.safelyDestroyWindow(this.overlayWindow)
     this.overlayWindow = null
   }

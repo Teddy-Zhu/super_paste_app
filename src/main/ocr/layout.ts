@@ -7,7 +7,6 @@ async function layout(img: ImageData, ort: ortType, session: SessionType, dic: s
   const w = img.width
   const x = beforeS(img, 800, 608)
   const rResults = await runS(x.transposedData, x.image, ort, session)
-  console.log(rResults)
   const sr = afterS(rResults, w, h, dic)
   return sr
 }
@@ -225,8 +224,6 @@ function afterS(
     const w = warp_boxes(pickedBoxProbsBox, oriShape)
     pickedBoxProbsBox.forEach((_, i) => {
       w[i].forEach((val, j) => {
-        console.log(val, scaleFactors[Math.floor(j / 2)])
-
         w[i][j] = val / scaleFactors[j]
       })
       pickedBoxProbs.push([...w[i], pickedBoxProbsScore[i]])
@@ -252,8 +249,6 @@ function afterS(
     const result = { bbox: bbox, label: label }
     results.push(result)
   })
-
-  console.log(results)
 
   return results
 }

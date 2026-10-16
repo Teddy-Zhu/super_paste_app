@@ -8,10 +8,8 @@ const store = createPinia()
 store.use(
   createPersistedState({
     storage: {
-      setItem: (key: string, _: string) => {
-        // 这里我使用异步方法保存数据
-        // electronStore.setStoreValue(key, value)
-        console.log('setItem', key)
+      setItem: () => {
+        // 写入由字段变更插件负责；此适配器只提供初始化读取。
       },
       getItem: (key: string) => {
         // 需要同步方法
@@ -22,10 +20,7 @@ store.use(
   })
 )
 store.use(
-  createFieldChangePlugin(({ storeId, key, oldValue, newValue }) => {
-    console.log(`[${storeId}] 字段 ${key} 变了:`, oldValue, '→', newValue)
-    // 也可以上传到服务器、日志记录等
-
+  createFieldChangePlugin(({ storeId, key, newValue }) => {
     invoke('store-set', `${storeId}.${key}`, isProxy(newValue) ? toRaw(newValue) : newValue)
   })
 )
@@ -39,11 +34,9 @@ on('store-value-changed', ({ key, value }) => {
   const stores = Array.from(store._s.values())
   stores.forEach((store: any) => {
     if (store.$id === storeId) {
-      console.log('store-value-changed set', storeId, fieldKey, value)
       store.$setSilent(fieldKey, value)
     }
   })
-  console.log('store-value-changed', key, value)
 })
 
 export default store

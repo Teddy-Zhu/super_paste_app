@@ -105,7 +105,6 @@ class ClipboardManagerWorker extends BaseWorker {
     // 初始化时进行一次全量检查
     try {
       const rawData = this.poller.readClipboardDirect()
-      // logger.info('[ClipboardManagerWorker] Initial check rawData:', rawData)
       const converted = this.processor.convertClipboardData(rawData)
       await this.processor.buildClipboardContent(converted)
       // Store current hash in processor/repo context passed if needed, 
@@ -254,7 +253,6 @@ class ClipboardManagerWorker extends BaseWorker {
 
   private async handleClipboardChange(data: ClipboardData): Promise<void> {
     try {
-      // console.log('handleClipboardChange', data)
       if (this.isInErrorBackoff()) return
 
       const converted = this.processor.convertClipboardData(data)

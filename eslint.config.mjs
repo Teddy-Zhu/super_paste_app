@@ -4,7 +4,7 @@ import eslintPluginVue from 'eslint-plugin-vue'
 import vueParser from 'vue-eslint-parser'
 
 export default tseslint.config(
-  { ignores: ['**/node_modules', '**/dist', '**/out'] },
+  { ignores: ['**/node_modules', '**/dist', '**/out', 'packages/*/target/**'] },
   tseslint.configs.recommended,
   eslintPluginVue.configs['flat/recommended'],
   {
@@ -33,6 +33,15 @@ export default tseslint.config(
           }
         }
       ]
+    }
+  },
+  {
+    files: ['packages/active-window-kwin/**/*.cjs'],
+    // The standalone CommonJS entry loads a native addon; its public types live
+    // in index.d.ts, since JavaScript cannot contain TS return annotations.
+    rules: {
+      '@typescript-eslint/no-require-imports': 'off',
+      '@typescript-eslint/explicit-function-return-type': 'off'
     }
   },
   eslintConfigPrettier

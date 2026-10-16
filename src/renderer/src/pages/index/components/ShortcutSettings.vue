@@ -194,8 +194,6 @@ const startListeningForShortcut = () => {
   validShortcutDetected.value = false
   detectedShortcut.value = ''
 
-  console.log('开始监听快捷键输入...')
-
   // 添加键盘事件监听
   document.addEventListener('keydown', handleKeyDown)
   document.addEventListener('keyup', handleKeyUp)
@@ -208,8 +206,6 @@ const stopListeningForShortcut = (): void => {
   shortcutError.value = ''
   validShortcutDetected.value = false
   detectedShortcut.value = ''
-
-  console.log('停止监听快捷键输入')
 
   // 移除键盘事件监听
   document.removeEventListener('keydown', handleKeyDown)
@@ -289,8 +285,6 @@ const handleKeyDown = (event: KeyboardEvent): void => {
   detectedShortcut.value = shortcut
   shortcutError.value = ''
   updatePreview(shortcut)
-
-  console.log('按键按下:', event.key, '当前快捷键:', shortcut)
 }
 
 // 处理按键释放
@@ -300,18 +294,8 @@ const handleKeyUp = async (event: KeyboardEvent): Promise<void> => {
 
   if (!isListeningForShortcut.value) return
 
-  console.log(
-    '按键释放:',
-    event.key,
-    '当前快捷键:',
-    detectedShortcut.value,
-    '有效快捷键已检测:',
-    validShortcutDetected.value
-  )
-
   // 如果释放的是修饰键，继续监听
   if (modifierEventKeys.includes(event.key)) {
-    console.log('释放的是修饰键，继续监听')
     return
   }
 
@@ -321,7 +305,6 @@ const handleKeyUp = async (event: KeyboardEvent): Promise<void> => {
 
   const validation = validateShortcut(detectedShortcut.value)
   if (validation.valid) {
-    console.log('检测到有效快捷键，立即保存')
     if (await setGlobalShortcut(detectedShortcut.value)) stopListeningForShortcut()
     return
   }
@@ -329,8 +312,6 @@ const handleKeyUp = async (event: KeyboardEvent): Promise<void> => {
   shortcutError.value = validation.error
   detectedShortcut.value = ''
   updatePreview('')
-
-  console.log('快捷键验证失败:', validation.error)
 
   // 3秒后清除错误信息
   setTimeout(() => {
@@ -389,6 +370,13 @@ onUnmounted(() => {
                 (accessStatus.clipboard.listening
                   ? SYSTEM_ACCESS_TEXT.clipboardReady
                   : SYSTEM_ACCESS_TEXT.clipboardStopped)
+              }}
+            </p>
+            <p class="setting-description">
+              {{
+                accessStatus.sourceTracking
+                  ? SYSTEM_ACCESS_TEXT.sourceReady
+                  : SYSTEM_ACCESS_TEXT.sourceUnavailable
               }}
             </p>
             <template v-if="accessStatus.wayland">

@@ -150,7 +150,6 @@ export function useScrollAndTags(
     try {
       // 仅初始化 scrollbar 实例，样式在 overlay.vue 的 CSS 中定义
       scrollbarInstance = Scrollbar.init(clipboardScrollRef.value, SCROLLBAR_OPTIONS)
-      // console.log('[滚动标签管理] smooth-scrollbar 初始化成功')
     } catch (error) {
       console.error('[滚动标签管理] smooth-scrollbar 初始化失败:', error)
       scrollbarInstance = null
@@ -162,7 +161,6 @@ export function useScrollAndTags(
       try {
         scrollbarInstance.destroy()
         scrollbarInstance = null
-        // console.log('[滚动标签管理] smooth-scrollbar 实例已销毁')
       } catch (error) {
         console.error('[滚动标签管理] 销毁 smooth-scrollbar 实例失败:', error)
       }
@@ -310,21 +308,12 @@ export function useScrollAndTags(
   }
 
   const handleWheelThrottled = useThrottle((event: WheelEvent) => {
-    // console.log('[滚动标签管理] 收到滚轮事件:', {
-    //   animationState: currentAnimationState.value,
-    //   hasScrollRef: !!clipboardScrollRef.value,
-    //   historyLength: clipboardHistory.value.length,
-    //   deltaX: event.deltaX,
-    //   deltaY: event.deltaY
-    // })
-
     // 只有在活跃状态且有剪贴板历史时才响应滚轮事件
     if (
       currentAnimationState.value !== AnimationState.ACTIVE ||
       !clipboardScrollRef.value ||
       clipboardHistory.value.length === 0
     ) {
-      // console.log('[滚动标签管理] 滚轮事件被忽略，条件不满足')
       return
     }
 
@@ -409,7 +398,6 @@ export function useScrollAndTags(
         ...prev,
         allTags: tagList
       }))
-      // console.log('[滚动标签管理] 标签数据加载完成:', tagList)
 
       // 加载标签统计数据
       await loadTagStats()
@@ -437,7 +425,6 @@ export function useScrollAndTags(
         ...prev,
         tagStats: stats
       }))
-      // console.log('[滚动标签管理] 标签统计数据加载完成:', stats)
     } catch (error) {
       console.error('[滚动标签管理] 加载标签统计数据失败:', error)
       tagStateManager.setState((prev) => ({
@@ -456,7 +443,6 @@ export function useScrollAndTags(
       activeTagId: tagId
     }))
 
-    // console.log('[滚动标签管理] 切换到标签:', tagId)
 
     try {
       const currentTagIds = tagId === 'all' ? [] : [tagId]

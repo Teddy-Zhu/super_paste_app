@@ -35,7 +35,6 @@ const loadAllTags = async () => {
   try {
     isLoadingTags.value = true
     allTags.value = await tags.getAllTags()
-    console.log('标签加载成功:', allTags.value)
   } catch (error) {
     console.error('加载标签失败:', error)
     // 可以在这里添加错误提示
@@ -88,7 +87,6 @@ const saveTag = async () => {
         tagForm.value.color,
         tagForm.value.description.trim() || undefined
       )
-      console.log('标签创建成功')
     } else if (isEditingTag.value && editingTagId.value) {
       // 更新标签
       await tags.updateTag(editingTagId.value, {
@@ -96,7 +94,6 @@ const saveTag = async () => {
         color: tagForm.value.color,
         description: tagForm.value.description.trim() || undefined
       })
-      console.log('标签更新成功')
     }
 
     // 重新加载标签列表
@@ -116,7 +113,6 @@ const deleteTag = async (tag: TagGroup) => {
 
   try {
     await tags.deleteTag(tag.id)
-    console.log('标签删除成功')
     await loadAllTags()
   } catch (error) {
     console.error('删除标签失败:', error)

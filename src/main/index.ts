@@ -338,13 +338,14 @@ class SuperPasteApp {
     logger.debug('[主进程] 系统集成服务初始化完成')
 
     // 初始化 ActiveWindow 服务
-    activeWindowService.initialize()
     activeWindowService.on('active-window-change', (windowInfo) => {
       // 发送窗口变化信息给 Worker
       clipboardManager.call('updateActiveWindow', windowInfo).catch((err) => {
         logger.warn('[主进程] 发送活动窗口更新给 Worker 失败:', err)
       })
     })
+    // 活动窗口查询可能等待桌面 D-Bus，不阻塞窗口创建。
+    void activeWindowService.initialize()
   }
 
   /**
@@ -366,7 +367,7 @@ class SuperPasteApp {
       // 总是加载基础配置，即使 provider 不可用
       const baseConfig = SyncConfigUtils.loadBaseSyncConfig()
 
-      logger.info('[主进程] 开始初始化定时同步 Worker', baseConfig)
+      logger.info('[主进程] 开始初始化定时同步 Worker')
 
       // 初始化定时同步管理器（总是使用基础配置初始化 Worker）
       const initialized = await scheduledSyncManager.initialize(baseConfig)
@@ -476,6 +477,8 @@ class SuperPasteApp {
     logger.info('[主进程] ========== 开始清理应用资源 ==========')
 
     try {
+      // 先停止窗口来源更新，再关闭接收更新的剪贴板 Worker。
+      activeWindowService.cleanup()
       // 1. 首先停止剪贴板监听(避免在清理过程中产生新的数据)
       logger.info('[主进程] [步骤 1/12] 开始停止剪贴板监听...')
       try {
@@ -606,7 +609,6 @@ class SuperPasteApp {
       logger.info('[主进程] [步骤 11/12] 清理电源监控...')
       try {
         powerMonitorManager.cleanup()
-        activeWindowService.cleanup()
         logger.info('[主进程] [步骤 11/12] ✓ 电源监控已清理')
       } catch (error) {
         logger.error('[主进程] [步骤 11/12] ✗ 清理电源监控失败:', error)

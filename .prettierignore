@@ -1,5 +1,6 @@
 out
 dist
+packages/*/target
 pnpm-lock.yaml
 LICENSE.md
 tsconfig.json

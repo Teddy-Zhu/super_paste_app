@@ -119,7 +119,6 @@ class ScheduledSyncWorker extends BaseWorker {
    * 检查配置是否有效且完整
    */
   private isConfigValid(config: ScheduledSyncConfig | null | undefined): boolean {
-    logger.debug(`[${this.getWorkerName()}] 检查配置是否有效且完整:`, config)
     if (!config) {
       return false
     }
@@ -574,7 +573,6 @@ class ScheduledSyncWorker extends BaseWorker {
    */
   public async updateConfig(newConfig: ScheduledSyncConfig): Promise<boolean> {
     try {
-      // console.log('updateConfig', newConfig)
       // 如果正在运行，先停止
       if (this.isRunning) {
         this.stopScheduledSync()

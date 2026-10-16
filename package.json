@@ -12,8 +12,9 @@
     "typecheck:web": "vue-tsc --noEmit -p tsconfig.web.json --composite false",
     "typecheck": "pnpm run typecheck:node && pnpm run typecheck:web",
     "start": "electron-vite preview",
-    "dev": "electron-vite dev --sourcemap --remote-debugging-port=9222",
-    "build": "pnpm run typecheck && electron-vite build",
+    "dev": "pnpm run build:native && electron-vite dev --sourcemap --remote-debugging-port=9222",
+    "build:native": "pnpm --filter @super-paste/active-window-kwin build",
+    "build": "pnpm run build:native && pnpm run typecheck && electron-vite build",
     "postinstall": "electron-builder install-app-deps",
     "build:unpack": "pnpm run build && electron-builder --dir",
     "build:win": "pnpm run build && electron-builder --win",
@@ -24,6 +25,7 @@
     "@electron-toolkit/preload": "^3.0.2",
     "@electron-toolkit/utils": "^4.0.0",
     "@paymoapp/active-window": "^2.1.2",
+    "@super-paste/active-window-kwin": "workspace:*",
     "@teddyzhu/auto-launch": "6.0.0-rc.8",
     "@teddyzhu/clipboard": "0.0.10",
     "@zxing/library": "^0.21.3",
@@ -40,6 +42,7 @@
     "webdav": "^5.8.0"
   },
   "devDependencies": {
+    "@babel/plugin-transform-arrow-functions": "^7.27.1",
     "@electron-toolkit/eslint-config-prettier": "3.0.0",
     "@electron-toolkit/eslint-config-ts": "^3.1.0",
     "@electron-toolkit/tsconfig": "^2.0.0",

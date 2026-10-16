@@ -28,6 +28,7 @@ export interface AnimationConfig {
 }
 
 export interface AnimationControls {
+  prepare: () => void
   play: () => void
   finished: Promise<boolean>
 }
@@ -99,47 +100,60 @@ export function useAnimation(
     frames: Keyframe[],
     options: KeyframeAnimationOptions
   ): AnimationControls => {
+    let animation: Animation | undefined
+    let reducedMotion = false
     let complete!: (finished: boolean) => void
     const finished = new Promise<boolean>((resolve) => {
       complete = resolve
     })
+    const prepare = (): void => {
+      if (animation) return
+      const element = target.value
+      if (!element) {
+        complete(false)
+        return
+      }
+      const previous = animations.get(element)
+      const firstFrame = previous
+        ? Object.fromEntries(
+            Object.keys(frames[0]).map((key) => [
+              key,
+              getComputedStyle(element).getPropertyValue(
+                key.replace(/[A-Z]/g, (letter) => `-${letter.toLowerCase()}`)
+              )
+            ])
+          )
+        : frames[0]
+      previous?.cancel()
+      reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+      const current = element.animate([firstFrame, ...frames.slice(1)], {
+        ...options,
+        fill: 'both'
+      })
+      // 首帧可在原生窗口隐藏时提交，显示窗口后再开始推进动画。
+      current.pause()
+      current.currentTime = 0
+      animation = current
+      animations.set(element, current)
+      current.oncancel = () => complete(false)
+      current.onfinish = () => {
+        // 将终态落到内联样式后释放动画，避免 fill:forwards 长期积累。
+        if (animations.get(element) === current) {
+          const lastFrame = frames[frames.length - 1]
+          Object.assign(element.style, lastFrame)
+          animations.delete(element)
+          current.cancel()
+        }
+        complete(true)
+      }
+    }
     return {
       finished,
+      prepare,
       play: () => {
-        const element = target.value
-        if (!element) {
-          complete(false)
-          return
-        }
-        const previous = animations.get(element)
-        const firstFrame = previous
-          ? Object.fromEntries(
-              Object.keys(frames[0]).map((key) => [
-                key,
-                getComputedStyle(element).getPropertyValue(
-                  key.replace(/[A-Z]/g, (letter) => `-${letter.toLowerCase()}`)
-                )
-              ])
-            )
-          : frames[0]
-        previous?.cancel()
-        const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
-        const animation = element.animate([firstFrame, ...frames.slice(1)], {
-          ...options,
-          duration: reducedMotion ? 0 : options.duration
-        })
-        animations.set(element, animation)
-        animation.oncancel = () => complete(false)
-        animation.onfinish = () => {
-          // 将终态落到内联样式后释放动画，避免 fill:forwards 长期积累。
-          if (animations.get(element) === animation) {
-            const lastFrame = frames[frames.length - 1]
-            Object.assign(element.style, lastFrame)
-            animations.delete(element)
-            animation.cancel()
-          }
-          complete(true)
-        }
+        prepare()
+        if (reducedMotion) animation?.finish()
+        else animation?.play()
       }
     }
   }

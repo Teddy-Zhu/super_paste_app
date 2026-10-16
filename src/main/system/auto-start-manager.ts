@@ -21,8 +21,6 @@ class AutoStartManager {
   constructor() {
     // 仅在 Linux 平台初始化 auto-launch
     if (this.isUnix) {
-      console.log('AutoLaunch', AutoLaunch)
-      console.log('appName', this.appName)
       this.autoLauncher = new AutoLaunch({
         options: {
           launchInBackground: true,

@@ -25,7 +25,6 @@ export function createFieldChangePlugin(callback: FieldChangeCallback) {
     }
 
     if (!store.$persist) {
-      console.log('persisted store, skip field change plugin', store.$id)
       return
     }
     for (const key in stateRefs) {
@@ -37,7 +36,6 @@ export function createFieldChangePlugin(callback: FieldChangeCallback) {
           if (silentFlags.has(flag)) {
             silentFlags.delete(flag)
             oldVal = newVal
-            console.log('skip field change', flag)
             return // 👈 跳过本次回调
           }
 

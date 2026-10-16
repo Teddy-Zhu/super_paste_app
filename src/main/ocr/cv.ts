@@ -195,8 +195,6 @@ function traceContour(
 
   usedDir.set(getPointId(current), [getDirection(-1, 0)])
 
-  // console.log("Start", current);
-
   let count = 0
 
   do {
@@ -204,11 +202,8 @@ function traceContour(
     visited[current.y][current.x] = true
 
     const nextD = findNextPoints(src, usedDir, current)
-    // console.log(current, nextD);
 
     if (nextD.length === 0) {
-      // console.log(toUseDir);
-
       if (toUseDir.size === 0) {
         break
       }
