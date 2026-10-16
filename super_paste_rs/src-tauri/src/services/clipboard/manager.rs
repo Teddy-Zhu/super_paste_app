@@ -1,3 +1,4 @@
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 use crate::infrastructure::active_window::ActiveWindowTracker;
@@ -13,6 +14,8 @@ pub struct ClipboardManager {
     db_pool: Arc<DatabasePool>,
     event_bus: Arc<EventBus>,
     active_window: Arc<ActiveWindowTracker>,
+    /// 监听开关（与 AppState 共享），为 false 时跳过记录。
+    listening: Arc<AtomicBool>,
 }
 
 impl ClipboardManager {
@@ -20,16 +23,24 @@ impl ClipboardManager {
         db_pool: Arc<DatabasePool>,
         event_bus: Arc<EventBus>,
         active_window: Arc<ActiveWindowTracker>,
+        listening: Arc<AtomicBool>,
     ) -> Self {
         Self {
             db_pool,
             event_bus,
             active_window,
+            listening,
         }
     }
 
     /// 处理剪贴板变化：读取、去重、存储、发布事件。
     pub fn handle_change(&self) -> Result<()> {
+        // 监听被关闭时跳过（调试页 / 设置开关控制）
+        if !self.listening.load(Ordering::Relaxed) {
+            tracing::debug!("剪贴板监听已暂停，跳过本次变化");
+            return Ok(());
+        }
+
         // 获取活动窗口信息并入库
         if let Some(app_info) = self.active_window.get_active_app_info()? {
             let conn = self.db_pool.get()?;

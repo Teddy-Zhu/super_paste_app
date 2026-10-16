@@ -12,6 +12,10 @@ pub struct AppConfig {
     pub enable_local_ocr: bool,
     pub ocr_mode: String,
     pub ocr_remote_url: String,
+    pub ocr_remote_extra_params: String,
+    pub ocr_remote_image_field_name: String,
+    pub ocr_remote_request_format: String,
+    pub ocr_remote_result_path: String,
     pub clipboard_listening: bool,
     pub overlay_position: String,
     pub global_shortcut: String,
@@ -35,6 +39,10 @@ impl Default for AppConfig {
             enable_local_ocr: false,
             ocr_mode: "local".to_string(),
             ocr_remote_url: String::new(),
+            ocr_remote_extra_params: "{}".to_string(),
+            ocr_remote_image_field_name: "image".to_string(),
+            ocr_remote_request_format: "json".to_string(),
+            ocr_remote_result_path: "data.result".to_string(),
             clipboard_listening: true,
             overlay_position: "bottom".to_string(),
             global_shortcut: "CmdOrCtrl+Shift+V".to_string(),
@@ -94,6 +102,22 @@ impl ConfigManager {
                 .cloned()
                 .unwrap_or_else(|| "local".to_string()),
             ocr_remote_url: cache.get("ocr_remote_url").cloned().unwrap_or_default(),
+            ocr_remote_extra_params: cache
+                .get("ocr_remote_extra_params")
+                .cloned()
+                .unwrap_or_else(|| "{}".to_string()),
+            ocr_remote_image_field_name: cache
+                .get("ocr_remote_image_field_name")
+                .cloned()
+                .unwrap_or_else(|| "image".to_string()),
+            ocr_remote_request_format: cache
+                .get("ocr_remote_request_format")
+                .cloned()
+                .unwrap_or_else(|| "json".to_string()),
+            ocr_remote_result_path: cache
+                .get("ocr_remote_result_path")
+                .cloned()
+                .unwrap_or_else(|| "data.result".to_string()),
             clipboard_listening: cache
                 .get("clipboard_listening")
                 .map(|v| v == "true")

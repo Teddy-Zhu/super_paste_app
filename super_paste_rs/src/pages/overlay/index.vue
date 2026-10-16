@@ -57,7 +57,7 @@ type RestoreMethod =
 type PlayStateRef = Ref<'idle' | 'running' | 'paused' | 'finished'>
 type OverlayPosition = 'top' | 'bottom' | 'left' | 'right'
 
-const OVERLAY_POSITION_STORE_KEY = 'settings.overlayPosition'
+const OVERLAY_POSITION_STORE_KEY = 'overlay_position'
 const overlayPosition = ref<OverlayPosition>('bottom')
 
 const normalizeOverlayPosition = (value: unknown): OverlayPosition => {
@@ -623,6 +623,17 @@ const handleCloseWindow = async (force: boolean = false): Promise<void> => {
  * 处理键盘按下事件
  */
 const handleKeyboardEvent = (event: KeyboardEvent) => {
+  // ESC：搜索框可见时退出搜索，否则关闭 Overlay（与原项目一致）
+  if (event.key === 'Escape') {
+    event.preventDefault()
+    if (animationManager.isSearchVisible.value) {
+      void hideSearchBox(true)
+    } else {
+      void closeWindow()
+    }
+    return
+  }
+
   const isCtrlOrCmd = event.ctrlKey || event.metaKey
 
   if (isCtrlOrCmd) {
@@ -896,7 +907,6 @@ onUnmounted(() => {
             placeholder="Search clipboard history..."
             :value="searchAndNavManager.searchText.value"
             @input="searchAndNavManager.handleSearchInput"
-            @keydown.escape="toggleSearch(false)"
           />
         </div>
 

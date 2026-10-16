@@ -1,9 +1,17 @@
 use tauri::menu::{Menu, MenuEvent, MenuItemBuilder, PredefinedMenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
-use tauri::{AppHandle, Emitter, Manager};
+use tauri::{AppHandle, Manager};
 
+use crate::app::state::AppState;
 use crate::result::Result;
-use crate::system::overlay;
+use crate::system::{main_window, overlay};
+
+/// 读取当前 Overlay 位置（取不到回退 bottom）。
+fn overlay_position(app: &AppHandle) -> String {
+    app.try_state::<AppState>()
+        .map(|s| s.config.get().overlay_position)
+        .unwrap_or_else(|| "bottom".to_string())
+}
 
 pub fn create_tray(app: &AppHandle) -> Result<()> {
     // 菜单项
@@ -34,15 +42,9 @@ pub fn create_tray(app: &AppHandle) -> Result<()> {
             } = event
             {
                 let app = tray.app_handle();
-                // 左键单击切换主窗口
-                if let Some(window) = app.get_webview_window("main") {
-                    if window.is_visible().unwrap_or(false) {
-                        let _ = window.hide();
-                    } else {
-                        let _ = window.show();
-                        let _ = window.set_focus();
-                    }
-                }
+                // 左键单击切换 Overlay 粘贴面板（与原项目一致）
+                let position = overlay_position(app);
+                let _ = overlay::toggle_overlay(app, &position);
             }
         })
         .build(app)?;
@@ -54,23 +56,12 @@ pub fn create_tray(app: &AppHandle) -> Result<()> {
 fn handle_menu_event(app: &AppHandle, event: MenuEvent) {
     match event.id.as_ref() {
         "settings" => {
-            if let Some(window) = app.get_webview_window("main") {
-                let _ = window.show();
-                let _ = window.set_focus();
-            }
+            let _ = main_window::show_main_window(app);
         }
         "overlay" => {
             // 切换 overlay 显示/隐藏
-            if let Some(overlay_win) = app.get_webview_window("overlay") {
-                if overlay_win.is_visible().unwrap_or(false) {
-                    // 隐藏
-                    let _ = overlay::hide_overlay(app, "bottom");
-                } else {
-                    // 显示并触发滑入动画
-                    let _ = overlay::show_overlay(app, "bottom");
-                    let _ = overlay_win.emit("trigger-slide-in-animation", "bottom");
-                }
-            }
+            let position = overlay_position(app);
+            let _ = overlay::toggle_overlay(app, &position);
         }
         "auto_start" => {
             tracing::info!("切换开机自启");

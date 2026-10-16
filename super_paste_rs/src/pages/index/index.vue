@@ -20,6 +20,8 @@ import SyncSettings from './components/SyncSettings.vue'
 // 导入API
 import { onSimple } from '@renderer/api/ipc'
 import { app } from '@renderer/api/renderer-api'
+import { invoke } from '@tauri-apps/api/core'
+import { BACKEND_TO_SETTINGS_KEY } from '@renderer/stores'
 import { ref, computed, onMounted, onUnmounted, type Component } from 'vue'
 
 type SectionId = 'general' | 'sync' | 'ocr' | 'tags' | 'shortcuts' | 'debug' | 'about'
@@ -175,7 +177,31 @@ const cancelRestart = (): void => {
 
 let restartRequiredUnsubscribe: (() => void) | null = null
 
+/**
+ * 从后端载入完整配置并回填 settings store（后端为权威源）。
+ * 使用 $setSilent 静默写入，避免触发字段变更插件的回写形成回环。
+ */
+const loadSettingsFromBackend = async (): Promise<void> => {
+  try {
+    const config = await invoke<Record<string, unknown>>('get_config')
+    const setSilent = (
+      settingsStore as unknown as { $setSilent?: (key: string, value: unknown) => void }
+    ).$setSilent
+    if (!setSilent) return
+
+    for (const [snakeKey, value] of Object.entries(config)) {
+      const camelKey = BACKEND_TO_SETTINGS_KEY[snakeKey]
+      if (camelKey && value !== null && value !== undefined) {
+        setSilent(camelKey, value)
+      }
+    }
+  } catch (error) {
+    console.error('加载后端配置失败:', error)
+  }
+}
+
 onMounted(() => {
+  void loadSettingsFromBackend()
   restartRequiredUnsubscribe = onSimple('sync-requires-restart', handleSyncRequiresRestart)
 })
 

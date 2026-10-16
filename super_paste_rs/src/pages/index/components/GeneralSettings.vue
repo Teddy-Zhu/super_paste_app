@@ -60,11 +60,9 @@ const getMarkPosition = (value: number): number => {
   }
 }
 
-// 切换开机自启
+// 切换开机自启（变更经 fieldChangePlugin 写入后端，由后端调用 autostart 插件生效）
 const toggleAutoStart = () => {
   props.settingsStore.autoStart = !props.settingsStore.autoStart
-  // TODO: 发送到主进程设置开机自启
-  console.log('开机自启:', props.settingsStore.autoStart)
 }
 
 // 更新最大历史记录数量

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { onMounted } from 'vue'
 import { send } from '@renderer/api'
 import { clipboard } from '@renderer/api/renderer-api'
 
@@ -55,33 +56,9 @@ const syncClipboardListeningStatus = async () => {
 }
 
 // 导出 heapdump
-const exportHeapdump = async () => {
-  try {
-    const result = await window.electron.ipcRenderer.invoke('export-heapdump')
-    if (result.success) {
-      // 构建详细的成功消息
-      let message = result.message
-      if (result.files && result.files.length > 1) {
-        message += '\n\n导出的文件：'
-        result.files.forEach((file: string, index: number) => {
-          const filename = file.split(/[/\\]/).pop() || file
-          message += `\n${index + 1}. ${filename}`
-        })
-      } else if (result.mainFile) {
-        const filename = result.mainFile.split(/[/\\]/).pop() || result.mainFile
-        message += `\n文件名: ${filename}`
-      }
-
-      alert(message)
-      console.log('heapdump 导出成功:', result)
-    } else {
-      alert(`导出失败: ${result.error}`)
-      console.error('heapdump 导出失败:', result.error)
-    }
-  } catch (error) {
-    console.error('导出 heapdump 失败:', error)
-    alert('导出失败: ' + (error as Error).message)
-  }
+const exportHeapdump = (): void => {
+  // Tauri 版本暂不支持内存快照导出（原 Electron 专有能力）
+  alert('Tauri 版本暂不支持导出内存快照')
 }
 
 // 组件挂载时同步剪贴板状态

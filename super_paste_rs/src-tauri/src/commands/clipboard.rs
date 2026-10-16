@@ -215,15 +215,25 @@ pub fn clear_clipboard_history_compat(state: State<AppState>) -> SimpleResponse 
 
 /// 开始监听剪贴板
 #[tauri::command]
-pub fn start_clipboard_listening() -> SimpleResponse {
-    // TODO: 启动剪贴板监听
+pub fn start_clipboard_listening(state: State<AppState>) -> SimpleResponse {
+    state
+        .clipboard_listening
+        .store(true, std::sync::atomic::Ordering::Relaxed);
+    if let Ok(conn) = state.db_pool.get() {
+        let _ = state.config.set(&conn, "clipboard_listening", "true");
+    }
     SimpleResponse::ok()
 }
 
 /// 停止监听剪贴板
 #[tauri::command]
-pub fn stop_clipboard_listening() -> SimpleResponse {
-    // TODO: 停止剪贴板监听
+pub fn stop_clipboard_listening(state: State<AppState>) -> SimpleResponse {
+    state
+        .clipboard_listening
+        .store(false, std::sync::atomic::Ordering::Relaxed);
+    if let Ok(conn) = state.db_pool.get() {
+        let _ = state.config.set(&conn, "clipboard_listening", "false");
+    }
     SimpleResponse::ok()
 }
 

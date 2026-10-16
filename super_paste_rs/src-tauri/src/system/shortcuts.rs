@@ -1,8 +1,10 @@
-use tauri::Emitter;
+use tauri::{Emitter, Manager};
 use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
 
+use crate::app::state::AppState;
 use crate::error::AppError;
 use crate::result::Result;
+use crate::system::overlay;
 
 pub struct ShortcutManager;
 
@@ -64,13 +66,61 @@ impl ShortcutManager {
     }
 
     fn parse_key(s: &str) -> Result<Code> {
-        match s.to_uppercase().as_str() {
-            "V" => Ok(Code::KeyV),
-            "C" => Ok(Code::KeyC),
-            "X" => Ok(Code::KeyX),
-            "A" => Ok(Code::KeyA),
-            _ => Err(AppError::config(format!("不支持的按键: {}", s))),
-        }
+        let code = match s.to_uppercase().as_str() {
+            "A" => Code::KeyA,
+            "B" => Code::KeyB,
+            "C" => Code::KeyC,
+            "D" => Code::KeyD,
+            "E" => Code::KeyE,
+            "F" => Code::KeyF,
+            "G" => Code::KeyG,
+            "H" => Code::KeyH,
+            "I" => Code::KeyI,
+            "J" => Code::KeyJ,
+            "K" => Code::KeyK,
+            "L" => Code::KeyL,
+            "M" => Code::KeyM,
+            "N" => Code::KeyN,
+            "O" => Code::KeyO,
+            "P" => Code::KeyP,
+            "Q" => Code::KeyQ,
+            "R" => Code::KeyR,
+            "S" => Code::KeyS,
+            "T" => Code::KeyT,
+            "U" => Code::KeyU,
+            "V" => Code::KeyV,
+            "W" => Code::KeyW,
+            "X" => Code::KeyX,
+            "Y" => Code::KeyY,
+            "Z" => Code::KeyZ,
+            "0" => Code::Digit0,
+            "1" => Code::Digit1,
+            "2" => Code::Digit2,
+            "3" => Code::Digit3,
+            "4" => Code::Digit4,
+            "5" => Code::Digit5,
+            "6" => Code::Digit6,
+            "7" => Code::Digit7,
+            "8" => Code::Digit8,
+            "9" => Code::Digit9,
+            "F1" => Code::F1,
+            "F2" => Code::F2,
+            "F3" => Code::F3,
+            "F4" => Code::F4,
+            "F5" => Code::F5,
+            "F6" => Code::F6,
+            "F7" => Code::F7,
+            "F8" => Code::F8,
+            "F9" => Code::F9,
+            "F10" => Code::F10,
+            "F11" => Code::F11,
+            "F12" => Code::F12,
+            "SPACE" => Code::Space,
+            "ENTER" | "RETURN" => Code::Enter,
+            "TAB" => Code::Tab,
+            _ => return Err(AppError::config(format!("不支持的按键: {}", s))),
+        };
+        Ok(code)
     }
 
     fn try_register(handle: &tauri::AppHandle, shortcut: &Shortcut) -> Result<()> {
@@ -83,11 +133,14 @@ impl ShortcutManager {
             .global_shortcut()
             .on_shortcut(*shortcut, |app, _shortcut, event| {
                 if event.state == ShortcutState::Pressed {
-                    let _ = app.emit_to(
-                        tauri::EventTarget::App,
-                        "toggle-overlay",
-                        (),
-                    );
+                    // 直接调用共享 toggle 逻辑，不再走 emit 事件往返
+                    let position = app
+                        .try_state::<AppState>()
+                        .map(|s| s.config.get().overlay_position)
+                        .unwrap_or_else(|| "bottom".to_string());
+                    if let Err(e) = overlay::toggle_overlay(app, &position) {
+                        tracing::warn!("快捷键切换 Overlay 失败: {:?}", e);
+                    }
                 }
             })
             .map_err(|e| AppError::config(format!("绑定快捷键回调失败: {}", e)))?;

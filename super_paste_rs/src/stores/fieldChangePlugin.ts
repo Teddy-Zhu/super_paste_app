@@ -10,7 +10,8 @@ type FieldChangeCallback = (params: {
 
 export function createFieldChangePlugin(callback: FieldChangeCallback) {
   return (context: PiniaPluginContext) => {
-    const { store } = context
+    // 该插件需要给 store 动态注入 $setSilent 并按字符串键读写，故以 any 访问
+    const store = context.store as any
     const stateRefs = toRefs(store.$state)
     const silentFlags = new Set<string>()
 
