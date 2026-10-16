@@ -1,5 +1,6 @@
 // Electron 核心模块
 import { app } from 'electron'
+import { configurePlatform } from './system/platform'
 
 // 首先初始化日志系统
 import logger from './utils/logger'
@@ -46,8 +47,7 @@ class ClipboardHistoryCleanerManager extends BaseWorkerManager {
 if (process.platform === 'darwin' && is.dev) {
   app.disableHardwareAcceleration()
 }
-app.commandLine.appendSwitch('disable-backgrounding-occluded-windows', 'true');
-app.commandLine.appendSwitch('wm-window-animations-disabled', 'true');
+configurePlatform()
 /**
  * 应用程序主类
  */
@@ -125,9 +125,10 @@ class SuperPasteApp {
     logger.info('[主进程] 获取单实例锁成功，继续启动应用')
 
     // 当第二个实例尝试启动时，聚焦到第一个实例
-    app.on('second-instance', () => {
+    app.on('second-instance', (_event, argv) => {
       logger.debug('[主进程] 检测到第二个实例启动尝试，聚焦到当前实例')
-      this.handleSecondInstance()
+      if (argv.includes('--toggle-overlay')) overlayWindowManager.toggleWindow(true)
+      else this.handleSecondInstance()
     })
 
     return true
@@ -150,10 +151,10 @@ class SuperPasteApp {
     electronApp.setAppUserModelId('com.v2dawn.sp')
 
     // 在 macOS 上确保应用启动时 dock 是隐藏的
-    // 在 macOS 上确保应用启动时 dock 是隐藏的
     appLifecycleManager.hideDock()
 
     // 1. 立即创建主窗口以提升启动速度（但不显示）
+    this.initializeIPCManager()
     this.createMainWindow()
 
     // 2. 创建系统托盘（同步，快速）
@@ -219,14 +220,20 @@ class SuperPasteApp {
       // 2. 初始化 IPC 管理器（快速，同步）
       this.initializeIPCManager()
 
+      // 历史面板和快捷键不依赖剪贴板监听权限，先让它们可用。
+      this.createOverlayWindow()
+
       // 3. 初始化剪贴板管理器（可能耗时）
-      await this.initializeClipboardManager()
+      try {
+        await this.initializeClipboardManager()
+      } catch (error) {
+        logger.error('[主进程] 剪贴板监听不可用，可在设置中重试:', error)
+      }
 
       // 4. 初始化剪贴板历史清理器
       await this.initializeClipboardHistoryCleaner()
 
-      // 5. 创建 overlay 窗口（预先创建，保持隐藏）
-      this.createOverlayWindow()
+      if (process.argv.includes('--toggle-overlay')) overlayWindowManager.showWindow()
 
       // 6. 并行执行系统集成与定时同步初始化
       const systemIntegrationTask = this.setupSystemIntegration().catch((error) => {
@@ -474,7 +481,9 @@ class SuperPasteApp {
       try {
         await Promise.race([
           clipboardManager.stopListening(),
-          new Promise((_, reject) => setTimeout(() => reject(new Error('停止剪贴板监听超时')), 3000))
+          new Promise((_, reject) =>
+            setTimeout(() => reject(new Error('停止剪贴板监听超时')), 3000)
+          )
         ])
         logger.info('[主进程] [步骤 1/12] ✓ 剪贴板监听已停止')
       } catch (error) {
@@ -486,7 +495,9 @@ class SuperPasteApp {
       try {
         await Promise.race([
           scheduledSyncManager.destroy(),
-          new Promise((_, reject) => setTimeout(() => reject(new Error('销毁定时同步服务超时')), 3000))
+          new Promise((_, reject) =>
+            setTimeout(() => reject(new Error('销毁定时同步服务超时')), 3000)
+          )
         ])
         logger.info('[主进程] [步骤 2/12] ✓ 定时同步服务已销毁')
       } catch (error) {
@@ -507,7 +518,9 @@ class SuperPasteApp {
               await this.clipboardHistoryCleaner!.stop()
               logger.debug('[主进程] [步骤 3/12] 清理器 Worker 已停止')
             })(),
-            new Promise((_, reject) => setTimeout(() => reject(new Error('销毁历史清理器超时')), 3000))
+            new Promise((_, reject) =>
+              setTimeout(() => reject(new Error('销毁历史清理器超时')), 3000)
+            )
           ])
           this.clipboardHistoryCleaner = null
           logger.info('[主进程] [步骤 3/12] ✓ 历史记录清理器已销毁')
@@ -516,7 +529,7 @@ class SuperPasteApp {
           // 强制停止
           if (this.clipboardHistoryCleaner) {
             logger.warn('[主进程] [步骤 3/12] 尝试强制停止清理器...')
-            await this.clipboardHistoryCleaner.stop().catch(() => { })
+            await this.clipboardHistoryCleaner.stop().catch(() => {})
             this.clipboardHistoryCleaner = null
           }
         }
@@ -529,7 +542,9 @@ class SuperPasteApp {
       try {
         await Promise.race([
           clipboardManager.stop(),
-          new Promise((_, reject) => setTimeout(() => reject(new Error('停止剪贴板管理器超时')), 3000))
+          new Promise((_, reject) =>
+            setTimeout(() => reject(new Error('停止剪贴板管理器超时')), 3000)
+          )
         ])
         logger.info('[主进程] [步骤 4/12] ✓ 剪贴板管理器已停止')
       } catch (error) {

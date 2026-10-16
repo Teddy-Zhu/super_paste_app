@@ -1,0 +1,13 @@
+allowBuilds:
+  '@paymoapp/active-window': true
+  '@teddyzhu/clipboard': true
+  better-sqlite3: true
+  canvas: true
+  core-js: true
+  electron: true
+  electron-winstaller: true
+  esbuild: true
+  get-windows: true
+  lzma-native: true
+  onnxruntime-node: true
+  vue-demi: true

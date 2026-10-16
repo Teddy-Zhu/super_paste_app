@@ -559,6 +559,7 @@ class ClipboardManagerWorker extends BaseWorker {
         case 'getConfig': result = this.getConfig(); break
         case 'startListening': result = this.startListening(); break
         case 'stopListening': result = this.stopListening(); break
+        case 'getAccessStatus': result = this.poller.getAccessStatus(); break
         case 'isListeningActive': result = this.isListeningActive(); break
         case 'syncClipboardHash': result = await this.syncClipboardHash(); break
         case 'resetErrorState': result = this.resetErrorState(); break

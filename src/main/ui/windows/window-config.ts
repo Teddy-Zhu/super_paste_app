@@ -39,35 +39,35 @@ export class WindowConfigCalculator {
           x: displayX,
           y: displayY,
           width: displayWidth,
-          height: WINDOW_HEIGHT
+          height: Math.min(WINDOW_HEIGHT, displayHeight)
         }
       case 'bottom':
         return {
           x: displayX,
-          y: displayY + displayHeight - WINDOW_HEIGHT,
+          y: displayY + displayHeight - Math.min(WINDOW_HEIGHT, displayHeight),
           width: displayWidth,
-          height: WINDOW_HEIGHT
+          height: Math.min(WINDOW_HEIGHT, displayHeight)
         }
       case 'left':
         return {
           x: displayX,
           y: displayY,
-          width: WINDOW_HEIGHT,
+          width: Math.min(WINDOW_HEIGHT, displayWidth),
           height: displayHeight
         }
       case 'right':
         return {
-          x: displayX + displayWidth - WINDOW_HEIGHT,
+          x: displayX + displayWidth - Math.min(WINDOW_HEIGHT, displayWidth),
           y: displayY,
-          width: WINDOW_HEIGHT,
+          width: Math.min(WINDOW_HEIGHT, displayWidth),
           height: displayHeight
         }
       default:
         return {
           x: displayX,
-          y: displayY + displayHeight - WINDOW_HEIGHT,
+          y: displayY + displayHeight - Math.min(WINDOW_HEIGHT, displayHeight),
           width: displayWidth,
-          height: WINDOW_HEIGHT
+          height: Math.min(WINDOW_HEIGHT, displayHeight)
         }
     }
   }
@@ -81,38 +81,7 @@ export class WindowConfigCalculator {
     width: number
     height: number
   } {
-    return this.calculateOverlayBounds(overlayPosition).visibleBounds
-  }
-
-  static calculateHiddenWindowPosition(
-    overlayPosition: OverlayPosition = DEFAULT_OVERLAY_POSITION
-  ): { x: number; y: number; width: number; height: number } {
-    return this.calculateOverlayBounds(overlayPosition).hiddenBounds
-  }
-
-  static calculateOverlayBounds(overlayPosition: OverlayPosition = DEFAULT_OVERLAY_POSITION): {
-    visibleBounds: { x: number; y: number; width: number; height: number }
-    hiddenBounds: { x: number; y: number; width: number; height: number }
-  } {
-    const workArea = this.getCurrentDisplayWorkArea()
-    const visibleBounds = this.calculateVisibleBoundsByWorkArea(workArea, overlayPosition)
-    const { x: displayX, y: displayY, width: displayWidth, height: displayHeight } = workArea
-
-    const hiddenBounds =
-      overlayPosition === 'top'
-        ? { ...visibleBounds, y: displayY - visibleBounds.height }
-        : overlayPosition === 'bottom'
-          ? { ...visibleBounds, y: displayY + displayHeight }
-          : overlayPosition === 'left'
-            ? { ...visibleBounds, x: displayX - visibleBounds.width }
-            : overlayPosition === 'right'
-              ? { ...visibleBounds, x: displayX + displayWidth }
-              : { ...visibleBounds, y: displayY + displayHeight }
-
-    return {
-      visibleBounds,
-      hiddenBounds
-    }
+    return this.calculateVisibleBoundsByWorkArea(this.getCurrentDisplayWorkArea(), overlayPosition)
   }
 
   /**

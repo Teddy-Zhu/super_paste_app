@@ -34,20 +34,6 @@ class WindowStateManager {
   }
 
   /**
-   * 检查是否可以执行打开操作
-   */
-  canOpenOverlay(): boolean {
-    return this.currentOverlayState === OverlayState.CLOSED
-  }
-
-  /**
-   * 检查是否可以执行关闭操作
-   */
-  canCloseOverlay(): boolean {
-    return this.currentOverlayState === OverlayState.OPENED
-  }
-
-  /**
    * 重置状态
    */
   reset(): void {

@@ -4,6 +4,7 @@
     :src="imageSrc"
     :alt="alt"
     :class="imageClass"
+    decoding="async"
     @load="handleLoad"
     @error="handleError"
   />
@@ -14,7 +15,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onUnmounted, watch, nextTick } from 'vue'
+import { ref, onUnmounted, watch } from 'vue'
 
 interface Props {
   imageData: Uint8Array
@@ -22,15 +23,13 @@ interface Props {
   imageClass?: string
   loadingClass?: string
   errorClass?: string
-  sizeThreshold?: number // 大小阈值，单位字节，默认100KB
 }
 
 const props = withDefaults(defineProps<Props>(), {
   alt: 'Image preview',
   imageClass: '',
   loadingClass: 'image-loading',
-  errorClass: 'image-error',
-  sizeThreshold: 100 * 1024 // 100KB
+  errorClass: 'image-error'
 })
 
 const emit = defineEmits<{
@@ -54,13 +53,25 @@ const toArrayBuffer = (data: Uint8Array): ArrayBuffer => {
 
 // 根据魔数识别图片类型，确保 Blob 和 base64 前缀正确
 const detectMimeType = (data: Uint8Array): string => {
-  if (data.length >= 8 && data[0] === 0x89 && data[1] === 0x50 && data[2] === 0x4e && data[3] === 0x47) {
+  if (
+    data.length >= 8 &&
+    data[0] === 0x89 &&
+    data[1] === 0x50 &&
+    data[2] === 0x4e &&
+    data[3] === 0x47
+  ) {
     return 'image/png'
   }
   if (data.length >= 3 && data[0] === 0xff && data[1] === 0xd8 && data[2] === 0xff) {
     return 'image/jpeg'
   }
-  if (data.length >= 4 && data[0] === 0x47 && data[1] === 0x49 && data[2] === 0x46 && data[3] === 0x38) {
+  if (
+    data.length >= 4 &&
+    data[0] === 0x47 &&
+    data[1] === 0x49 &&
+    data[2] === 0x46 &&
+    data[3] === 0x38
+  ) {
     return 'image/gif'
   }
   if (
@@ -76,75 +87,56 @@ const detectMimeType = (data: Uint8Array): string => {
   ) {
     return 'image/webp'
   }
-  if (data.length >= 4 && data[0] === 0x49 && data[1] === 0x49 && data[2] === 0x2a && data[3] === 0x00) {
+  if (
+    data.length >= 4 &&
+    data[0] === 0x49 &&
+    data[1] === 0x49 &&
+    data[2] === 0x2a &&
+    data[3] === 0x00
+  ) {
     return 'image/tiff'
   }
-  if (data.length >= 4 && data[0] === 0x4d && data[1] === 0x4d && data[2] === 0x00 && data[3] === 0x2a) {
+  if (
+    data.length >= 4 &&
+    data[0] === 0x4d &&
+    data[1] === 0x4d &&
+    data[2] === 0x00 &&
+    data[3] === 0x2a
+  ) {
     return 'image/tiff'
   }
   if (data.length >= 2 && data[0] === 0x42 && data[1] === 0x4d) {
     return 'image/bmp'
   }
-  if (data.length >= 4 && data[0] === 0x00 && data[1] === 0x00 && data[2] === 0x01 && data[3] === 0x00) {
+  if (
+    data.length >= 4 &&
+    data[0] === 0x00 &&
+    data[1] === 0x00 &&
+    data[2] === 0x01 &&
+    data[3] === 0x00
+  ) {
     return 'image/x-icon'
   }
   return 'image/png'
 }
 
-// 判断是否为大图片
-const isLargeImage = computed(() => {
-  return props.imageData && props.imageData.length > props.sizeThreshold
-})
-
-// 处理图片加载
-const processImage = async () => {
-  if (!props.imageData || props.imageData.length === 0) {
-    hasError.value = true
-    errorMessage.value = '无效的图片数据'
-    isLoading.value = false
-    return
-  }
-
+// Blob URL 避免 Array.from/map/join/base64 的多次分配与主线程编码。
+const processImage = () => {
+  cleanupObjectURL()
+  imageSrc.value = ''
+  hasError.value = false
+  errorMessage.value = ''
+  isLoading.value = true
   try {
-    isLoading.value = true
-    hasError.value = false
-    errorMessage.value = ''
-    const mimeType = detectMimeType(props.imageData)
-
-    // 清理之前的 Object URL
-    cleanupObjectURL()
-
-    if (isLargeImage.value) {
-      // 大图片使用 Blob URL
-      const blob = new Blob([toArrayBuffer(props.imageData)], { type: mimeType })
-      const objectURL = URL.createObjectURL(blob)
-      currentObjectURL.value = objectURL
-      imageSrc.value = objectURL
-    } else {
-      // 小图片使用 base64
-      try {
-        const binaryString = Array.from(props.imageData)
-          .map((byte) => String.fromCharCode(byte))
-          .join('')
-        const base64String = btoa(binaryString)
-        imageSrc.value = `data:${mimeType};base64,${base64String}`
-      } catch (error) {
-        console.error('转换 base64 失败:', error)
-        // 回退到 Blob URL 方案
-        const blob = new Blob([toArrayBuffer(props.imageData)], { type: mimeType })
-        const objectURL = URL.createObjectURL(blob)
-        currentObjectURL.value = objectURL
-        imageSrc.value = objectURL
-      }
-    }
-
-    // 等待下一帧确保 DOM 更新
-    await nextTick()
-    isLoading.value = false
+    if (!props.imageData?.byteLength) throw new Error('无效的图片数据')
+    const blob = new Blob([toArrayBuffer(props.imageData)], {
+      type: detectMimeType(props.imageData)
+    })
+    currentObjectURL.value = URL.createObjectURL(blob)
+    imageSrc.value = currentObjectURL.value
   } catch (error) {
-    console.error('处理图片失败:', error)
     hasError.value = true
-    errorMessage.value = '图片处理失败'
+    errorMessage.value = error instanceof Error ? error.message : '图片处理失败'
     isLoading.value = false
   }
 }
@@ -162,12 +154,6 @@ const handleLoad = (event: Event) => {
   isLoading.value = false
   hasError.value = false
 
-  // 如果使用的是 Object URL，可以在这里清理（可选）
-  // 注意：立即清理可能导致图片无法显示，所以这里注释掉
-  // if (isLargeImage.value) {
-  //   cleanupObjectURL()
-  // }
-
   emit('load', event)
 }
 
@@ -176,6 +162,7 @@ const handleError = (event: Event) => {
   isLoading.value = false
   hasError.value = true
   errorMessage.value = '图片加载失败'
+  imageSrc.value = ''
   cleanupObjectURL()
   emit('error', event)
 }

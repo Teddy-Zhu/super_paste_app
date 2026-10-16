@@ -212,409 +212,201 @@ export class MainWindowManager {
  * Overlay 窗口管理器
  */
 export class OverlayWindowManager {
-  private static readonly SLIDE_IN_DELAY_MS = 16
   private overlayWindow: BrowserWindow | null = null
-  private slideInTimer: NodeJS.Timeout | null = null
+  private rendererReady = false
+  private wantsVisible = false
+  private transitionId = 0
+  private transitionTimer: NodeJS.Timeout | null = null
   private currentOverlayPosition: OverlayPosition = DEFAULT_OVERLAY_POSITION
 
-  /**
-   * 获取 overlay 窗口实例
-   */
   getWindow(): BrowserWindow | null {
     return this.overlayWindow
   }
 
-  /**
-   * 创建覆盖层窗口
-   */
   createWindow(): void {
-    try {
-      if (this.overlayWindow) {
-        return
+    if (this.isValid()) return
+    const position = this.getOverlayPositionSetting()
+    const bounds = WindowConfigCalculator.calculateWindowPosition(position)
+    this.overlayWindow = new BrowserWindow({
+      ...bounds,
+      frame: false,
+      alwaysOnTop: true,
+      skipTaskbar: true,
+      resizable: false,
+      movable: false,
+      minimizable: false,
+      maximizable: false,
+      roundedCorners: false,
+      focusable: true,
+      show: false,
+      type: 'utility',
+      transparent: true,
+      paintWhenInitiallyHidden: true,
+      ...(process.platform === 'linux' ? { icon: IconSelector.getWindowIcon() } : {}),
+      webPreferences: {
+        preload: join(__dirname, '../preload/index.js'),
+        sandbox: false,
+        nodeIntegration: false,
+        contextIsolation: true,
+        backgroundThrottling: false
       }
-
-      logger.debug('[主进程] 开始创建 Overlay 窗口')
-
-      const { hiddenBounds } = this.calculateOverlayWindowLayout()
-
-      // 创建覆盖层窗口
-      this.overlayWindow = new BrowserWindow({
-        width: hiddenBounds.width,
-        height: hiddenBounds.height,
-        x: hiddenBounds.x,
-        y: hiddenBounds.y,
-        frame: false,
-        alwaysOnTop: true,
-        skipTaskbar: true,
-        resizable: false,
-        movable: false,
-        minimizable: false,
-        maximizable: false,
-        closable: true,
-        roundedCorners: false,
-        focusable: true,
-        show: false,
-        type: 'utility',
-        transparent: true,
-        paintWhenInitiallyHidden: true,
-        ...(process.platform === 'linux' ? { icon: IconSelector.getWindowIcon() } : {}),
-        webPreferences: {
-          preload: join(__dirname, '../preload/index.js'),
-          sandbox: false,
-          nodeIntegration: false,
-          contextIsolation: true,
-          backgroundThrottling: false
-        }
-      })
-
-      // 设置快捷键管理器的窗口引用
-      globalShortcutManager.setOverlayWindow(this.overlayWindow)
-
-      this.setupEventHandlers()
-      this.loadContent()
-
-      logger.debug('[主进程] Overlay 窗口创建完成')
-    } catch (error) {
-      logger.error('[主进程] 创建 Overlay 窗口时发生错误:', error)
-      this.overlayWindow = null
-      throw error
-    }
-  }
-
-  /**
-   * 设置事件处理器
-   */
-  private setupEventHandlers(): void {
-    if (!this.overlayWindow) return
-
-    this.overlayWindow.on('ready-to-show', () => {
-      if (is.dev) {
-        this.overlayWindow?.webContents.openDevTools()
-      }
-
-      // 在窗口准备就绪后初始化全局快捷键（最后执行）
-      logger.debug('[主进程] Overlay 窗口准备就绪，开始初始化全局快捷键')
-      this.initializeGlobalShortcut()
-      logger.debug('[主进程] 全局快捷键初始化完成，应用启动流程结束')
     })
-
-    this.overlayWindow.on('show', () => {
-      this.scheduleSlideInAnimation()
-    })
-
-    this.overlayWindow.on('focus', () => {
-      // 窗口已在前台显示并获得焦点
-    })
-
-    // 阻止窗口关闭，改为隐藏
-    this.overlayWindow.on('close', (event) => {
+    const window = this.overlayWindow
+    window.once('ready-to-show', () => this.registerGlobalShortcut())
+    window.on('close', (event) => {
       event.preventDefault()
       this.hideWindow()
     })
-
-    this.overlayWindow.on('closed', () => {
-      this.clearSlideInTimer()
-      // 取消全局 ESC 键监听
-      globalShortcutManager.unregisterEscapeKey()
-
-      // 重置overlay状态
-      windowStateManager.setOverlayState(OverlayState.CLOSED)
-
+    window.on('closed', () => {
+      this.clearTransitionTimer()
+      this.rendererReady = false
+      this.wantsVisible = false
+      windowStateManager.reset()
       this.overlayWindow = null
     })
-
-    // 失去焦点时隐藏窗口
-    this.overlayWindow.on('blur', () => {
-      if (this.overlayWindow && !is.dev) {
-        this.hideWindowBackend(true)
-      }
+    window.on('blur', () => {
+      if (!is.dev) this.hideWindowBackend(true)
     })
-
-    this.overlayWindow.on('will-resize', (event) => {
-      event.preventDefault()
+    window.webContents.on('did-start-loading', () => {
+      const pendingShow = this.wantsVisible
+      this.rendererReady = false
+      this.hideWindow()
+      this.wantsVisible = pendingShow
     })
-    this.overlayWindow.setSkipTaskbar(true)
+    window.webContents.on('render-process-gone', () => {
+      this.rendererReady = false
+      this.hideWindow()
+    })
+    const loading =
+      is.dev && process.env['ELECTRON_RENDERER_URL']
+        ? window.loadURL(`${process.env['ELECTRON_RENDERER_URL']}#/overlay`)
+        : window.loadFile(join(__dirname, '../renderer/index.html'), { hash: '/overlay' })
+    loading.catch((error) => logger.error('[Overlay] 页面加载失败:', error))
   }
 
-  /**
-   * 加载窗口内容
-   */
-  private loadContent(): void {
-    if (!this.overlayWindow) return
-
-    // 加载覆盖层页面
-    if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
-      const url = `${process.env['ELECTRON_RENDERER_URL']}#/overlay`
-      this.overlayWindow.loadURL(url)
-    } else {
-      this.overlayWindow.loadFile(join(__dirname, '../renderer/index.html'), { hash: '/overlay' })
-    }
+  markRendererReady(): void {
+    this.rendererReady = true
+    if (this.wantsVisible) this.showWindow()
   }
 
-  /**
-   * 读取 overlay 位置配置
-   */
   private getOverlayPositionSetting(): OverlayPosition {
-    const value = store.get(
-      STORE_KEY.SETTINGS_OVERLAY_POSITION,
-      DEFAULT_OVERLAY_POSITION
-    ) as unknown
-    return WindowConfigCalculator.normalizeOverlayPosition(value)
+    return WindowConfigCalculator.normalizeOverlayPosition(
+      store.get(STORE_KEY.SETTINGS_OVERLAY_POSITION, DEFAULT_OVERLAY_POSITION)
+    )
   }
 
-  /**
-   * 计算 overlay 的显示与隐藏位置
-   */
-  private calculateOverlayWindowLayout(): {
-    position: OverlayPosition
-    visibleBounds: Electron.Rectangle
-    hiddenBounds: Electron.Rectangle
-  } {
-    const position = this.getOverlayPositionSetting()
-    const { visibleBounds, hiddenBounds } = WindowConfigCalculator.calculateOverlayBounds(position)
-
-    this.currentOverlayPosition = position
-
-    return {
-      position,
-      visibleBounds,
-      hiddenBounds
-    }
+  registerGlobalShortcut(retry = false): boolean {
+    return globalShortcutManager.registerGlobalShortcut(
+      store.get<string>(STORE_KEY.SETTINGS_GLOBAL_SHORTCUT, ''),
+      () => this.toggleWindow(true),
+      retry
+    )
   }
 
-  /**
-   * 延迟触发滑入动画，确保窗口已经渲染完首帧，避免动画在不可见状态下执行
-   */
-  private scheduleSlideInAnimation(): void {
-    if (windowStateManager.getOverlayState() !== OverlayState.OPENING) {
-      return
-    }
+  showWindow(): void {
+    if (!this.isValid()) this.createWindow()
+    this.wantsVisible = true
+    if (!this.rendererReady || !this.overlayWindow) return
+    const state = windowStateManager.getOverlayState()
+    if (state === OverlayState.OPENING || state === OverlayState.OPENED) return
 
-    if (!WindowUtils.isWindowValidAndVisible(this.overlayWindow)) {
-      return
-    }
-
-    this.clearSlideInTimer()
-
-    this.slideInTimer = setTimeout(() => {
-      this.slideInTimer = null
+    this.clearTransitionTimer()
+    const id = ++this.transitionId
+    this.currentOverlayPosition = this.getOverlayPositionSetting()
+    try {
+      const bounds = WindowConfigCalculator.calculateWindowPosition(this.currentOverlayPosition)
+      const previous = this.overlayWindow.getBounds()
+      if ((['x', 'y', 'width', 'height'] as const).some((key) => bounds[key] !== previous[key])) {
+        this.overlayWindow.setBounds(bounds)
+      }
+      windowStateManager.setOverlayState(OverlayState.OPENING)
+      this.overlayWindow.show()
+      this.overlayWindow.focus()
       WindowUtils.safelyEmitToWindow(
         this.overlayWindow,
         'trigger-slide-in-animation',
-        this.currentOverlayPosition
+        this.currentOverlayPosition,
+        id
       )
-    }, OverlayWindowManager.SLIDE_IN_DELAY_MS)
-  }
-
-  private clearSlideInTimer(): void {
-    if (this.slideInTimer) {
-      clearTimeout(this.slideInTimer)
-      this.slideInTimer = null
-    }
-  }
-
-  /**
-   * 初始化全局快捷键
-   */
-  private initializeGlobalShortcut(): void {
-    try {
-      // 从store读取全局快捷键配置
-      const shortcutKey = store.get(STORE_KEY.SETTINGS_GLOBAL_SHORTCUT, '') as string
-
-      if (shortcutKey && shortcutKey.trim() !== '') {
-        globalShortcutManager.registerGlobalShortcut(shortcutKey, () => {
-          logger.debug('[主进程] 全局快捷键触发，开始显示窗口')
-          this.toggleWindow(true)
-        })
-      } else {
-        logger.debug('[主进程] 未配置全局快捷键，跳过注册')
-      }
+      // 渲染进程停顿时也允许下一次快捷键关闭窗口。
+      this.transitionTimer = setTimeout(() => this.finishOpening(id), 250)
     } catch (error) {
-      logger.error('[主进程] 初始化全局快捷键时发生错误:', error)
+      logger.error('[Overlay] 显示失败:', error)
+      this.hideWindow(id)
     }
   }
 
-  /**
-   * 显示 overlay 窗口
-   */
-  showWindow(): void {
-    if (!this.overlayWindow) {
-      return
-    }
-
-    // 检查是否可以执行打开操作
-    if (!windowStateManager.canOpenOverlay()) {
-      return
-    }
-
-    // 设置状态为正在打开
-    windowStateManager.setOverlayState(OverlayState.OPENING)
-    const windowInstance = this.overlayWindow
-    const { visibleBounds, position } = this.calculateOverlayWindowLayout()
-
-    logger.debug('[主进程] Overlay 窗口目标边界:', visibleBounds)
-    logger.debug('[主进程] Overlay 窗口位置:', position)
-
-    try {
-      // 设置窗口边界
-      windowInstance.setBounds(visibleBounds)
-
-      // 显示并聚焦窗口
-      WindowUtils.safelyShowWindow(windowInstance)
-      WindowUtils.safelyFocusWindow(windowInstance)
-
-      // 触发滑入动画
-      this.scheduleSlideInAnimation()
-    } catch (error) {
-      logger.error('[主进程] 显示 Overlay 窗口失败:', error)
-      windowStateManager.setOverlayState(OverlayState.CLOSED)
-      return
-    }
-
-    // 注册全局 ESC 键监听
-    globalShortcutManager.registerEscapeKey()
+  finishOpening(id: number): void {
+    if (id !== this.transitionId || !this.wantsVisible) return
+    this.clearTransitionTimer()
+    windowStateManager.setOverlayState(OverlayState.OPENED)
   }
 
-  /**
-   * 隐藏窗口（后端触发）
-   */
   hideWindowBackend(force = false): void {
-    if (!this.overlayWindow) {
+    if (!this.wantsVisible) return
+    if (!this.rendererReady) {
+      this.hideWindow()
       return
     }
-
-    // 检查是否可以执行关闭操作
-    if (!windowStateManager.canCloseOverlay()) {
-      return
+    this.clearTransitionTimer()
+    if (force) {
+      this.wantsVisible = false
+      windowStateManager.setOverlayState(OverlayState.CLOSING)
     }
-
-    // 设置状态为正在关闭
-    windowStateManager.setOverlayState(OverlayState.CLOSING)
-
-    // 发送关闭信号到前端
-    WindowUtils.safelyEmitToWindow(this.overlayWindow, 'trigger-close-window', force)
+    const id = force ? ++this.transitionId : this.transitionId
+    WindowUtils.safelyEmitToWindow(this.overlayWindow, 'trigger-close-window', force, id)
+    if (force) {
+      // 动画完成确认丢失时仍能归还焦点，后续打开会取消这个兜底。
+      this.transitionTimer = setTimeout(() => this.hideWindow(id), 250)
+    }
   }
 
-  /**
-   * 隐藏 overlay 窗口
-   */
-  hideWindow(): void {
-    if (!this.overlayWindow) {
-      return
-    }
-
-    if (!this.overlayWindow.isVisible()) {
-      // 确保状态正确
-      windowStateManager.setOverlayState(OverlayState.CLOSED)
-      return
-    }
-
-    const windowInstance = this.overlayWindow
-
-    try {
-      // 清除定时器
-      this.clearSlideInTimer()
-
-      // 失焦并隐藏窗口
-      windowInstance.blur()
-      WindowUtils.safelyHideWindow(windowInstance)
-
-      // 隐藏后同步到屏幕外起始位置，避免下次显示出现位置闪动
-      const { hiddenBounds } = this.calculateOverlayWindowLayout()
-      windowInstance.setBounds(hiddenBounds)
-    } catch (error) {
-      logger.error('[主进程] 隐藏 Overlay 窗口失败:', error)
-    }
-
-    // 取消全局 ESC 键监听
-    globalShortcutManager.unregisterEscapeKey()
-
-    // 设置状态为已关闭
+  hideWindow(id?: number): void {
+    if (id !== undefined && id !== this.transitionId) return
+    this.clearTransitionTimer()
+    this.wantsVisible = false
     windowStateManager.setOverlayState(OverlayState.CLOSED)
+    WindowUtils.safelyHideWindow(this.overlayWindow)
+    WindowUtils.safelyEmitToWindow(this.overlayWindow, 'overlay-hidden', this.transitionId)
   }
 
-  /**
-   * 切换 overlay 窗口显示状态
-   */
   toggleWindow(force = false): void {
-    if (!this.overlayWindow) {
-      return
-    }
-
-    const currentState = windowStateManager.getOverlayState()
-
-    // 根据当前状态决定操作
-    switch (currentState) {
-      case OverlayState.CLOSED:
-        this.showWindow()
-        break
-
-      case OverlayState.OPENED:
-        this.hideWindowBackend(force)
-        break
-
-      case OverlayState.OPENING:
-      case OverlayState.CLOSING:
-        // 忽略切换请求
-        break
-
-      default:
-        logger.warn(`[主进程] 未知的overlay状态: ${currentState}`)
-        break
-    }
+    if (this.wantsVisible) this.hideWindowBackend(force)
+    else this.showWindow()
   }
 
-  /**
-   * 销毁 overlay 窗口
-   */
+  private clearTransitionTimer(): void {
+    if (this.transitionTimer) clearTimeout(this.transitionTimer)
+    this.transitionTimer = null
+  }
+
   destroy(): void {
-    this.clearSlideInTimer()
+    this.clearTransitionTimer()
     WindowUtils.safelyDestroyWindow(this.overlayWindow)
     this.overlayWindow = null
   }
 
-  /**
-   * 检查窗口是否存在且未销毁
-   */
   isValid(): boolean {
     return WindowUtils.isWindowValid(this.overlayWindow)
   }
 
-  /**
-   * 检查窗口是否可见
-   */
   isVisible(): boolean {
-    return (
-      WindowUtils.isWindowValid(this.overlayWindow) &&
-      windowStateManager.getOverlayState() === OverlayState.OPENED
-    )
+    return WindowUtils.isWindowValidAndVisible(this.overlayWindow)
   }
 
-  /**
-   * 根据当前设置更新窗口位置
-   */
   updateWindowPositionBySettings(): void {
-    if (!this.overlayWindow || this.overlayWindow.isDestroyed()) {
-      return
-    }
-
-    const currentState = windowStateManager.getOverlayState()
-    const { visibleBounds, hiddenBounds } = this.calculateOverlayWindowLayout()
-    const targetBounds = currentState === OverlayState.CLOSED ? hiddenBounds : visibleBounds
-
-    try {
-      this.overlayWindow.setBounds(targetBounds)
-      WindowUtils.safelyEmitToWindow(
-        this.overlayWindow,
-        'overlay-position-updated',
-        this.currentOverlayPosition
-      )
-    } catch (error) {
-      logger.error('[主进程] 更新 Overlay 窗口位置失败:', error)
-    }
+    if (!this.isValid()) return
+    this.currentOverlayPosition = this.getOverlayPositionSetting()
+    this.overlayWindow!.setBounds(
+      WindowConfigCalculator.calculateWindowPosition(this.currentOverlayPosition)
+    )
+    WindowUtils.safelyEmitToWindow(
+      this.overlayWindow,
+      'overlay-position-updated',
+      this.currentOverlayPosition
+    )
   }
 }
 
-// 导出单例实例
 export const mainWindowManager = new MainWindowManager()
 export const overlayWindowManager = new OverlayWindowManager()

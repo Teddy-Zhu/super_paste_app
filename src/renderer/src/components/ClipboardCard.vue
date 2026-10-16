@@ -15,6 +15,7 @@ import { useContextMenu, type ContextMenuItem } from '@renderer/composables/useC
 import { tags, clipboard } from '@renderer/api/renderer-api'
 import { send } from '@renderer/api'
 import ImageDisplay from './ImageDisplay.vue'
+import { useDeferredPreview } from '@renderer/composables/useDeferredPreview'
 
 interface Props {
   item: ClipboardItem
@@ -27,6 +28,8 @@ interface Props {
 }
 
 const props = defineProps<Props>()
+const cardRef = ref<HTMLElement>()
+const previewVisible = useDeferredPreview(cardRef)
 
 const emit = defineEmits<{
   click: [itemId: string]
@@ -457,6 +460,7 @@ const shortcutLabel = computed(() => {
 
 <template>
   <div
+    ref="cardRef"
     class="clipboard-card"
     :class="[`theme-${getCardTheme(item.primaryType)}`, { selected: isSelected }]"
     @click="handleClick"
@@ -476,74 +480,79 @@ const shortcutLabel = computed(() => {
 
     <!-- 卡片主要内容 -->
     <div class="card-main">
-      <!-- <h3 class="card-title">{{ getContentTitle(item) }}</h3> -->
+      <template v-if="previewVisible">
+        <!-- <h3 class="card-title">{{ getContentTitle(item) }}</h3> -->
 
-      <!-- RTF 内容预览 - 如果存在 HTML 则优先使用 HTML -->
-      <div class="card-rich-preview" v-if="item.primaryType === 'rtf' && item.content.html">
-        <div class="rich-content" v-html="htmlContent"></div>
-        <div class="rich-content-overlay"></div>
-      </div>
-
-      <!-- RTF 内容预览 - 仅当没有 HTML 时使用 RTF 转换 -->
-      <div class="card-rich-preview" v-else-if="item.primaryType === 'rtf' && item.content.rtf">
-        <div class="rich-content" v-html="rtfToHtml"></div>
-        <div class="rich-content-overlay"></div>
-      </div>
-
-      <!-- HTML 内容预览 -->
-      <div class="card-rich-preview" v-else-if="item.primaryType === 'html' && item.content.html">
-        <div class="rich-content" v-html="htmlContent"></div>
-        <div class="rich-content-overlay"></div>
-      </div>
-
-      <!-- 颜色预览 -->
-      <div
-        class="card-color"
-        v-else-if="item.primaryType === 'color' && colorValue"
-        :style="{ backgroundColor: colorValue || undefined }"
-      >
-        <div class="color-display">
-          <span class="color-text" :style="{ color: getContrastColor }">{{ colorValue }}</span>
+        <!-- RTF 内容预览 - 如果存在 HTML 则优先使用 HTML -->
+        <div class="card-rich-preview" v-if="item.primaryType === 'rtf' && item.content.html">
+          <div class="rich-content" v-html="htmlContent"></div>
+          <div class="rich-content-overlay"></div>
         </div>
-      </div>
 
-      <!-- 图片预览 -->
-      <div class="card-image" v-else-if="item.primaryType === 'image' && item.content.image">
-        <ImageDisplay
-          :image-data="item.content.image"
-          alt="Image preview"
-          image-class="card-image-inner"
-          @load="handleImageLoad"
-        />
-      </div>
+        <!-- RTF 内容预览 - 仅当没有 HTML 时使用 RTF 转换 -->
+        <div class="card-rich-preview" v-else-if="item.primaryType === 'rtf' && item.content.rtf">
+          <div class="rich-content" v-html="rtfToHtml"></div>
+          <div class="rich-content-overlay"></div>
+        </div>
 
-      <!-- 文件路径预览 -->
-      <div class="card-file" v-else-if="item.primaryType === 'files' && parseFilePaths.length > 0">
-        <div class="file-icons">
-          <!-- 单个文件显示 -->
-          <div v-if="parseFilePaths.length === 1" class="file-icon single">
-            <IconFile class="file-icon-svg" />
-          </div>
-          <!-- 多个文件显示 -->
-          <div v-else class="file-icon multiple">
-            <IconFileMultiple class="file-icon-svg" />
+        <!-- HTML 内容预览 -->
+        <div class="card-rich-preview" v-else-if="item.primaryType === 'html' && item.content.html">
+          <div class="rich-content" v-html="htmlContent"></div>
+          <div class="rich-content-overlay"></div>
+        </div>
+
+        <!-- 颜色预览 -->
+        <div
+          class="card-color"
+          v-else-if="item.primaryType === 'color' && colorValue"
+          :style="{ backgroundColor: colorValue || undefined }"
+        >
+          <div class="color-display">
+            <span class="color-text" :style="{ color: getContrastColor }">{{ colorValue }}</span>
           </div>
         </div>
-        <div class="file-name" :title="getFileDisplayName">{{ getFileDisplayName }}</div>
-      </div>
 
-      <!-- 其他类型内容预览 -->
-      <div
-        class="card-preview"
-        v-else-if="
-          item.primaryType !== 'image' &&
-          item.primaryType !== 'color' &&
-          item.primaryType !== 'files'
-        "
-      >
-        {{ getContentPreview(item) }}
-      </div>
-      <div v-else>No Preview</div>
+        <!-- 图片预览 -->
+        <div class="card-image" v-else-if="item.primaryType === 'image' && item.content.image">
+          <ImageDisplay
+            :image-data="item.content.image"
+            alt="Image preview"
+            image-class="card-image-inner"
+            @load="handleImageLoad"
+          />
+        </div>
+
+        <!-- 文件路径预览 -->
+        <div
+          class="card-file"
+          v-else-if="item.primaryType === 'files' && parseFilePaths.length > 0"
+        >
+          <div class="file-icons">
+            <!-- 单个文件显示 -->
+            <div v-if="parseFilePaths.length === 1" class="file-icon single">
+              <IconFile class="file-icon-svg" />
+            </div>
+            <!-- 多个文件显示 -->
+            <div v-else class="file-icon multiple">
+              <IconFileMultiple class="file-icon-svg" />
+            </div>
+          </div>
+          <div class="file-name" :title="getFileDisplayName">{{ getFileDisplayName }}</div>
+        </div>
+
+        <!-- 其他类型内容预览 -->
+        <div
+          class="card-preview"
+          v-else-if="
+            item.primaryType !== 'image' &&
+            item.primaryType !== 'color' &&
+            item.primaryType !== 'files'
+          "
+        >
+          {{ getContentPreview(item) }}
+        </div>
+        <div v-else>No Preview</div>
+      </template>
     </div>
 
     <!-- 卡片底部信息 -->
@@ -597,7 +606,7 @@ const shortcutLabel = computed(() => {
   height: 76vh;
   flex-shrink: 0;
   border: 1px solid rgb(197 197 197 / 80%);
-  backdrop-filter: blur(10px);
+  contain: layout style paint;
 }
 
 .clipboard-card:hover {
@@ -609,7 +618,7 @@ const shortcutLabel = computed(() => {
 }
 
 .clipboard-card.selected {
-  transform: translateY(-2x);
+  transform: translateY(-2px);
   box-shadow:
     0 8px 25px rgba(59, 130, 246, 0.25),
     0 4px 10px rgba(59, 130, 246, 0.15);

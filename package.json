@@ -73,21 +73,6 @@
     "vue-router": "^4.5.1",
     "vue-tsc": "^3.0.7"
   },
-  "pnpm": {
-    "onlyBuiltDependencies": [
-      "@paymoapp/active-window",
-      "@teddyzhu/clipboard",
-      "better-sqlite3",
-      "canvas",
-      "core-js",
-      "electron",
-      "electron-winstaller",
-      "esbuild",
-      "get-windows",
-      "lzma-native",
-      "onnxruntime-node",
-      "vue-demi"
-    ]
-  },
-  "packageManager": "pnpm@11.4.0+sha512.f0febc7e37552ab485494a914241b338e0b3580b93d54ce31f00933015880863129038a1b4ae4e414a0ee63ac35bf21197e990172c4a68256450b5636310968f"
+  "packageManager": "pnpm@11.4.0+sha512.f0febc7e37552ab485494a914241b338e0b3580b93d54ce31f00933015880863129038a1b4ae4e414a0ee63ac35bf21197e990172c4a68256450b5636310968f",
+  "desktopName": "com.v2dawn.sp.desktop"
 }

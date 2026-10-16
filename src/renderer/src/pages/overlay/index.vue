@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, nextTick, watch, onMounted, onUnmounted, type Ref } from 'vue'
+import { ref, shallowRef, computed, nextTick, watch, onMounted, onUnmounted } from 'vue'
 import { send, onSimple } from '@renderer/api'
 import { clipboard, store } from '@renderer/api/renderer-api'
 import type { ClipboardItem, ClipboardHistoryQueryOptions, AppInfo } from '@renderer/api/types'
@@ -9,7 +9,7 @@ import { OverlayError, OverlayErrorCode, isClipboardItem } from '@renderer/types
 import { useAnimation, AnimationState } from '@renderer/composables/useAnimation'
 import { useSearchAndNavigation } from '@renderer/composables/useSearchAndNavigation'
 import { useScrollAndTags, type ScrollAndTagsManager } from '@renderer/composables/useScrollAndTags'
-import { useEventManager, useThrottle, withTimeout } from '@renderer/composables/useUtils'
+import { useEventManager, useThrottle } from '@renderer/composables/useUtils'
 
 // 导入组件
 import ClipboardCard from '@renderer/components/ClipboardCard.vue'
@@ -26,8 +26,8 @@ const searchContainerRef = ref<HTMLElement>()
 const tabsContainerRef = ref<HTMLElement>()
 
 // ==================== 核心状态 ====================
-const clipboardHistory = ref<ClipboardItem[]>([])
-const clipboardApps = ref<Record<string, AppInfo>>({})
+const clipboardHistory = shallowRef<ClipboardItem[]>([])
+const clipboardApps = shallowRef<Record<string, AppInfo>>({})
 const selectedIndex = ref(0)
 
 // ==================== 快捷选择状态 ====================
@@ -40,8 +40,11 @@ const isDropdownVisible = ref(false)
 const eventManager = useEventManager()
 
 // ==================== 监听器状态管理 ====================
-let isCloseListenerSetup = false
-let removeCloseListener: (() => void) | null = null
+let transitionId = 0
+let animationVersion = 0
+let historyRequestId = 0
+let overlayVisible = false
+let historyDirty = false
 let wheelHandler: ((event: WheelEvent) => void) | null = null
 const ipcUnsubscribers: Array<() => void> = []
 
@@ -54,7 +57,6 @@ type RestoreMethod =
   | 'restoreOcrText'
   | 'parseQRCode'
   | 'generateQRCode'
-type PlayStateRef = Ref<'idle' | 'running' | 'paused' | 'finished'>
 type OverlayPosition = 'top' | 'bottom' | 'left' | 'right'
 
 const OVERLAY_POSITION_STORE_KEY = 'settings.overlayPosition'
@@ -83,6 +85,7 @@ const isSideLayout = computed(() => {
  * 获取剪贴板历史记录（带类型验证和错误处理）
  */
 const loadClipboardHistory = async (options?: ClipboardHistoryQueryOptions): Promise<void> => {
+  const requestId = ++historyRequestId
   try {
     const defaultOptions: ClipboardHistoryQueryOptions = {
       limit: 200,
@@ -92,6 +95,7 @@ const loadClipboardHistory = async (options?: ClipboardHistoryQueryOptions): Pro
 
     const queryOptions = { ...defaultOptions, ...options }
     const result = await clipboard.searchHistory(queryOptions)
+    if (requestId !== historyRequestId) return
     if (!Array.isArray(result.items)) {
       throw new OverlayError(
         '剪贴板历史数据格式无效：不是数组',
@@ -113,10 +117,8 @@ const loadClipboardHistory = async (options?: ClipboardHistoryQueryOptions): Pro
       scrollAndTagsManager.scrollToSelectedItem()
     })
   } catch (error) {
+    if (requestId !== historyRequestId) return
     console.error('获取剪贴板历史失败:', error)
-    clipboardHistory.value = []
-    clipboardApps.value = {}
-    selectedIndex.value = 0
   }
 }
 
@@ -131,6 +133,11 @@ const getCurrentSearchText = (): string => {
 }
 
 const throttledLoadClipboardHistory = useThrottle(() => {
+  if (!overlayVisible || animationManager.isAnimating()) {
+    historyDirty = true
+    return
+  }
+  historyDirty = false
   const currentTagIds = getActiveTagIds()
   const currentSearchText = getCurrentSearchText()
 
@@ -142,23 +149,6 @@ const throttledLoadClipboardHistory = useThrottle(() => {
 
 // ==================== 临时占位符，将在 searchAndNavManager 定义后重新定义 ====================
 let scrollAndTagsManager!: ScrollAndTagsManager
-
-// ==================== 事件监听器管理 ====================
-
-/**
- * 设置关闭事件监听器
- */
-const setupCloseEventListeners = () => {
-  if (isCloseListenerSetup) return
-
-  if (removeCloseListener) {
-    removeCloseListener()
-    removeCloseListener = null
-  }
-
-  removeCloseListener = onSimple('trigger-close-window', handleCloseWindow)
-  isCloseListenerSetup = true
-}
 
 // ==================== 核心功能函数 ====================
 
@@ -175,15 +165,10 @@ const ensureValidItemId = (itemId: string): void => {
 }
 
 const normalizeAfterAction = async (): Promise<void> => {
-  if (animationManager.isSearchVisible.value) {
-    await hideSearchBox(true)
-  }
-
+  await closeWindow()
   if (scrollAndTagsManager.activeTagId.value !== 'all') {
     await scrollAndTagsManager.switchTag('all')
   }
-
-  await closeWindow()
 }
 
 const getRestoreMethodMeta = (restoreMethod: RestoreMethod) => {
@@ -210,13 +195,14 @@ const getRestoreMethodMeta = (restoreMethod: RestoreMethod) => {
 }
 
 const restoreClipboard = async (itemId: string, restoreMethod: RestoreMethod): Promise<void> => {
+  const actionTransitionId = transitionId
   try {
     ensureValidItemId(itemId)
 
     if (restoreMethod === 'generateQRCode') {
       const result = await clipboard.generateQRCode(itemId)
       if (result.success) {
-        await normalizeAfterAction()
+        if (actionTransitionId === transitionId && overlayVisible) await normalizeAfterAction()
       } else {
         throw new OverlayError(
           `生成二维码失败: ${result.message}`,
@@ -228,7 +214,7 @@ const restoreClipboard = async (itemId: string, restoreMethod: RestoreMethod): P
       const success = await clipboard[restoreMethod](itemId)
 
       if (success) {
-        await normalizeAfterAction()
+        if (actionTransitionId === transitionId && overlayVisible) await normalizeAfterAction()
       } else {
         const { typeName, action } = getRestoreMethodMeta(restoreMethod)
         throw new OverlayError(
@@ -346,44 +332,16 @@ const clearClipboardHistory = async (): Promise<void> => {
   }
 }
 
-/**
- * 等待动画完成的通用函数
- */
-const waitForAnimationFinish = (playState: PlayStateRef): Promise<void> => {
-  return new Promise((resolve) => {
-    if (playState.value === 'finished') {
-      resolve()
-      return
-    }
-
-    const stopWatching = watch(playState, (newState) => {
-      if (newState === 'finished') {
-        stopWatching()
-        resolve()
-      }
-    })
-  })
-}
-
-/**
- * 关闭窗口
- */
+/** 关闭动画不等待搜索框收起或重新查询历史。 */
 const closeWindow = async () => {
-  if (!animationManager.canStartClosing()) return
-
-  // 如果搜索框可见,先隐藏并清空
-  if (animationManager.isSearchVisible.value) {
-    await hideSearchBox(true)
-  }
-
+  if (animationManager.currentAnimationState.value === AnimationState.IDLE) return
+  const version = ++animationVersion
   animationManager.setAnimationState(AnimationState.SLIDING_OUT)
-  const { play: playSlideOut, playState } = animationManager.createSlideOutAnimation()
-
-  playSlideOut()
-  await waitForAnimationFinish(playState)
-
-  animationManager.resetOverlayState()
-  send('close-overlay-window')
+  const animation = animationManager.createSlideOutAnimation()
+  animation.play()
+  const finished = await animation.finished
+  if (!finished || version !== animationVersion) return
+  send('close-overlay-window', transitionId)
 }
 
 /**
@@ -429,19 +387,18 @@ const hideSearchBox = async (clearText = false): Promise<void> => {
 
   animationManager.setSearchAnimating(true)
 
-  const { play: playSearchCollapse, playState: searchCollapseState } =
+  const version = animationVersion
+  const { play: playSearchCollapse, finished: searchCollapseFinished } =
     animationManager.createSearchCollapseAnimation()
-  const { play: playTabsShow, playState: tabsShowState } =
+  const { play: playTabsShow, finished: tabsShowFinished } =
     animationManager.createTabsShowAnimation()
 
   // 并行执行动画
   playSearchCollapse()
   playTabsShow()
 
-  await Promise.all([
-    waitForAnimationFinish(searchCollapseState),
-    waitForAnimationFinish(tabsShowState)
-  ])
+  await Promise.all([searchCollapseFinished, tabsShowFinished])
+  if (version !== animationVersion) return
 
   animationManager.setSearchVisible(false)
   animationManager.setSearchAnimating(false)
@@ -458,19 +415,18 @@ const showSearchBox = async (withBuffer: boolean): Promise<void> => {
 
   await nextTick()
 
-  const { play: playTabsHide, playState: tabsHideState } =
+  const version = animationVersion
+  const { play: playTabsHide, finished: tabsHideFinished } =
     animationManager.createTabsHideAnimation()
-  const { play: playSearchExpand, playState: searchExpandState } =
+  const { play: playSearchExpand, finished: searchExpandFinished } =
     animationManager.createSearchExpandAnimation()
 
   // 并行执行动画
   playTabsHide()
   playSearchExpand()
 
-  await Promise.all([
-    waitForAnimationFinish(tabsHideState),
-    waitForAnimationFinish(searchExpandState)
-  ])
+  await Promise.all([tabsHideFinished, searchExpandFinished])
+  if (version !== animationVersion) return
 
   animationManager.setSearchAnimating(false)
   animationManager.setOpeningSearch(false)
@@ -530,91 +486,36 @@ scrollAndTagsManager = useScrollAndTags(
 /**
  * 触发滑入动画
  */
-const triggerSlideInAnimation = async (): Promise<void> => {
-  try {
-    if (animationManager.isAnimating()) {
-      return
-    }
-
-    if (!animationManager.isSearchVisible.value) {
-      animationManager.resetSearchStyles()
-    }
-
-    animationManager.setAnimationState(AnimationState.SLIDING_IN)
-
-    const { play: playSlideIn, playState } = animationManager.createSlideInAnimation()
-    playSlideIn()
-
-    await withTimeout(waitForAnimationFinish(playState), 5000, '滑入动画超时')
-
-    animationManager.setAnimationState(AnimationState.ACTIVE)
-    setupCloseEventListeners()
-    send('open-overlay-finished')
-  } catch (error) {
-    console.error('[滑入动画] 滑入动画失败:', error)
-    animationManager.resetOverlayState()
-    throw new OverlayError('滑入动画执行失败', OverlayErrorCode.ANIMATION_FAILED, {
-      originalError: error
-    })
-  }
+const triggerSlideInAnimation = async (id: number): Promise<void> => {
+  transitionId = id
+  overlayVisible = true
+  const version = ++animationVersion
+  animationManager.setAnimationState(AnimationState.SLIDING_IN)
+  const animation = animationManager.createSlideInAnimation()
+  animation.play()
+  const finished = await animation.finished
+  if (!finished || version !== animationVersion) return
+  animationManager.setAnimationState(AnimationState.ACTIVE)
+  send('open-overlay-finished', id)
+  if (historyDirty) throttledLoadClipboardHistory()
 }
 
-/**
- * 处理主进程发送的关闭窗口事件
- * 实现智能关闭逻辑：
- *
- * 强制关闭模式 (force=true)：
- * - 如果搜索框可见且无文字 -> 先隐藏搜索框，然后关闭窗口
- * - 其他情况 -> 直接关闭窗口
- *
- * 普通关闭模式 (force=false)：
- * 1. 如果搜索框可见且有文字 -> 清空文字并重新搜索
- * 2. 如果搜索框可见但无文字 -> 隐藏搜索框
- * 3. 如果搜索框不可见 -> 关闭窗口
- */
-const handleCloseWindow = async (force: boolean = false): Promise<void> => {
-  try {
-    if (animationManager.currentAnimationState.value !== AnimationState.ACTIVE) {
-      return
-    }
-
-    if (force) {
-      const isSearchVisible = animationManager.isSearchVisible.value
-      const hasSearchText = searchAndNavManager.searchText.value.trim()
-
-      if (isSearchVisible && !hasSearchText) {
-        await hideSearchBox()
-      }
-
-      await closeWindow()
-      return
-    }
-
-    const isSearchVisible = animationManager.isSearchVisible.value
-    const hasSearchText = searchAndNavManager.searchText.value.trim()
-
-    if (isSearchVisible && hasSearchText) {
+const handleCloseWindow = async (force = false, id = transitionId): Promise<void> => {
+  transitionId = id
+  if (force) {
+    await closeWindow()
+    return
+  }
+  if (animationManager.isSearchVisible.value) {
+    if (searchAndNavManager.searchText.value.trim()) {
       searchAndNavManager.resetSearchState()
       await performSearchCallback('')
-      return
-    }
-
-    if (isSearchVisible && !hasSearchText) {
+    } else {
       await hideSearchBox()
-      return
     }
-
-    await closeWindow()
-  } catch (error) {
-    console.error('[关闭窗口] 处理关闭窗口事件失败:', error)
-
-    try {
-      await closeWindow()
-    } catch (closeError) {
-      console.error('[关闭窗口] 错误恢复失败:', closeError)
-      send('close-overlay-window')
-    }
+    return
   }
+  await closeWindow()
 }
 
 // ==================== 快捷选择功能 ====================
@@ -668,8 +569,7 @@ const handleTabsContainerWheel = (event: WheelEvent): boolean => {
     return false
   }
 
-  const delta =
-    Math.abs(event.deltaX) > Math.abs(event.deltaY) ? event.deltaX : event.deltaY
+  const delta = Math.abs(event.deltaX) > Math.abs(event.deltaY) ? event.deltaX : event.deltaY
   if (Math.abs(delta) < 1) {
     return true
   }
@@ -695,18 +595,6 @@ watch(selectedIndex, () => {
   }
 })
 
-/**
- * 监听 searchText 变化，自动触发搜索
- */
-watch(searchAndNavManager.searchText, (newValue) => {
-  const shouldTriggerSearch =
-    animationManager.isSearchVisible.value && !animationManager.isOpeningSearch.value
-
-  if (shouldTriggerSearch) {
-    searchAndNavManager.debouncedSearch(newValue)
-  }
-})
-
 watch(isSideLayout, () => {
   nextTick(() => {
     scrollAndTagsManager.initializeScrollbar()
@@ -720,23 +608,32 @@ watch(isSideLayout, () => {
 onMounted(async () => {
   try {
     applyOverlayPosition(overlayPosition.value)
-    const savedOverlayPosition = await store
-      .get<string>(OVERLAY_POSITION_STORE_KEY, 'bottom')
-      .catch(() => 'bottom')
-    applyOverlayPosition(savedOverlayPosition)
-
-    const removeSlideInListener = onSimple(
-      'trigger-slide-in-animation',
-      (position?: OverlayPosition) => {
-        applyOverlayPosition(position)
-        requestAnimationFrame(() => {
-          requestAnimationFrame(() => {
-            triggerSlideInAnimation().catch(console.error)
-          })
-        })
-      }
+    ipcUnsubscribers.push(onSimple('trigger-close-window', handleCloseWindow))
+    ipcUnsubscribers.push(
+      onSimple('overlay-hidden', (id: number) => {
+        if (id !== transitionId) return
+        ++animationVersion
+        overlayVisible = false
+        ++historyRequestId
+        historyDirty = true
+        throttledLoadClipboardHistory.cancel()
+        isQuickSelectMode.value = false
+        hideDropdownMenu()
+        searchAndNavManager.resetSearchState()
+        animationManager.resetOverlayState()
+      })
     )
-    ipcUnsubscribers.push(removeSlideInListener)
+    ipcUnsubscribers.push(
+      onSimple('trigger-slide-in-animation', (position: OverlayPosition, id: number) => {
+        applyOverlayPosition(position)
+        triggerSlideInAnimation(id).catch((error) => {
+          console.error('[Overlay] 打开动画失败:', error)
+          send('close-overlay-window', id)
+        })
+      })
+    )
+    const savedOverlayPosition = await store.get<string>(OVERLAY_POSITION_STORE_KEY, 'bottom')
+    applyOverlayPosition(savedOverlayPosition)
 
     const removeOverlayPositionUpdatedListener = onSimple(
       'overlay-position-updated',
@@ -784,18 +681,6 @@ onMounted(async () => {
 
     animationManager.initializeStyles()
 
-    const preloadPromises = [
-      loadClipboardHistory({
-        tagIds: [],
-        searchText: ''
-      }).catch(() => []),
-      scrollAndTagsManager.loadAllTags().catch(() => [])
-    ]
-
-    await Promise.allSettled(preloadPromises)
-
-    nextTick(() => scrollAndTagsManager.initializeScrollbar())
-
     const removeClipboardUpdateListener = onSimple(
       'clipboard-history-updated',
       throttledLoadClipboardHistory
@@ -813,17 +698,31 @@ onMounted(async () => {
         const targetIndex = clipboardHistory.value.findIndex((item) => item.id === data.contentId)
         if (targetIndex >= 0) {
           const targetItem = clipboardHistory.value[targetIndex]
-          clipboardHistory.value[targetIndex] = {
+          const updatedHistory = [...clipboardHistory.value]
+          updatedHistory[targetIndex] = {
             ...targetItem,
             content: {
               ...targetItem.content,
               ocr: data.ocrText
             }
           }
+          clipboardHistory.value = updatedHistory
         }
       }
     )
     ipcUnsubscribers.push(removeOCRUpdateListener)
+
+    const preloadPromises = [
+      loadClipboardHistory({
+        tagIds: [],
+        searchText: ''
+      }).catch(() => []),
+      scrollAndTagsManager.loadAllTags().catch(() => [])
+    ]
+
+    await Promise.allSettled(preloadPromises)
+
+    send('overlay-ready')
   } catch (error) {
     console.error('[前端] Overlay 组件初始化失败:', error)
     throw new OverlayError('Overlay 组件初始化失败', OverlayErrorCode.INVALID_STATE, {
@@ -843,9 +742,8 @@ onUnmounted(() => {
     ipcUnsubscribers.forEach((unsubscribe) => unsubscribe())
     ipcUnsubscribers.length = 0
 
-    removeCloseListener?.()
-    removeCloseListener = null
-    isCloseListenerSetup = false
+    ++historyRequestId
+    ++animationVersion
 
     if (wheelHandler) {
       document.removeEventListener('wheel', wheelHandler)
@@ -896,7 +794,7 @@ onUnmounted(() => {
             placeholder="Search clipboard history..."
             :value="searchAndNavManager.searchText.value"
             @input="searchAndNavManager.handleSearchInput"
-            @keydown.escape="toggleSearch(false)"
+            @keydown.escape.stop.prevent="toggleSearch(false)"
           />
         </div>
 
@@ -994,6 +892,15 @@ onUnmounted(() => {
             <ClipboardCard
               v-for="(item, index) in clipboardHistory"
               :key="item.id"
+              v-memo="[
+                item,
+                index,
+                index === selectedIndex,
+                isQuickSelectMode,
+                scrollAndTagsManager.allTags.value,
+                scrollAndTagsManager.activeTagId.value,
+                clipboardApps
+              ]"
               :item="item"
               :index="index"
               :is-selected="index === selectedIndex"

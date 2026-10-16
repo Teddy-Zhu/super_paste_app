@@ -1,123 +1,54 @@
 import { globalShortcut } from 'electron'
-import { WindowUtils, windowStateManager } from '../ui/windows/window-state'
+import { isWayland } from './platform'
 import logger from '../utils/logger'
 
-/**
- * 全局快捷键管理器
- */
+import type { ShortcutStatus } from '../../shared/system-access'
+
 export class GlobalShortcutManager {
-  private overlayWindow: Electron.BrowserWindow | null = null
   private currentGlobalShortcut: string | null = null
+  private status: ShortcutStatus = { accelerator: '', state: 'disabled' }
 
-  /**
-   * 设置 overlay 窗口引用
-   * @param window overlay 窗口实例
-   */
-  setOverlayWindow(window: Electron.BrowserWindow | null): void {
-    this.overlayWindow = window
+  getStatus(): ShortcutStatus {
+    return { ...this.status }
   }
 
-  /**
-   * 注册 ESC 键监听
-   */
-  registerEscapeKey(): void {
-    if (!globalShortcut.isRegistered('Escape')) {
-      globalShortcut.register('Escape', () => {
-        if (
-          WindowUtils.isWindowValidAndVisible(this.overlayWindow) &&
-          windowStateManager.canCloseOverlay()
-        ) {
-          WindowUtils.safelyEmitToWindow(this.overlayWindow, 'trigger-close-window')
-        }
-      })
-      logger.debug('[主进程] ESC 键监听已注册')
+  registerGlobalShortcut(shortcutKey: string, callback: () => void, retry = false): boolean {
+    const accelerator = shortcutKey.trim()
+    if (!accelerator) {
+      this.unregisterAll()
+      return true
     }
-  }
-
-  /**
-   * 注销 ESC 键监听
-   */
-  unregisterEscapeKey(): void {
-    if (globalShortcut.isRegistered('Escape')) {
-      globalShortcut.unregister('Escape')
-      logger.debug('[主进程] ESC 键监听已注销')
-    }
-  }
-
-  /**
-   * 注册全局快捷键
-   * @param shortcutKey 快捷键字符串
-   * @param callback 回调函数
-   */
-  registerGlobalShortcut(shortcutKey: string, callback: () => void): boolean {
-    if (!shortcutKey || shortcutKey.trim() === '') {
-      logger.debug('[主进程] 未配置全局快捷键，跳过注册')
-      return false
-    }
-
-    // 如果更新为新的主快捷键，先清理旧快捷键，避免残留占用
-    if (
-      this.currentGlobalShortcut &&
-      this.currentGlobalShortcut !== shortcutKey &&
-      globalShortcut.isRegistered(this.currentGlobalShortcut)
-    ) {
-      globalShortcut.unregister(this.currentGlobalShortcut)
-      logger.debug(`[主进程] 旧全局快捷键已注销: ${this.currentGlobalShortcut}`)
-    }
-
-    // 如果已经注册过，先注销
-    if (globalShortcut.isRegistered(shortcutKey)) {
-      globalShortcut.unregister(shortcutKey)
-      logger.debug(`[主进程] 已存在相同快捷键，已注销: ${shortcutKey}`)
-    }
-
-    const success = globalShortcut.register(shortcutKey, callback)
-
-    if (success) {
-      this.currentGlobalShortcut = shortcutKey
-      logger.debug(`[主进程] 全局快捷键注册成功: ${shortcutKey}`)
-    } else {
-      if (this.currentGlobalShortcut === shortcutKey) {
-        this.currentGlobalShortcut = null
+    if (accelerator === this.currentGlobalShortcut && globalShortcut.isRegistered(accelerator)) {
+      if (!retry) {
+        this.status = { accelerator, state: isWayland ? 'portal-requested' : 'registered' }
+        return true
       }
-      logger.error(`[主进程] 全局快捷键注册失败: ${shortcutKey}`)
-    }
-
-    return success
-  }
-
-  /**
-   * 注销指定快捷键
-   * @param shortcutKey 快捷键字符串
-   */
-  unregisterShortcut(shortcutKey: string): void {
-    if (globalShortcut.isRegistered(shortcutKey)) {
-      globalShortcut.unregister(shortcutKey)
-      logger.debug(`[主进程] 快捷键已注销: ${shortcutKey}`)
-    }
-
-    if (this.currentGlobalShortcut === shortcutKey) {
+      globalShortcut.unregister(accelerator)
       this.currentGlobalShortcut = null
     }
+    try {
+      // 新键注册成功才释放旧键，避免冲突或非法组合导致原有快捷键丢失。
+      if (!globalShortcut.register(accelerator, callback)) {
+        throw new Error('快捷键被占用，或桌面未提供全局快捷键服务')
+      }
+      if (this.currentGlobalShortcut) globalShortcut.unregister(this.currentGlobalShortcut)
+      this.currentGlobalShortcut = accelerator
+      // Portal 授权是异步的，Electron 37 的返回值不能证明用户已授权。
+      this.status = { accelerator, state: isWayland ? 'portal-requested' : 'registered' }
+      return true
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      this.status = { accelerator, state: 'failed', error: message }
+      logger.error(`[快捷键] 注册失败: ${accelerator}`, error)
+      return false
+    }
   }
 
-  /**
-   * 注销所有快捷键
-   */
   unregisterAll(): void {
     globalShortcut.unregisterAll()
     this.currentGlobalShortcut = null
-    logger.debug('[主进程] 所有全局快捷键已注销')
-  }
-
-  /**
-   * 检查快捷键是否已注册
-   * @param shortcutKey 快捷键字符串
-   */
-  isRegistered(shortcutKey: string): boolean {
-    return globalShortcut.isRegistered(shortcutKey)
+    this.status = { accelerator: '', state: 'disabled' }
   }
 }
 
-// 导出单例实例
 export const globalShortcutManager = new GlobalShortcutManager()

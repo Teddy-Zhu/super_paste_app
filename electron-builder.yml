@@ -14,6 +14,7 @@ files:
   - '!**/*onnxruntime_providers_tensorrt*'
   - '!scripts/*'
 asarUnpack:
+  - '**/@teddyzhu/clipboard/**/*.node'
   - resources/**
 extraResources:
   - from: resources/ocr/
@@ -53,6 +54,7 @@ linux:
     - target: pacman
       arch:
         - x64
+  executableName: com.v2dawn.sp
   maintainer: electronjs.org
   category: Utility
   icon: build/icon/icons

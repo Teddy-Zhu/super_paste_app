@@ -36,6 +36,7 @@
     flex-direction: column;
     overflow: hidden;
     position: relative;
+    will-change: transform;
     transform: translateY(100%);
     font-family: var(--font-family-base);
 }
@@ -387,10 +388,6 @@
     to {
         transform: rotate(360deg);
     }
-}
-
-:global(.clipboard-scroll-container .scroll-content) {
-    transition: transform var(--duration-slower) var(--ease-in-out);
 }
 
 /* 主体区域样式 */

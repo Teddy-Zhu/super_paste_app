@@ -125,8 +125,16 @@ export function useScrollAndTags(
    * 注意：滚动条隐藏样式已在 overlay.vue 的 CSS 中直接定义
    */
   const initializeScrollbar = () => {
-    if (!clipboardScrollRef.value) return
+    if (
+      scrollbarInstance &&
+      scrollbarInstance.containerEl === clipboardScrollRef.value &&
+      clipboardScrollRef.value?.isConnected
+    ) {
+      scrollbarInstance.update()
+      return
+    }
 
+    // 容器被 v-if 替换后才重建；普通数据更新保留滚动位置。
     // 如果已有实例，先销毁再重新创建
     if (scrollbarInstance) {
       try {
@@ -138,6 +146,7 @@ export function useScrollAndTags(
       }
     }
 
+    if (!clipboardScrollRef.value) return
     try {
       // 仅初始化 scrollbar 实例，样式在 overlay.vue 的 CSS 中定义
       scrollbarInstance = Scrollbar.init(clipboardScrollRef.value, SCROLLBAR_OPTIONS)
@@ -165,8 +174,7 @@ export function useScrollAndTags(
       return null
     }
 
-    const cardElements = clipboardScrollRef.value.querySelectorAll<HTMLElement>('.clipboard-card')
-    return cardElements[selectedIndex.value] ?? null
+    return clipboardScrollRef.value.querySelector<HTMLElement>('.clipboard-card.selected')
   }
 
   const getScrollMetrics = () => {
@@ -460,12 +468,6 @@ export function useScrollAndTags(
         limit: 50,
         orderBy: 'last_used',
         orderDirection: 'DESC'
-      })
-
-      // 标签切换完成后，确保 scrollbar 正确初始化
-      nextTick(() => {
-        initializeScrollbar()
-        scrollToSelectedItem()
       })
     } catch (error) {
       console.error('[滚动标签管理] 切换标签失败:', error)

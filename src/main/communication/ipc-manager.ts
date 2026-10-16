@@ -11,8 +11,9 @@ import type {
 } from '../features/clipboard/types/clipboard-types'
 import type { BaseWorkerManager } from '../workers/base-worker-manager'
 import { mainWindowManager, overlayWindowManager } from '../ui/windows/window-managers'
-import { windowStateManager, OverlayState } from '../ui/windows/window-state'
 import { globalShortcutManager } from '../system/global-shortcut-manager'
+import { isWayland } from '../system/platform'
+import { activeWindowService } from '../services/active-window-service'
 import autoStartManager from '../system/auto-start-manager'
 import store from '../config/store'
 import { STORE_KEY } from '../config/common'
@@ -26,6 +27,7 @@ import { trayManager } from '../ui/tray/tray-manager'
 import logger from '../utils/logger'
 import { writeHeapSnapshot } from 'v8'
 import { join } from 'path'
+import type { SystemAccessStatus } from '../../shared/system-access'
 
 /**
  * IPC 管理器
@@ -159,6 +161,8 @@ class IpcManager {
       'scheduled-sync:update-config',
       'scheduled-sync:refresh',
       // 系统
+      'system-access-status',
+      'system-access-retry',
       'app:restart',
       'app:window-minimize',
       'app:window-close'
@@ -591,9 +595,10 @@ class IpcManager {
     })
 
     // 关闭 overlay 窗口
-    ipcMain.on('close-overlay-window', () => {
+    ipcMain.on('close-overlay-window', (event, id?: number) => {
+      if (event.sender !== overlayWindowManager.getWindow()?.webContents) return
       try {
-        overlayWindowManager.hideWindow()
+        if (typeof id === 'number' && Number.isInteger(id)) overlayWindowManager.hideWindow(id)
       } catch (error) {
         logger.error('[主进程] 关闭 Overlay 窗口失败:', error)
       }
@@ -690,10 +695,19 @@ class IpcManager {
       'store-set',
       async (_, key: string, value: unknown) => {
         logger.debug(`[主进程] 设置存储值 [${key}]:`, value)
-        const oldValue = store.get(key)
+        if (key === STORE_KEY.SETTINGS_GLOBAL_SHORTCUT) {
+          if (typeof value !== 'string') throw new Error('快捷键必须是字符串')
+          if (
+            !globalShortcutManager.registerGlobalShortcut(value, () =>
+              overlayWindowManager.toggleWindow(true)
+            )
+          ) {
+            throw new Error(globalShortcutManager.getStatus().error || '快捷键注册失败')
+          }
+        }
         store.raw_set(key, value)
 
-        await this.handleSpecialConfigUpdates(key, value, oldValue)
+        await this.handleSpecialConfigUpdates(key, value)
 
         return { success: true }
       },
@@ -704,32 +718,8 @@ class IpcManager {
   /**
    * 处理特殊配置更新（全局快捷键、历史大小、OCR、自启动等）
    */
-  private async handleSpecialConfigUpdates(
-    key: string,
-    value: unknown,
-    oldValue: unknown
-  ): Promise<void> {
+  private async handleSpecialConfigUpdates(key: string, value: unknown): Promise<void> {
     try {
-      if (key === STORE_KEY.SETTINGS_GLOBAL_SHORTCUT) {
-        logger.debug('[主进程] 全局快捷键配置已更新，重新初始化')
-
-        const oldShortcutKey = typeof oldValue === 'string' ? oldValue : ''
-        const shortcutKey = typeof value === 'string' ? value : ''
-
-        if (oldShortcutKey && oldShortcutKey.trim() !== '' && oldShortcutKey !== shortcutKey) {
-          globalShortcutManager.unregisterShortcut(oldShortcutKey)
-        }
-
-        if (shortcutKey && shortcutKey.trim() !== '') {
-          globalShortcutManager.registerGlobalShortcut(shortcutKey, () => {
-            logger.debug('[主进程] 全局快捷键触发，开始显示窗口111')
-            overlayWindowManager.toggleWindow(true)
-          })
-        } else if (oldShortcutKey && oldShortcutKey.trim() !== '') {
-          globalShortcutManager.unregisterShortcut(oldShortcutKey)
-        }
-      }
-
       if (key === STORE_KEY.SETTINGS_MAX_HISTORY_SIZE) {
         debounceExecution(
           'update-max-history-size',
@@ -858,9 +848,14 @@ class IpcManager {
   // ==================== 动画相关 ====================
 
   private registerAnimationHandlers(): void {
-    ipcMain.on('open-overlay-finished', () => {
-      if (windowStateManager.getOverlayState() === OverlayState.OPENING) {
-        windowStateManager.setOverlayState(OverlayState.OPENED)
+    ipcMain.on('overlay-ready', (event) => {
+      if (event.sender === overlayWindowManager.getWindow()?.webContents) {
+        overlayWindowManager.markRendererReady()
+      }
+    })
+    ipcMain.on('open-overlay-finished', (event, id: number) => {
+      if (event.sender === overlayWindowManager.getWindow()?.webContents && Number.isInteger(id)) {
+        overlayWindowManager.finishOpening(id)
       }
     })
   }
@@ -994,6 +989,40 @@ class IpcManager {
   // ==================== 系统相关 ====================
 
   private registerSystemHandlers(): void {
+    const getAccessStatus = async (): Promise<SystemAccessStatus> => ({
+      wayland: isWayland,
+      shortcut: globalShortcutManager.getStatus(),
+      clipboard: await clipboardManager
+        .call<SystemAccessStatus['clipboard']>('getAccessStatus')
+        .catch((error) => ({
+          listening: false,
+          available: false,
+          error: error instanceof Error ? error.message : String(error)
+        })),
+      sourceTracking: !isWayland,
+      executable: process.execPath
+    })
+    this.registerHandler(
+      'system-access-status',
+      async () => ({ success: true, data: await getAccessStatus() }),
+      '读取系统权限'
+    )
+    this.registerHandler(
+      'system-access-retry',
+      async () => {
+        const shortcutRegistered = overlayWindowManager.registerGlobalShortcut(true)
+        let clipboardError: string | undefined
+        try {
+          await clipboardManager.startListening()
+        } catch (error) {
+          clipboardError = error instanceof Error ? error.message : String(error)
+        }
+        activeWindowService.initialize()
+        return { success: true, data: await getAccessStatus(), shortcutRegistered, clipboardError }
+      },
+      '重试系统权限'
+    )
+
     this.registerHandler(
       'app:restart',
       async () => {

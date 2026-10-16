@@ -3,8 +3,7 @@
  * 合并原来的 overlay 动画和搜索动画管理，提供统一的动画接口
  */
 
-import { ref, computed, nextTick, readonly, type Ref } from 'vue'
-import { useAnimate } from '@vueuse/core'
+import { ref, computed, nextTick, readonly, onScopeDispose, type Ref } from 'vue'
 import { useStateManager } from './useUtils'
 
 // ==================== 类型定义 ====================
@@ -30,7 +29,7 @@ export interface AnimationConfig {
 
 export interface AnimationControls {
   play: () => void
-  playState: Ref<'idle' | 'running' | 'paused' | 'finished'>
+  finished: Promise<boolean>
 }
 
 export interface AnimationManager {
@@ -53,6 +52,7 @@ export interface AnimationManager {
   createSlideInAnimation: () => AnimationControls
   createSlideOutAnimation: () => AnimationControls
   resetOverlayState: () => void
+  cancelAnimations: () => void
   setSlideDirection: (direction: OverlaySlideDirection) => void
 
   // 搜索动画方法
@@ -70,7 +70,7 @@ export interface AnimationManager {
 // ==================== 动画配置 ====================
 
 export const ANIMATION_CONFIG: AnimationConfig = {
-  OVERLAY_DURATION: 200,
+  OVERLAY_DURATION: 100,
   SEARCH_DURATION: 250, // 减少搜索动画时长，让切换更快
   SLIDE_IN_EASING: 'cubic-bezier(0.25, 0.46, 0.45, 0.94)',
   SLIDE_OUT_EASING: 'cubic-bezier(0.55, 0.06, 0.68, 0.19)',
@@ -86,6 +86,64 @@ export function useAnimation(
   searchContainerRef: Ref<HTMLElement | undefined>,
   tabsContainerRef: Ref<HTMLElement | undefined>
 ): AnimationManager {
+  const animations = new Map<HTMLElement, Animation>()
+  const cancelAnimations = () => {
+    animations.forEach((animation) => animation.cancel())
+    animations.clear()
+  }
+  onScopeDispose(cancelAnimations)
+
+  // 每个元素只保留一个动画；取消也会结束等待，避免隐藏、重开时残留异步任务。
+  const createAnimation = (
+    target: Ref<HTMLElement | undefined>,
+    frames: Keyframe[],
+    options: KeyframeAnimationOptions
+  ): AnimationControls => {
+    let complete!: (finished: boolean) => void
+    const finished = new Promise<boolean>((resolve) => {
+      complete = resolve
+    })
+    return {
+      finished,
+      play: () => {
+        const element = target.value
+        if (!element) {
+          complete(false)
+          return
+        }
+        const previous = animations.get(element)
+        const firstFrame = previous
+          ? Object.fromEntries(
+              Object.keys(frames[0]).map((key) => [
+                key,
+                getComputedStyle(element).getPropertyValue(
+                  key.replace(/[A-Z]/g, (letter) => `-${letter.toLowerCase()}`)
+                )
+              ])
+            )
+          : frames[0]
+        previous?.cancel()
+        const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+        const animation = element.animate([firstFrame, ...frames.slice(1)], {
+          ...options,
+          duration: reducedMotion ? 0 : options.duration
+        })
+        animations.set(element, animation)
+        animation.oncancel = () => complete(false)
+        animation.onfinish = () => {
+          // 将终态落到内联样式后释放动画，避免 fill:forwards 长期积累。
+          if (animations.get(element) === animation) {
+            const lastFrame = frames[frames.length - 1]
+            Object.assign(element.style, lastFrame)
+            animations.delete(element)
+            animation.cancel()
+          }
+          complete(true)
+        }
+      }
+    }
+  }
+
   // ==================== 状态管理 ====================
 
   // Overlay 动画状态
@@ -158,7 +216,7 @@ export function useAnimation(
 
   const createSlideInAnimation = (): AnimationControls => {
     const hiddenTransform = getHiddenTransform(slideDirection.value)
-    return useAnimate(
+    return createAnimation(
       overlayContentRef,
       [{ transform: hiddenTransform }, { transform: 'translate3d(0, 0, 0)' }],
       {
@@ -171,7 +229,7 @@ export function useAnimation(
 
   const createSlideOutAnimation = (): AnimationControls => {
     const hiddenTransform = getHiddenTransform(slideDirection.value)
-    return useAnimate(
+    return createAnimation(
       overlayContentRef,
       [{ transform: 'translate3d(0, 0, 0)' }, { transform: hiddenTransform }],
       {
@@ -183,7 +241,7 @@ export function useAnimation(
   }
 
   const resetOverlayState = () => {
-    // console.log('[动画管理] 重置overlay状态')
+    cancelAnimations()
     overlayStateManager.resetState()
 
     // 重置搜索框状态
@@ -204,7 +262,7 @@ export function useAnimation(
 
   const createSearchExpandAnimation = (): AnimationControls => {
     const searchTargetWidth = getSearchTargetWidth()
-    return useAnimate(
+    return createAnimation(
       searchContainerRef,
       [
         {
@@ -241,7 +299,7 @@ export function useAnimation(
 
   const createSearchCollapseAnimation = (): AnimationControls => {
     const collapseWidth = getSearchCollapseWidth()
-    return useAnimate(
+    return createAnimation(
       searchContainerRef,
       [
         {
@@ -277,7 +335,7 @@ export function useAnimation(
   }
 
   const createTabsHideAnimation = (): AnimationControls => {
-    return useAnimate(
+    return createAnimation(
       tabsContainerRef,
       [
         {
@@ -307,7 +365,7 @@ export function useAnimation(
   }
 
   const createTabsShowAnimation = (): AnimationControls => {
-    return useAnimate(
+    return createAnimation(
       tabsContainerRef,
       [
         {
@@ -373,7 +431,7 @@ export function useAnimation(
     isSearchAnimating.value = animating
   }
 
-  const setOpeningSearch = (opening: boolean) => {
+  const setOpeningSearch = (opening: boolean): void => {
     isOpeningSearch.value = opening
   }
 
@@ -399,6 +457,7 @@ export function useAnimation(
     createSlideInAnimation,
     createSlideOutAnimation,
     resetOverlayState,
+    cancelAnimations,
     setSlideDirection,
 
     // 搜索动画方法

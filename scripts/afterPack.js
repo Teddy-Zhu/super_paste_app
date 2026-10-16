@@ -16,6 +16,15 @@ module.exports = async function (context) {
   }
 
   const targetArch = archMap[context.arch]
+  // 显式核对监听所需二进制，防止打包成功但启动后无法监听。
+  const clipboardDir = path.join(unpackedDir, 'node_modules', '@teddyzhu', 'clipboard')
+  const clipboardSuffix =
+    targetPlatform === 'linux' ? '-gnu' : targetPlatform === 'win32' ? '-msvc' : ''
+  const clipboardBinary = `clipboard.${targetPlatform}-${targetArch}${clipboardSuffix}.node`
+  if (!fs.existsSync(path.join(clipboardDir, clipboardBinary))) {
+    throw new Error(`[afterPack] Missing native clipboard module: ${clipboardBinary}`)
+  }
+
   console.log(`[afterPack] Keeping only napi-v6/${targetPlatform}/${targetArch} binaries`)
 
   if (!fs.existsSync(napiBinBase)) {

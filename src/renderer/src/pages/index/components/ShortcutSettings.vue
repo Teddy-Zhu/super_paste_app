@@ -1,4 +1,28 @@
 <script setup lang="ts">
+import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { invoke } from '@renderer/api/ipc'
+import {
+  getSystemAccessStatus,
+  SYSTEM_ACCESS_TEXT,
+  type SystemAccessStatus
+} from '@renderer/api/system-access'
+
+const accessStatus = ref<SystemAccessStatus>()
+const accessError = ref('')
+const accessBusy = ref(false)
+const refreshAccess = async (retry = false) => {
+  accessBusy.value = true
+  accessError.value = ''
+  try {
+    accessStatus.value = await getSystemAccessStatus(retry)
+  } catch (error) {
+    accessError.value = error instanceof Error ? error.message : String(error)
+  } finally {
+    accessBusy.value = false
+  }
+}
+onMounted(() => refreshAccess())
+
 // Props
 interface Props {
   settingsStore: any
@@ -149,11 +173,17 @@ const convertElectronAcceleratorToDisplay = (accelerator: string): string => {
 }
 
 // 设置全局快捷键（存储 Electron Accelerator 格式）
-const setGlobalShortcut = (electronAccelerator: string): void => {
-  // 存储 Electron Accelerator 格式，用于实际的快捷键注册
-  props.settingsStore.globalShortcut = electronAccelerator
-  console.log('全局快捷键已保存 (Electron格式):', electronAccelerator)
-  console.log('显示格式:', convertElectronAcceleratorToDisplay(electronAccelerator))
+const setGlobalShortcut = async (electronAccelerator: string): Promise<boolean> => {
+  try {
+    const result = await invoke('store-set', 'settings.globalShortcut', electronAccelerator)
+    if (!result.success) throw new Error(result.error || '快捷键注册失败')
+    props.settingsStore.$setSilent('globalShortcut', electronAccelerator)
+    await refreshAccess()
+    return true
+  } catch (error) {
+    shortcutError.value = error instanceof Error ? error.message : String(error)
+    return false
+  }
 }
 
 // 开始监听快捷键
@@ -264,7 +294,7 @@ const handleKeyDown = (event: KeyboardEvent): void => {
 }
 
 // 处理按键释放
-const handleKeyUp = (event: KeyboardEvent): void => {
+const handleKeyUp = async (event: KeyboardEvent): Promise<void> => {
   event.preventDefault()
   event.stopPropagation()
 
@@ -292,8 +322,7 @@ const handleKeyUp = (event: KeyboardEvent): void => {
   const validation = validateShortcut(detectedShortcut.value)
   if (validation.valid) {
     console.log('检测到有效快捷键，立即保存')
-    setGlobalShortcut(detectedShortcut.value)
-    stopListeningForShortcut()
+    if (await setGlobalShortcut(detectedShortcut.value)) stopListeningForShortcut()
     return
   }
 
@@ -315,11 +344,9 @@ const cancelShortcutSetting = () => {
 }
 
 // 清除快捷键
-const clearShortcut = () => {
+const clearShortcut = async (): Promise<void> => {
   if (confirm('确定要清除当前快捷键设置吗？')) {
-    const oldShortcut = props.settingsStore.globalShortcut
-    props.settingsStore.globalShortcut = ''
-    console.log('快捷键已清除:', convertElectronAcceleratorToDisplay(oldShortcut), '→ 未设置')
+    await setGlobalShortcut('')
   }
 }
 
@@ -339,6 +366,53 @@ onUnmounted(() => {
     </div>
 
     <div class="settings-grid">
+      <div class="setting-card" v-if="accessStatus || accessError">
+        <div class="setting-info">
+          <h4 class="setting-title">{{ SYSTEM_ACCESS_TEXT.title }}</h4>
+          <p v-if="accessError" class="shortcut-error">{{ accessError }}</p>
+          <template v-if="accessStatus">
+            <p class="setting-description">
+              {{
+                accessStatus.shortcut.error ||
+                SYSTEM_ACCESS_TEXT[
+                  accessStatus.shortcut.state === 'portal-requested'
+                    ? 'portal'
+                    : accessStatus.shortcut.state === 'registered'
+                      ? 'registered'
+                      : 'disabled'
+                ]
+              }}
+            </p>
+            <p class="setting-description">
+              {{
+                accessStatus.clipboard.error ||
+                (accessStatus.clipboard.listening
+                  ? SYSTEM_ACCESS_TEXT.clipboardReady
+                  : SYSTEM_ACCESS_TEXT.clipboardStopped)
+              }}
+            </p>
+            <template v-if="accessStatus.wayland">
+              <p class="setting-description">{{ SYSTEM_ACCESS_TEXT.wayland }}</p>
+              <p class="setting-description">{{ SYSTEM_ACCESS_TEXT.fallback }}</p>
+              <code class="system-shortcut-command"
+                >"{{ accessStatus.executable }}" --toggle-overlay</code
+              >
+            </template>
+          </template>
+        </div>
+        <div class="setting-control shortcut-buttons">
+          <button class="shortcut-button secondary" :disabled="accessBusy" @click="refreshAccess()">
+            {{ SYSTEM_ACCESS_TEXT.refresh }}
+          </button>
+          <button
+            class="shortcut-button primary"
+            :disabled="accessBusy"
+            @click="refreshAccess(true)"
+          >
+            {{ SYSTEM_ACCESS_TEXT.retry }}
+          </button>
+        </div>
+      </div>
       <!-- 全局快捷键 -->
       <div class="setting-card">
         <div class="setting-info">
@@ -398,3 +472,11 @@ onUnmounted(() => {
     </div>
   </div>
 </template>
+
+<style scoped>
+.system-shortcut-command {
+  display: block;
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+</style>
