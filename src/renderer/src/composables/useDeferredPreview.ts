@@ -16,8 +16,14 @@ export function useDeferredPreview(target: Ref<HTMLElement | undefined>): Ref<bo
       },
       { rootMargin: '400px' }
     )
-    callbacks.set(element, (value) => {
-      visible.value = value
+    // 仅延迟首次加载；隐藏面板或移出视口时保留预览，避免下次显示时重新解码图片。
+    callbacks.set(element, (intersecting) => {
+      if (!intersecting) return
+      visible.value = true
+      if (element) {
+        observer?.unobserve(element)
+        callbacks.delete(element)
+      }
     })
     observer.observe(element)
   })

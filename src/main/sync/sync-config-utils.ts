@@ -33,7 +33,6 @@ export class SyncConfigUtils {
         STORE_KEY.SYNC_PROVIDER_PARAMS.replace('%s', 'webdav'),
         {}
       )
-      logger.debug('[同步配置工具] WebDAV 配置参数:', webdavParams)
       providerConfig = {
         syncDirection: this.parseSyncDirection(direction),
         serverUrl: webdavParams.serverUrl || '',

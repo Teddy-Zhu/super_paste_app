@@ -609,7 +609,7 @@ class IpcManager {
     ipcMain.on('close-overlay-window', (event, id?: number) => {
       if (event.sender !== overlayWindowManager.getWindow()?.webContents) return
       try {
-        if (typeof id === 'number' && Number.isInteger(id)) overlayWindowManager.hideWindow(id)
+        if (typeof id === 'number' && Number.isInteger(id)) overlayWindowManager.finishClosing(id)
       } catch (error) {
         logger.error('[主进程] 关闭 Overlay 窗口失败:', error)
       }

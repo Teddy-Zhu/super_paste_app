@@ -70,29 +70,47 @@ export class ClipboardRepository {
         contentHash: string,
         options?: {
             appInfo?: AppInfo
+            refreshSourceApp?: boolean
             enableLocalOCR?: boolean
             onOCRUpdated?: (payload: { contentId: string; ocrText: string }) => void
         }
-    ): Promise<{ saved: boolean; id: string; isNew: boolean }> {
+    ): Promise<{ saved: boolean; id: string; isNew: boolean; sourceUpdated?: boolean }> {
         if (!content || ClipboardDataConverter.isEmptyContent(content)) {
             return { saved: false, id: '', isNew: false }
         }
 
         const now = Date.now()
 
-        // Check if it's the same as the last item
-        if (this.lastItemHash === contentHash) {
-            this.database.updateLastUsed(this.lastItemId, now)
-            return { saved: true, id: this.lastItemId, isNew: false }
+        const existingId = this.lastItemHash === contentHash
+            ? this.lastItemId
+            : this.historyCache.get(contentHash)?.id
+
+        let sourceAppId: string | undefined
+        if (options?.appInfo && (!existingId || options.refreshSourceApp)) {
+            sourceAppId = this.database.insertOrUpdateApp(
+                options.appInfo.application,
+                options.appInfo.path,
+                options.appInfo.icon
+            ) || undefined
         }
 
-        // Check cache
-        const cachedRecord = this.historyCache.get(contentHash)
-        if (cachedRecord) {
-            this.database.updateLastUsed(cachedRecord.id, now)
-            this.lastItemId = cachedRecord.id
+        if (existingId) {
+            const updated = this.database.updateLastUsed(existingId, now, sourceAppId)
+            if (sourceAppId && updated) {
+                logger.debug('[ActiveWindowService] Clipboard source refreshed', {
+                    recordId: existingId,
+                    sourceAppId,
+                    application: options?.appInfo?.application
+                })
+            }
+            this.lastItemId = existingId
             this.lastItemHash = contentHash
-            return { saved: true, id: cachedRecord.id, isNew: false }
+            return {
+                saved: true,
+                id: existingId,
+                isNew: false,
+                sourceUpdated: Boolean(sourceAppId && updated)
+            }
         }
 
         // Verify against database (double check if cache missed but DB has it?)
@@ -104,15 +122,6 @@ export class ClipboardRepository {
         const newItemId = ClipboardDataConverter.generateId()
         const availableFormats = ClipboardDataConverter.getAvailableFormats(content)
 
-        let sourceAppId: string | undefined = undefined
-        if (options?.appInfo) {
-            sourceAppId = this.database.insertOrUpdateApp(
-                options.appInfo.application,
-                options.appInfo.path,
-                options.appInfo.icon
-            ) || undefined
-        }
-
         this.database.insertRecord(
             newItemId,
             content,
@@ -123,6 +132,11 @@ export class ClipboardRepository {
             sourceAppId,
             contentHash
         )
+        logger.debug('[ActiveWindowService] Clipboard source saved', {
+            recordId: newItemId,
+            sourceAppId: sourceAppId ?? null,
+            application: options?.appInfo?.application
+        })
 
         this.addToCache(newItemId, contentHash)
         this.lastItemId = newItemId

@@ -4,6 +4,7 @@ import { send, onSimple } from '@renderer/api'
 import { clipboard, store } from '@renderer/api/renderer-api'
 import type { ClipboardItem, ClipboardHistoryQueryOptions, AppInfo } from '@renderer/api/types'
 import { OverlayError, OverlayErrorCode, isClipboardItem } from '@renderer/types/overlay'
+import { reconcileClipboardHistory } from '@renderer/utils/clipboard-history'
 
 // 导入优化后的 composables
 import {
@@ -15,6 +16,7 @@ import type { OverlayRendererTrace } from '../../../../shared/overlay-events'
 import { useSearchAndNavigation } from '@renderer/composables/useSearchAndNavigation'
 import { useScrollAndTags, type ScrollAndTagsManager } from '@renderer/composables/useScrollAndTags'
 import { useEventManager, useThrottle } from '@renderer/composables/useUtils'
+import { useContextMenu } from '@renderer/composables/useContextMenu'
 
 // 导入组件
 import ClipboardCard from '@renderer/components/ClipboardCard.vue'
@@ -57,6 +59,7 @@ const ipcUnsubscribers: Array<() => void> = []
 
 // ==================== 初始化 Composables ====================
 const animationManager = useAnimation(overlayContentRef, searchContainerRef, tabsContainerRef)
+const { hideContextMenu } = useContextMenu()
 
 const traceOverlay = (
   event: OverlayRendererTrace['event'],
@@ -128,12 +131,16 @@ const loadClipboardHistory = async (options?: ClipboardHistoryQueryOptions): Pro
       )
     }
 
-    const validHistory = result.items.filter(isClipboardItem)
-    clipboardHistory.value = validHistory
-    clipboardApps.value = result.apps
+    const reconciled = reconcileClipboardHistory(
+      { items: clipboardHistory.value, apps: clipboardApps.value },
+      { items: result.items.filter(isClipboardItem), apps: result.apps }
+    )
+    clipboardApps.value = reconciled.apps
+    if (reconciled.items === clipboardHistory.value) return
+    clipboardHistory.value = reconciled.items
 
-    if (selectedIndex.value >= validHistory.length) {
-      selectedIndex.value = Math.max(0, validHistory.length - 1)
+    if (selectedIndex.value >= reconciled.items.length) {
+      selectedIndex.value = Math.max(0, reconciled.items.length - 1)
     }
 
     nextTick(() => {
@@ -364,6 +371,8 @@ const closeWindow = async () => {
   preparedOpening = null
   const version = ++animationVersion
   const startedAt = performance.now()
+  hideDropdownMenu()
+  hideContextMenu()
   traceOverlay('closing')
   // 关闭一开始同步目标状态，紧接着的全局快捷键就能反向打开。
   send('overlay-close-started', id)
@@ -381,7 +390,13 @@ const closeWindow = async () => {
     traceOverlay('cancelled', { receivedId: id, reason: 'close-superseded' })
     return
   }
-  traceOverlay('closed', { elapsedMs: Math.round(performance.now() - startedAt) })
+  traceOverlay('closed', {
+    elapsedMs: Math.round(performance.now() - startedAt),
+    reason: 'styles-hidden',
+    transform: overlayContentRef.value
+      ? getComputedStyle(overlayContentRef.value).transform
+      : undefined
+  })
   send('close-overlay-window', id)
 }
 
@@ -536,24 +551,25 @@ const prepareOpening = async (position: OverlayPosition, id: number): Promise<vo
   closingTransitionId = null
   animationManager.resetOverlayState()
   applyOverlayPosition(position)
-  await nextTick()
-  if (id !== transitionId || version !== animationVersion) return
-  const animation = animationManager.createSlideInAnimation()
-  animation.prepare()
-  preparedOpening = { id, animation }
   traceOverlay('prepare')
-  // 等隐藏首帧完成一次绘制后才允许原生窗口显示。
-  await new Promise<void>((resolve) =>
-    requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
-  )
+  await nextTick()
   if (id !== transitionId || version !== animationVersion) {
     traceOverlay('cancelled', { receivedId: id, reason: 'prepare-superseded' })
     return
   }
-  if (!overlayContentRef.value) throw new Error('Overlay animation target is unavailable')
+  const element = overlayContentRef.value
+  if (!element) throw new Error('Overlay animation target is unavailable')
+  const animation = animationManager.createSlideInAnimation()
+  animation.prepare()
+  preparedOpening = { id, animation }
+  // 隐藏窗口可能暂停动画帧；同步解析暂停的首帧样式，不能等绘制回调后再 show()。
+  const transform = getComputedStyle(element).transform
   traceOverlay('prepared', {
     elapsedMs: Math.round(performance.now() - startedAt),
-    transform: getComputedStyle(overlayContentRef.value).transform
+    transform,
+    viewportWidth: window.innerWidth,
+    viewportHeight: window.innerHeight,
+    devicePixelRatio: window.devicePixelRatio
   })
   send('overlay-open-prepared', id)
 }
@@ -706,7 +722,10 @@ onMounted(async () => {
     ipcUnsubscribers.push(
       onSimple('prepare-overlay-open', (position: OverlayPosition, id: number) => {
         prepareOpening(position, id).catch((error) => {
-          traceOverlay('error', { receivedId: id, reason: 'prepare-failed' })
+          traceOverlay('error', {
+            receivedId: id,
+            reason: `prepare-failed: ${error instanceof Error ? error.message : String(error)}`
+          })
           console.error('[Overlay] 准备打开失败:', error)
           send('close-overlay-window', id)
         })
@@ -741,7 +760,10 @@ onMounted(async () => {
         }
         applyOverlayPosition(position)
         triggerSlideInAnimation(id).catch((error) => {
-          traceOverlay('error', { receivedId: id, reason: 'open-failed' })
+          traceOverlay('error', {
+            receivedId: id,
+            reason: `open-failed: ${error instanceof Error ? error.message : String(error)}`
+          })
           console.error('[Overlay] 打开动画失败:', error)
           send('close-overlay-window', id)
         })
@@ -792,7 +814,7 @@ onMounted(async () => {
 
       scrollAndTagsManager.handleWheel(event)
     }
-    document.addEventListener('wheel', wheelHandler, { passive: false })
+    document.addEventListener('wheel', wheelHandler, { passive: false, capture: true })
 
     animationManager.initializeStyles()
 
@@ -811,7 +833,7 @@ onMounted(async () => {
       'record-ocr-updated',
       (data: { contentId: string; ocrText: string; timestamp: number }) => {
         const targetIndex = clipboardHistory.value.findIndex((item) => item.id === data.contentId)
-        if (targetIndex >= 0) {
+        if (targetIndex >= 0 && clipboardHistory.value[targetIndex].content.ocr !== data.ocrText) {
           const targetItem = clipboardHistory.value[targetIndex]
           const updatedHistory = [...clipboardHistory.value]
           updatedHistory[targetIndex] = {
@@ -850,6 +872,7 @@ onMounted(async () => {
  * 组件卸载时的清理逻辑
  */
 onUnmounted(() => {
+  ++animationVersion
   try {
     throttledLoadClipboardHistory.cancel()
     searchAndNavManager.cleanup()
@@ -858,10 +881,8 @@ onUnmounted(() => {
     ipcUnsubscribers.length = 0
 
     ++historyRequestId
-    ++animationVersion
-
     if (wheelHandler) {
-      document.removeEventListener('wheel', wheelHandler)
+      document.removeEventListener('wheel', wheelHandler, { capture: true })
       wheelHandler = null
     }
   } catch (error) {
@@ -1014,7 +1035,7 @@ onUnmounted(() => {
                 isQuickSelectMode,
                 scrollAndTagsManager.allTags.value,
                 scrollAndTagsManager.activeTagId.value,
-                clipboardApps
+                item.source_app ? clipboardApps[item.source_app] : undefined
               ]"
               :item="item"
               :index="index"

@@ -14,3 +14,6 @@ allowBuilds:
   lzma-native: true
   onnxruntime-node: true
   vue-demi: true
+
+minimumReleaseAgeExclude:
+  - electron@44.8.0

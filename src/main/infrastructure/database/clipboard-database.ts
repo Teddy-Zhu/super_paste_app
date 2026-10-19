@@ -248,20 +248,20 @@ class ClipboardDatabase {
   }
 
   /**
-   * 更新记录的最后使用时间
+   * 更新记录的最后使用时间，并可同步已确认的来源应用
    */
-  public updateLastUsed(contentId: string, lastUsed: number): boolean {
+  public updateLastUsed(contentId: string, lastUsed: number, sourceAppId?: string): boolean {
     if (!this.db) throw new Error('数据库未初始化')
 
     try {
       const updateSQL = `
         UPDATE clipboard_history
-        SET last_used = ?, updated_at = CURRENT_TIMESTAMP
+        SET last_used = ?, updated_at = CURRENT_TIMESTAMP, source_app = COALESCE(?, source_app)
         WHERE content_id = ?
       `
 
       const stmt = this.db.prepare(updateSQL)
-      const result = stmt.run(lastUsed, contentId)
+      const result = stmt.run(lastUsed, sourceAppId ?? null, contentId)
 
       return result.changes > 0
     } catch (error) {

@@ -98,7 +98,7 @@ export function useAnimation(
   const createAnimation = (
     target: Ref<HTMLElement | undefined>,
     frames: Keyframe[],
-    options: KeyframeAnimationOptions
+    options: KeyframeEffectOptions
   ): AnimationControls => {
     let animation: Animation | undefined
     let reducedMotion = false
@@ -126,12 +126,14 @@ export function useAnimation(
         : frames[0]
       previous?.cancel()
       reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
-      const current = element.animate([firstFrame, ...frames.slice(1)], {
-        ...options,
-        fill: 'both'
-      })
-      // 首帧可在原生窗口隐藏时提交，显示窗口后再开始推进动画。
-      current.pause()
+      const current = new Animation(
+        new KeyframeEffect(element, [firstFrame, ...frames.slice(1)], {
+          ...options,
+          fill: 'both'
+        }),
+        element.ownerDocument.timeline
+      )
+      // 直接停在首帧，避免 animate() 自动播放后再暂停；显示窗口后才开始播放。
       current.currentTime = 0
       animation = current
       animations.set(element, current)
@@ -230,7 +232,7 @@ export function useAnimation(
 
   const createSlideInAnimation = (): AnimationControls => {
     const hiddenTransform = getHiddenTransform(slideDirection.value)
-    return createAnimation(
+    const animation = createAnimation(
       overlayContentRef,
       [{ transform: hiddenTransform }, { transform: 'translate3d(0, 0, 0)' }],
       {
@@ -239,13 +241,24 @@ export function useAnimation(
         fill: 'forwards'
       }
     )
+    return {
+      ...animation,
+      play: () => {
+        animation.prepare()
+        if (overlayContentRef.value) overlayContentRef.value.style.visibility = 'visible'
+        animation.play()
+      }
+    }
   }
 
   const createSlideOutAnimation = (): AnimationControls => {
     const hiddenTransform = getHiddenTransform(slideDirection.value)
     return createAnimation(
       overlayContentRef,
-      [{ transform: 'translate3d(0, 0, 0)' }, { transform: hiddenTransform }],
+      [
+        { transform: 'translate3d(0, 0, 0)', visibility: 'visible' },
+        { transform: hiddenTransform, visibility: 'hidden' }
+      ],
       {
         duration: ANIMATION_CONFIG.OVERLAY_DURATION,
         easing: ANIMATION_CONFIG.SLIDE_OUT_EASING,
@@ -266,6 +279,7 @@ export function useAnimation(
     // 重置元素位置到初始状态
     if (overlayContentRef.value) {
       overlayContentRef.value.style.transform = getHiddenTransform(slideDirection.value)
+      overlayContentRef.value.style.visibility = 'hidden'
     }
 
     // 重置搜索框样式

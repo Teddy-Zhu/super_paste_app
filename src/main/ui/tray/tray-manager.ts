@@ -62,7 +62,7 @@ export class TrayManager {
       {
         label: '粘贴面板',
         click: () => {
-          overlayWindowManager.toggleWindow(true)
+          overlayWindowManager.toggleWindow(true, 'tray-menu')
         }
       },
       {
@@ -133,7 +133,7 @@ export class TrayManager {
 
     // 设置左键点击事件（显示快捷面板）
     this.tray.on('click', () => {
-      overlayWindowManager.toggleWindow(true)
+      overlayWindowManager.toggleWindow(true, 'tray-click')
     })
 
     // 设置双击事件（显示主窗口）

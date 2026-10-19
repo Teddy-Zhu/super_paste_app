@@ -1,4 +1,4 @@
-import { BrowserWindow, shell } from 'electron'
+import { app, BrowserWindow, screen, shell, type NativeImage, type WebContents } from 'electron'
 import { join } from 'path'
 import { is } from '@electron-toolkit/utils'
 import {
@@ -82,13 +82,6 @@ export class MainWindowManager {
    */
   private setupEventHandlers(): void {
     if (!this.mainWindow) return
-
-    this.mainWindow.on('ready-to-show', () => {
-      logger.debug('[主进程] 主窗口准备就绪')
-      if (is.dev) {
-        this.mainWindow?.webContents.openDevTools()
-      }
-    })
 
     // 监听主窗口显示事件
     this.mainWindow.on('show', () => {
@@ -219,6 +212,8 @@ export class OverlayWindowManager {
   private wantsVisible = false
   private transitionId = 0
   private transitionTimer: NodeJS.Timeout | null = null
+  private transitionFrameContents: WebContents | null = null
+  private appliedGeometry: { bounds: Electron.Rectangle; scaleFactor: number } | null = null
   private pendingOpenId: number | null = null
   private blurTimer: NodeJS.Timeout | null = null
   private pendingBlurId: number | null = null
@@ -247,6 +242,7 @@ export class OverlayWindowManager {
       show: false,
       type: 'utility',
       transparent: true,
+      backgroundColor: '#00000000',
       paintWhenInitiallyHidden: true,
       ...(process.platform === 'linux' ? { icon: IconSelector.getWindowIcon() } : {}),
       webPreferences: {
@@ -263,7 +259,12 @@ export class OverlayWindowManager {
       electron: process.versions.electron,
       session: process.env.XDG_SESSION_TYPE,
       desktop: process.env.XDG_CURRENT_DESKTOP,
-      wayland: isWayland,
+      waylandSession: isWayland,
+      ozonePlatform: app.commandLine.getSwitchValue('ozone-platform') || null,
+      ozonePlatformHint:
+        app.commandLine.getSwitchValue('ozone-platform-hint') ||
+        process.env.ELECTRON_OZONE_PLATFORM_HINT ||
+        null,
       development: is.dev
     })
     window.once('ready-to-show', () => {
@@ -272,7 +273,7 @@ export class OverlayWindowManager {
     })
     window.on('close', (event) => {
       event.preventDefault()
-      this.hideWindow(undefined, 'native-close')
+      this.hideWindowBackend(true, 'native-close')
     })
     window.on('closed', () => {
       this.trace('window-destroyed')
@@ -283,8 +284,15 @@ export class OverlayWindowManager {
       this.wantsVisible = false
       windowStateManager.reset()
       this.overlayWindow = null
+      this.appliedGeometry = null
     })
-    window.on('show', () => this.trace('native-show'))
+    window.on('show', () =>
+      this.trace('native-show', {
+        bounds: window.getBounds(),
+        contentBounds: window.getContentBounds(),
+        alwaysOnTop: window.isAlwaysOnTop()
+      })
+    )
     window.on('hide', () => this.trace('native-hide'))
     window.on('focus', () => {
       this.clearBlurTimer()
@@ -321,6 +329,23 @@ export class OverlayWindowManager {
     )
   }
 
+  private applyWindowBounds(bounds: Electron.Rectangle): boolean {
+    if (!this.overlayWindow) return false
+    const scaleFactor = screen.getDisplayMatching(bounds).scaleFactor
+    const previous = this.appliedGeometry
+    // Fractional scaling rounds native bounds differently. Reapplying the same
+    // requested bounds repeatedly resizes the surface and discards its blank frame.
+    if (
+      previous?.scaleFactor === scaleFactor &&
+      (['x', 'y', 'width', 'height'] as const).every((key) => previous.bounds[key] === bounds[key])
+    ) {
+      return false
+    }
+    this.overlayWindow.setBounds(bounds)
+    this.appliedGeometry = { bounds: { ...bounds }, scaleFactor }
+    return true
+  }
+
   registerGlobalShortcut(retry = false): boolean {
     return globalShortcutManager.registerGlobalShortcut(
       store.get<string>(STORE_KEY.SETTINGS_GLOBAL_SHORTCUT, ''),
@@ -351,9 +376,7 @@ export class OverlayWindowManager {
     try {
       const bounds = WindowConfigCalculator.calculateWindowPosition(this.currentOverlayPosition)
       const previous = this.overlayWindow.getBounds()
-      if ((['x', 'y', 'width', 'height'] as const).some((key) => bounds[key] !== previous[key])) {
-        this.overlayWindow.setBounds(bounds)
-      }
+      const boundsChanged = this.applyWindowBounds(bounds)
       windowStateManager.setOverlayState(OverlayState.OPENING)
       if (this.overlayWindow.isVisible()) {
         // 反向切换沿用当前画面，避免再次 show() 触发原生窗口动画。
@@ -361,7 +384,17 @@ export class OverlayWindowManager {
       } else {
         // 完全隐藏时先提交透明的动画首帧，防止 show() 暴露上一轮画面。
         this.pendingOpenId = id
-        this.trace('prepare-request', { source, position: this.currentOverlayPosition })
+        this.trace('prepare-request', {
+          source,
+          position: this.currentOverlayPosition,
+          boundsChanged,
+          requestedBounds: bounds,
+          previousBounds: previous,
+          actualBounds: this.overlayWindow.getBounds(),
+          contentBounds: this.overlayWindow.getContentBounds(),
+          displayScaleFactor: screen.getDisplayMatching(bounds).scaleFactor,
+          zoomFactor: this.overlayWindow.webContents.getZoomFactor()
+        })
         WindowUtils.safelyEmitToWindow(
           this.overlayWindow,
           'prepare-overlay-open',
@@ -385,7 +418,7 @@ export class OverlayWindowManager {
       return
     }
     try {
-      this.startOpening(id, true)
+      this.waitForTransparentFrame(id, 'open')
     } catch (error) {
       logger.error('[Overlay] 显示准备好的窗口失败:', error)
       this.hideWindow(id, 'show-error')
@@ -468,6 +501,119 @@ export class OverlayWindowManager {
     windowStateManager.setOverlayState(OverlayState.CLOSING)
     this.trace('close-start', { source: 'renderer' })
     this.transitionTimer = setTimeout(() => this.hideWindow(id, 'animation-timeout'), 250)
+  }
+
+  finishClosing(id: number): void {
+    if (id !== this.transitionId) {
+      this.trace('close-ack-ignored', { receivedId: id, reason: 'superseded' })
+      return
+    }
+    if (
+      this.wantsVisible ||
+      windowStateManager.getOverlayState() !== OverlayState.CLOSING ||
+      !this.isVisible()
+    ) {
+      this.hideWindow(id)
+      return
+    }
+    this.waitForTransparentFrame(id, 'close')
+  }
+
+  private waitForTransparentFrame(id: number, phase: 'open' | 'close'): void {
+    if (!this.overlayWindow || this.transitionFrameContents) return
+
+    this.clearTransitionTimer()
+    const contents = this.overlayWindow.webContents
+    const startedAt = performance.now()
+    let frames = 0
+    let invalidFrames = 0
+    let nonTransparentFrames = 0
+    let nonTransparentPixels: number | null = null
+    let frameReady = false
+    this.transitionTimer = setTimeout(
+      () => {
+        this.trace(`${phase}-frame-timeout`, {
+          frames,
+          invalidFrames,
+          nonTransparentFrames,
+          nonTransparentPixels
+        })
+        this.hideWindow(id, `${phase}-frame-timeout`)
+      },
+      phase === 'open' ? 250 : 80
+    )
+    const onFrame = (image: NativeImage): void => {
+      if (
+        frameReady ||
+        id !== this.transitionId ||
+        this.wantsVisible !== (phase === 'open') ||
+        this.transitionFrameContents !== contents
+      )
+        return
+      ++frames
+      if (image.isEmpty()) {
+        ++invalidFrames
+        return
+      }
+      const bitmap = image.toBitmap()
+      const { width, height } = image.getSize()
+      if (!bitmap.length || bitmap.length !== width * height * 4) {
+        ++invalidFrames
+        return
+      }
+      nonTransparentPixels = 0
+      // N32 位图的第 4 字节是 alpha；只检查透明度，不保存画面。
+      for (let offset = 3; offset < bitmap.length; offset += 4) {
+        if (bitmap[offset] !== 0) ++nonTransparentPixels
+      }
+      if (nonTransparentPixels !== 0) {
+        ++nonTransparentFrames
+        return
+      }
+      frameReady = true
+      if (this.transitionTimer) clearTimeout(this.transitionTimer)
+      this.transitionTimer = null
+      this.trace(`${phase}-frame-ready`, {
+        frames,
+        invalidFrames,
+        nonTransparentFrames,
+        nonTransparentPixels,
+        frameWidth: width,
+        frameHeight: height,
+        frameElapsedMs: Math.round(performance.now() - startedAt)
+      })
+      // 离开原生帧回调后再释放订阅；反向切换会使旧帧确认失效。
+      setImmediate(() => {
+        if (
+          id === this.transitionId &&
+          this.wantsVisible === (phase === 'open') &&
+          this.transitionFrameContents === contents
+        ) {
+          if (phase === 'open') this.startOpening(id, true)
+          else this.hideWindow(id, 'transparent-frame')
+        }
+      })
+    }
+    try {
+      // Computed styles are not a GPU commit. Confirm an actual transparent
+      // frame before either mapping the window or retaining it for the next open.
+      this.transitionFrameContents = contents
+      contents.beginFrameSubscription(false, onFrame)
+      contents.invalidate()
+      if (phase === 'open') {
+        // A capturer keeps hidden page rendering active without showing its native window.
+        void contents
+          .capturePage(undefined, { stayHidden: false, stayAwake: true })
+          .then(onFrame, (error: unknown) => {
+            if (id === this.transitionId && this.transitionFrameContents === contents) {
+              logger.warn('[Overlay] 隐藏窗口帧读取失败，继续等待绘制帧:', error)
+            }
+          })
+      }
+    } catch (error) {
+      logger.error('[Overlay] 窗口帧确认失败:', error)
+      this.hideWindow(id, `${phase}-frame-error`)
+    }
   }
 
   hideWindow(id?: number, source = 'renderer'): void {
@@ -564,13 +710,19 @@ export class OverlayWindowManager {
       rendererElapsedMs: Number.isFinite(trace.elapsedMs) ? trace.elapsedMs : undefined,
       receivedId: Number.isSafeInteger(trace.receivedId) ? trace.receivedId : undefined,
       reason: typeof trace.reason === 'string' ? trace.reason.slice(0, 160) : undefined,
-      transform: typeof trace.transform === 'string' ? trace.transform.slice(0, 100) : undefined
+      transform: typeof trace.transform === 'string' ? trace.transform.slice(0, 100) : undefined,
+      viewportWidth: Number.isFinite(trace.viewportWidth) ? trace.viewportWidth : undefined,
+      viewportHeight: Number.isFinite(trace.viewportHeight) ? trace.viewportHeight : undefined,
+      devicePixelRatio: Number.isFinite(trace.devicePixelRatio) ? trace.devicePixelRatio : undefined
     })
   }
 
   private clearTransitionTimer(): void {
     if (this.transitionTimer) clearTimeout(this.transitionTimer)
     this.transitionTimer = null
+    const contents = this.transitionFrameContents
+    this.transitionFrameContents = null
+    if (contents && !contents.isDestroyed()) contents.endFrameSubscription()
   }
 
   destroy(): void {
@@ -578,6 +730,7 @@ export class OverlayWindowManager {
     this.clearBlurTimer()
     WindowUtils.safelyDestroyWindow(this.overlayWindow)
     this.overlayWindow = null
+    this.appliedGeometry = null
   }
 
   isValid(): boolean {
@@ -591,7 +744,7 @@ export class OverlayWindowManager {
   updateWindowPositionBySettings(): void {
     if (!this.isValid()) return
     this.currentOverlayPosition = this.getOverlayPositionSetting()
-    this.overlayWindow!.setBounds(
+    this.applyWindowBounds(
       WindowConfigCalculator.calculateWindowPosition(this.currentOverlayPosition)
     )
     WindowUtils.safelyEmitToWindow(

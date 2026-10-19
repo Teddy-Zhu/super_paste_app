@@ -24,4 +24,7 @@ export interface OverlayRendererTrace {
   receivedId?: number
   reason?: string
   transform?: string
+  viewportWidth?: number
+  viewportHeight?: number
+  devicePixelRatio?: number
 }

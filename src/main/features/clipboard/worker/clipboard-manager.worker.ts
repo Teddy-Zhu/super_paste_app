@@ -15,10 +15,12 @@ import path from 'path'
 import fs from 'fs'
 import { ocrService } from '../../../services/ocr-service'
 import type { OCRServiceOptions } from '../../../services/ocr-service'
+import type { ActiveWindowInfo } from '../../../services/active-window-provider'
 // Modules
 import { ClipboardPoller } from './modules/clipboard-poller'
 import { ContentProcessor } from './modules/content-processor'
 import { ClipboardRepository } from './modules/clipboard-repository'
+import { ClipboardSourceTracker } from './modules/clipboard-source-tracker'
 
 class ClipboardManagerWorker extends BaseWorker {
   private config: ClipboardManagerConfig
@@ -30,7 +32,8 @@ class ClipboardManagerWorker extends BaseWorker {
 
   // State
   private activeWindowInitialized: boolean = false
-  private cachedActiveWindow: any | null = null
+  private sourceTracker = new ClipboardSourceTracker()
+  private appSourceIssue: string | undefined
   private ocrResourcePath: string = ''
   private ocrIsDev: boolean = false
   private ocrInitializing: Promise<boolean> | null = null
@@ -264,6 +267,18 @@ class ClipboardManagerWorker extends BaseWorker {
         return
       }
 
+      // Freeze the source before asynchronous conversion can observe a later focus change.
+      const source = this.sourceTracker.select(Boolean(converted.hasImage))
+      const appInfo = this.config.enableAutoSave ? this.getCurrentAppInfo(source.window) : undefined
+      if (this.config.enableAutoSave && source.reason !== 'active-window') {
+        logger.debug('[ActiveWindowService] Clipboard source selected', {
+          reason: source.reason,
+          foregroundApplication: this.sourceTracker.activeWindow?.application,
+          application: appInfo?.application,
+          hasIcon: Boolean(appInfo?.icon)
+        })
+      }
+
       // Full process
       const content = await this.processor.buildClipboardContent(converted)
       const hash = ClipboardDataConverter.generateContentHash(content) // or processor.generateClipboardHash(converted)?
@@ -274,9 +289,9 @@ class ClipboardManagerWorker extends BaseWorker {
       // But repo needs content to insert if new.
 
       if (this.config.enableAutoSave) {
-        const appInfo = await this.getCurrentAppInfo()
         const result = await this.repository.saveItem(content, hash, {
           appInfo,
+          refreshSourceApp: source.reason === 'before-screenshot',
           enableLocalOCR: this.config.enableLocalOCR,
           onOCRUpdated: ({ contentId, ocrText }) => {
             this.sendEvent('record-ocr-updated', {
@@ -287,7 +302,7 @@ class ClipboardManagerWorker extends BaseWorker {
           }
         })
 
-        if (result.isNew || result.id !== this.getLastItemId()) { // Logic check
+        if (result.isNew || result.sourceUpdated || result.id !== this.getLastItemId()) {
           this.sendEvent('clipboard-changed', { timestamp: Date.now() })
           if (result.saved) {
             this.sendEvent('history-updated', { timestamp: Date.now() })
@@ -309,16 +324,52 @@ class ClipboardManagerWorker extends BaseWorker {
   }
 
   // Active Window Helper
-  public updateActiveWindow(windowInfo: any): void {
-    this.cachedActiveWindow = windowInfo
+  public updateActiveWindow(windowInfo: ActiveWindowInfo | null): void {
+    const previous = this.sourceTracker.activeWindow
+    if (
+      !this.activeWindowInitialized ||
+      previous?.pid !== windowInfo?.pid ||
+      previous?.application !== windowInfo?.application ||
+      previous?.path !== windowInfo?.path
+    ) {
+      logger.info('[ActiveWindowService] Worker snapshot', {
+        hasWindow: Boolean(windowInfo),
+        application: windowInfo?.application,
+        pid: windowInfo?.pid,
+        hasPath: Boolean(windowInfo?.path),
+        hasIcon: Boolean(windowInfo?.icon)
+      })
+    }
+    this.sourceTracker.update(windowInfo)
     this.activeWindowInitialized = true
   }
 
-  private async getCurrentAppInfo(): Promise<AppInfo | undefined> {
+  private getCurrentAppInfo(activeWindow: ActiveWindowInfo | null): AppInfo | undefined {
     try {
-      if (!this.activeWindowInitialized || !this.cachedActiveWindow) return undefined
-      const activeWindow = this.cachedActiveWindow
-      if (!activeWindow.application || !activeWindow.path) return undefined
+      const issue = !this.activeWindowInitialized
+        ? 'not-initialized'
+        : !activeWindow
+          ? 'no-active-window'
+          : !activeWindow.application
+            ? 'missing-application'
+            : !activeWindow.path
+              ? 'missing-executable-path'
+              : undefined
+      if (!activeWindow?.application || !activeWindow.path) {
+        if (issue !== this.appSourceIssue) {
+          logger.warn('[ActiveWindowService] Clipboard source unavailable', {
+            reason: issue,
+            application: activeWindow?.application,
+            pid: activeWindow?.pid
+          })
+          this.appSourceIssue = issue
+        }
+        return undefined
+      }
+      if (this.appSourceIssue) {
+        logger.info('[ActiveWindowService] Clipboard source recovered')
+        this.appSourceIssue = undefined
+      }
 
       return {
         id: ClipboardDataConverter.generateAppId(),
@@ -328,7 +379,8 @@ class ClipboardManagerWorker extends BaseWorker {
         createdAt: Date.now(),
         updatedAt: Date.now()
       }
-    } catch {
+    } catch (error) {
+      logger.warn('[ActiveWindowService] Clipboard source conversion failed:', error)
       return undefined
     }
   }

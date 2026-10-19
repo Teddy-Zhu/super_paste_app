@@ -37,6 +37,7 @@
     overflow: hidden;
     position: relative;
     will-change: transform;
+    visibility: hidden;
     transform: translateY(100%);
     font-family: var(--font-family-base);
 }

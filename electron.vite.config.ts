@@ -1,33 +1,33 @@
 import { resolve } from 'path'
-import { defineConfig, externalizeDepsPlugin, bytecodePlugin } from 'electron-vite'
+import { defineConfig } from 'electron-vite'
 import vue from '@vitejs/plugin-vue'
-import VueDevTools from 'vite-plugin-vue-devtools'
 import MetaLayouts from 'vite-plugin-vue-meta-layouts'
 import AutoImport from 'unplugin-auto-import/vite'
 import Components from 'unplugin-vue-components/vite'
 import VueRouter from 'unplugin-vue-router/vite'
 import Icons from 'unplugin-icons/vite'
-import commonjsExternals from 'vite-plugin-commonjs-externals'
+import { useXWayland } from './src/main/system/session'
+
+// Ozone 在主进程 JS 加载前初始化，开发和预览必须在启动 Electron 前传参。
+if (useXWayland) {
+  const args: string[] = JSON.parse(process.env.ELECTRON_CLI_ARGS || '[]')
+  if (args[args.length - 1] !== '--ozone-platform=x11') {
+    process.env.ELECTRON_CLI_ARGS = JSON.stringify([...args, '--ozone-platform=x11'])
+  }
+}
 
 export default defineConfig({
   main: {
-    plugins: [
-      externalizeDepsPlugin(),
-      bytecodePlugin(),
-      commonjsExternals({
-        externals: ['@paymoapp/active-window', '@teddyzhu/auto-launch']
-      })
-    ]
+    build: {
+      rollupOptions: {
+        output: {
+          // CommonJS 加载 ESM 依赖时，需要解包默认导出。
+          interop: 'auto'
+        }
+      }
+    }
   },
-  preload: {
-    plugins: [
-      externalizeDepsPlugin(),
-      bytecodePlugin(),
-      commonjsExternals({
-        externals: ['@paymoapp/active-window', '@teddyzhu/auto-launch']
-      })
-    ]
-  },
+  preload: {},
   renderer: {
     build: {
       rollupOptions: {
@@ -40,7 +40,6 @@ export default defineConfig({
       }
     },
     plugins: [
-      VueDevTools(),
       VueRouter({
         routesFolder: './src/renderer/src/pages',
         dts: './src/renderer/src/typed-router.d.ts'

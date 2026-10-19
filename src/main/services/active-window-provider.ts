@@ -1,9 +1,10 @@
-import { app } from 'electron'
 import { createRequire } from 'node:module'
+import { basename } from 'node:path'
 import type { IActiveWindow } from '@paymoapp/active-window'
 import type * as KWin from '@super-paste/active-window-kwin'
 import { isWayland } from '../system/session'
 import logger from '../utils/logger'
+import { getLinuxAppIcon } from './linux-app-icon'
 
 export interface ActiveWindowInfo {
   title: string
@@ -50,7 +51,7 @@ class KWinActiveWindowProvider implements ActiveWindowProvider {
   private unsubscribe: (() => void) | null = null
   private active = false
   private snapshotVersion = 0
-  private readonly icons = new Map<string, Promise<string>>()
+  private diagnosticSnapshot: string | undefined
 
   constructor(private readonly backend: typeof KWin) {}
 
@@ -60,6 +61,21 @@ class KWinActiveWindowProvider implements ActiveWindowProvider {
     this.active = true
     const publish = async (window: KWin.WindowInfo | null): Promise<void> => {
       if (!this.active) return
+      const diagnosticSnapshot = JSON.stringify(
+        window ? [window.id, window.application, window.pid, window.path] : null
+      )
+      if (diagnosticSnapshot !== this.diagnosticSnapshot) {
+        this.diagnosticSnapshot = diagnosticSnapshot
+        logger.info('[ActiveWindowService] KWin snapshot', {
+          hasWindow: Boolean(window),
+          windowId: window?.id,
+          application: window?.application,
+          pid: window?.pid,
+          hasTitle: Boolean(window?.title),
+          hasPath: Boolean(window?.path),
+          executable: window?.path ? basename(window.path) : undefined
+        })
+      }
       const version = ++this.snapshotVersion
       const snapshot = window
         ? {
@@ -67,12 +83,18 @@ class KWinActiveWindowProvider implements ActiveWindowProvider {
             application: window.application,
             path: window.path || '',
             pid: window.pid,
-            icon: window.path ? await this.getIcon(window.path) : ''
+            icon: await getLinuxAppIcon(window.application, window.path || '')
           }
         : null
       if (this.active && version === this.snapshotVersion) onChange(snapshot)
     }
-    await publish(await this.backend.getActiveWindow())
+    const queryStarted = performance.now()
+    const initialWindow = await this.backend.getActiveWindow()
+    logger.info('[ActiveWindowService] KWin initial query', {
+      durationMs: Math.round(performance.now() - queryStarted),
+      hasWindow: Boolean(initialWindow)
+    })
+    await publish(initialWindow)
     if (!this.active) return
     this.unsubscribe = this.backend.subscribe(
       (window) => void publish(window).catch(onError),
@@ -83,31 +105,26 @@ class KWinActiveWindowProvider implements ActiveWindowProvider {
     )
   }
 
-  private getIcon(path: string): Promise<string> {
-    let icon = this.icons.get(path)
-    if (!icon) {
-      // Icons are optional. Cache misses as well, so an unavailable icon does
-      // not trigger repeated filesystem work on every foreground update.
-      icon = app.getFileIcon(path, { size: 'small' }).then(
-        (image) => image.toDataURL(),
-        () => ''
-      )
-      if (this.icons.size >= 64) this.icons.delete(this.icons.keys().next().value!)
-      this.icons.set(path, icon)
-    }
-    return icon
-  }
-
   stop(): void {
     this.active = false
     ++this.snapshotVersion
     this.unsubscribe?.()
     this.unsubscribe = null
-    this.icons.clear()
+    this.diagnosticSnapshot = undefined
   }
 }
 
 export function createActiveWindowProvider(): ActiveWindowProvider {
+  logger.info('[ActiveWindowService] Backend selected', {
+    backend: isWayland ? 'kwin' : 'native',
+    platform: process.platform,
+    arch: process.arch,
+    session: process.env.XDG_SESSION_TYPE,
+    desktop: process.env.XDG_CURRENT_DESKTOP,
+    kdeVersion: process.env.KDE_SESSION_VERSION,
+    hasWaylandDisplay: Boolean(process.env.WAYLAND_DISPLAY),
+    hasSessionBus: Boolean(process.env.DBUS_SESSION_BUS_ADDRESS)
+  })
   if (isWayland) {
     return new KWinActiveWindowProvider(requireNative('@super-paste/active-window-kwin'))
   }

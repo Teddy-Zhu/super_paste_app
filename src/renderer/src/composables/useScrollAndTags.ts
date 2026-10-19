@@ -6,7 +6,7 @@
 import { ref, computed, nextTick, onUnmounted, readonly, type Ref } from 'vue'
 import type { ClipboardItem, TagGroup, ClipboardHistoryQueryOptions } from '@renderer/api/types'
 import { tags } from '@renderer/api/renderer-api'
-import { useRafThrottle, useThrottle, useStateManager } from './useUtils'
+import { useRafThrottle, useStateManager } from './useUtils'
 import { AnimationState } from './useAnimation'
 import { useContextMenu } from './useContextMenu'
 import Scrollbar from 'smooth-scrollbar'
@@ -57,10 +57,11 @@ export interface ScrollAndTagsManager {
 // ==================== 常量定义 ====================
 
 const SCROLL_MARGIN = 40 // 滚动时的边距，确保选中项不会紧贴边缘
+const WHEEL_LINE_HEIGHT = 28
 
 const SCROLLBAR_OPTIONS: Partial<ScrollbarOptions> = {
   damping: 0.1,
-  renderByPixels: true,
+  renderByPixels: false,
   alwaysShowTracks: false,
   continuousScrolling: true
 }
@@ -80,6 +81,7 @@ export function useScrollAndTags(
 
   const isScrolling = ref(false)
   let scrollbarInstance: Scrollbar | null = null
+  let lastWheelDirection = 0
 
   // 获取上下文菜单管理器
   const { hideContextMenu } = useContextMenu()
@@ -134,6 +136,7 @@ export function useScrollAndTags(
       return
     }
 
+    lastWheelDirection = 0
     // 容器被 v-if 替换后才重建；普通数据更新保留滚动位置。
     // 如果已有实例，先销毁再重新创建
     if (scrollbarInstance) {
@@ -157,6 +160,7 @@ export function useScrollAndTags(
   }
 
   const destroyScrollbar = () => {
+    lastWheelDirection = 0
     if (scrollbarInstance) {
       try {
         scrollbarInstance.destroy()
@@ -208,6 +212,8 @@ export function useScrollAndTags(
       try {
         const targetX = axis === 'x' ? target : scrollbarInstance.scrollLeft
         const targetY = axis === 'y' ? target : scrollbarInstance.scrollTop
+        scrollbarInstance.setMomentum(0, 0)
+        lastWheelDirection = 0
         scrollbarInstance.scrollTo(targetX, targetY, 300)
         return
       } catch (error) {
@@ -307,15 +313,31 @@ export function useScrollAndTags(
     )
   }
 
-  const handleWheelThrottled = useThrottle((event: WheelEvent) => {
-    // 只有在活跃状态且有剪贴板历史时才响应滚轮事件
-    if (
-      currentAnimationState.value !== AnimationState.ACTIVE ||
-      !clipboardScrollRef.value ||
-      clipboardHistory.value.length === 0
-    ) {
+  const handleWheel = (event: WheelEvent): void => {
+    const container = clipboardScrollRef.value
+    if (!container || clipboardHistory.value.length === 0 || event.defaultPrevented) {
       return
     }
+
+    // 捕获阶段接管事件，避免 smooth-scrollbar 的容器监听器再次叠加同一次滚动。
+    event.preventDefault()
+    event.stopPropagation()
+    if (currentAnimationState.value !== AnimationState.ACTIVE) return
+
+    const verticalLayout = isVerticalLayout.value
+    const delta = Math.abs(event.deltaX) > Math.abs(event.deltaY) ? event.deltaX : event.deltaY
+    const deltaScale =
+      event.deltaMode === WheelEvent.DOM_DELTA_LINE
+        ? WHEEL_LINE_HEIGHT
+        : event.deltaMode === WheelEvent.DOM_DELTA_PAGE
+          ? verticalLayout
+            ? container.clientHeight
+            : container.clientWidth
+          : 1
+    const scrollAmount = delta * deltaScale
+    if (scrollAmount === 0) return
+
+    hideContextMenu()
 
     // 检查 scrollbar 实例是否有效，如果无效则重新初始化
     if (
@@ -326,58 +348,30 @@ export function useScrollAndTags(
       initializeScrollbar()
     }
 
-    event.preventDefault()
-
-    const verticalLayout = isVerticalLayout.value
-    const primaryDelta = verticalLayout ? event.deltaY : event.deltaX
-    const fallbackDelta = verticalLayout ? event.deltaX : event.deltaY
-    const dominantDelta =
-      Math.abs(primaryDelta) > 3 ? primaryDelta : Math.abs(fallbackDelta) > 3 ? fallbackDelta : 0
-    const scrollAmount = dominantDelta * (verticalLayout ? 2.5 : 3.5)
-
     if (scrollbarInstance) {
       try {
-        const currentScroll = verticalLayout
-          ? scrollbarInstance.scrollTop
-          : scrollbarInstance.scrollLeft
-        const maxScroll =
-          (verticalLayout
-            ? scrollbarInstance.size.content.height - scrollbarInstance.size.container.height
-            : scrollbarInstance.size.content.width - scrollbarInstance.size.container.width) || 0
-        const targetScroll = Math.max(0, Math.min(maxScroll, currentScroll + scrollAmount))
-
-        if (targetScroll !== currentScroll) {
-          const targetX = verticalLayout ? scrollbarInstance.scrollLeft : targetScroll
-          const targetY = verticalLayout ? targetScroll : scrollbarInstance.scrollTop
-          scrollbarInstance.scrollTo(targetX, targetY, 0)
+        // 取消键盘定位的滚动动画，当前位置保持不变，后续位移交给库逐帧衰减。
+        scrollbarInstance.scrollTo(scrollbarInstance.scrollLeft, scrollbarInstance.scrollTop, 0)
+        const direction = Math.sign(scrollAmount)
+        if (direction !== lastWheelDirection) {
+          scrollbarInstance.setMomentum(0, 0)
         }
+        lastWheelDirection = direction
+        scrollbarInstance.addMomentum(
+          verticalLayout ? 0 : scrollAmount,
+          verticalLayout ? scrollAmount : 0
+        )
       } catch (error) {
         console.warn('[滚动标签管理] scrollbar 实例操作失败，尝试重新初始化:', error)
         initializeScrollbar()
       }
-    } else if (clipboardScrollRef.value) {
-      const container = clipboardScrollRef.value
-      const currentScroll = verticalLayout ? container.scrollTop : container.scrollLeft
-      const maxScroll = verticalLayout
-        ? container.scrollHeight - container.clientHeight
-        : container.scrollWidth - container.clientWidth
-      const targetScroll = Math.max(0, Math.min(maxScroll, currentScroll + scrollAmount))
-
-      if (targetScroll !== currentScroll) {
-        container.scrollTo({
-          left: verticalLayout ? container.scrollLeft : targetScroll,
-          top: verticalLayout ? targetScroll : container.scrollTop,
-          behavior: 'smooth'
-        })
-      }
+    } else {
+      container.scrollBy({
+        left: verticalLayout ? 0 : scrollAmount,
+        top: verticalLayout ? scrollAmount : 0,
+        behavior: 'smooth'
+      })
     }
-  }, 16)
-
-  // 创建实际的 handleWheel 函数
-  const handleWheel = (event: WheelEvent) => {
-    // 滚动时隐藏所有菜单
-    hideContextMenu()
-    handleWheelThrottled(event)
   }
 
   const ensureSelectedItemVisible = () => {
@@ -442,7 +436,6 @@ export function useScrollAndTags(
       isTagSwitching: true,
       activeTagId: tagId
     }))
-
 
     try {
       const currentTagIds = tagId === 'all' ? [] : [tagId]

@@ -2,6 +2,8 @@ import clipboardDatabase from '../infrastructure/database/clipboard-database'
 import type { ClipboardItem, AppInfo } from '../features/clipboard/types/clipboard-types'
 import { ClipboardDataConverter } from '../features/clipboard/types/clipboard-types'
 import log from 'electron-log'
+import { isWayland } from '../system/session'
+import { getLinuxAppIcon } from './linux-app-icon'
 
 /**
  * 剪贴板历史记录服务
@@ -80,6 +82,18 @@ class ClipboardHistoryService {
         }
       }
 
+      // Older records may have been saved while executable icon lookup failed.
+      // Enrich the response without changing the recorded source application.
+      if (isWayland) {
+        await Promise.all(
+          Object.values(apps).map(async (appInfo) => {
+            if (!appInfo.icon) {
+              appInfo.icon = await getLinuxAppIcon(appInfo.application, appInfo.path)
+            }
+          })
+        )
+      }
+
       return { items, apps }
     } catch (error) {
       log.error('[剪贴板历史服务] 搜索历史记录失败:', error)
@@ -104,10 +118,11 @@ class ClipboardHistoryService {
       const tags = tagRecords.map((tag) => ClipboardDataConverter.tagRecordToTag(tag))
       const item = ClipboardDataConverter.recordToItem(record, tags)
 
-      const appRecord = record.source_app
-        ? clipboardDatabase.getAppById(record.source_app)
-        : null
+      const appRecord = record.source_app ? clipboardDatabase.getAppById(record.source_app) : null
       const app = appRecord ? ClipboardDataConverter.appRecordToAppInfo(appRecord) : undefined
+      if (isWayland && app && !app.icon) {
+        app.icon = await getLinuxAppIcon(app.application, app.path)
+      }
 
       return { item, app }
     } catch (error) {

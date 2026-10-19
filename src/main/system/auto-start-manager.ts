@@ -83,7 +83,6 @@ class AutoStartManager {
         if (enabled) {
           app.setLoginItemSettings({
             openAtLogin: enabled,
-            openAsHidden: true, // 自动启动时隐藏窗口
             name: this.appName,
             path: process.execPath
           })

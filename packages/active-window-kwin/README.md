@@ -11,7 +11,7 @@ pnpm install
 pnpm run build:native
 ```
 
-根项目的 `pnpm dev` 和 `pnpm build` 会自动执行原生构建。使用 Node-API 8，同一二进制可供 Node.js 和 Electron 使用，无须针对 Electron ABI 重编译。
+根项目的 `pnpm dev` 和 `pnpm build` 仅在目标架构的 `.node` 文件缺失时自动构建；文件存在时直接复用，不调用 Cargo。修改 Rust 源码或更新原生依赖后，单独执行 `pnpm run build:native` 重建。使用 Node-API 8，同一二进制可供 Node.js 和 Electron 使用，无须针对 Electron ABI 重编译。
 
 支持 Linux glibc 的 x64 和 arm64；产物为包内的 `active_window_kwin.linux-{arch}-gnu.node`。默认构建本机架构，交叉构建时设置 `CARGO_BUILD_TARGET`，并自行配置对应的 Rust target、C 编译器和 linker。构建使用 Cargo.lock；原生产物与 target 目录不入库。
 
