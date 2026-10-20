@@ -1,9 +1,8 @@
-import __Store from 'electron-store'
-
-//@ts-ignore
-export const Store = __Store.default || __Store
+import Store from 'electron-store'
 import { BrowserWindow } from 'electron'
 import logger from '../utils/logger'
+
+export { Store }
 
 /**
  * 加密的 Electron Store 单例类
@@ -11,7 +10,7 @@ import logger from '../utils/logger'
  */
 class EncryptedStore {
   private static instance: EncryptedStore
-  private store: any
+  private store: Store<Record<string, unknown>>
 
   private constructor() {
     // 使用 electron-store 内置加密功能
@@ -45,7 +44,7 @@ class EncryptedStore {
    * @param defaultValue 默认值
    * @returns 存储的值或默认值
    */
-  public get<T = any>(key: string, defaultValue?: T): T {
+  public get<T = unknown>(key: string, defaultValue?: T): T {
     try {
       return this.store.get(key, defaultValue) as T
     } catch (error) {
@@ -54,7 +53,7 @@ class EncryptedStore {
     }
   }
 
-  public raw_set<T = any>(key: string, value: T): void {
+  public raw_set<T = unknown>(key: string, value: T): void {
     try {
       this.store.set(key, value)
     } catch (error) {
@@ -68,7 +67,7 @@ class EncryptedStore {
    * @param key 键名
    * @param value 要存储的值
    */
-  public set<T = any>(key: string, value: T): void {
+  public set<T = unknown>(key: string, value: T): void {
     try {
       this.store.set(key, value)
 
@@ -85,7 +84,7 @@ class EncryptedStore {
    * @param key 变更的键名
    * @param value 新的值
    */
-  private broadcastStoreChange<T = any>(key: string, value: T): void {
+  private broadcastStoreChange<T = unknown>(key: string, value: T): void {
     try {
       // 获取所有窗口并发送事件
       const allWindows = BrowserWindow.getAllWindows()
@@ -185,7 +184,7 @@ class EncryptedStore {
    * 批量设置数据
    * @param data 要设置的数据对象
    */
-  public setMultiple(data: Record<string, any>): void {
+  public setMultiple(data: Record<string, unknown>): void {
     try {
       for (const [key, value] of Object.entries(data)) {
         this.store.set(key, value)
@@ -203,9 +202,9 @@ class EncryptedStore {
    * @param keys 要获取的键名数组
    * @returns 包含所有键值对的对象
    */
-  public getMultiple(keys: string[]): Record<string, any> {
+  public getMultiple(keys: string[]): Record<string, unknown> {
     try {
-      const result: Record<string, any> = {}
+      const result: Record<string, unknown> = {}
       for (const key of keys) {
         if (this.store.has(key)) {
           result[key] = this.store.get(key)
@@ -233,7 +232,7 @@ class EncryptedStore {
   /**
    * 获取原始 store 实例（用于高级操作）
    */
-  public getStore(): any {
+  public getStore(): Store<Record<string, unknown>> {
     return this.store
   }
 }

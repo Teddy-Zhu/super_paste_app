@@ -7,6 +7,7 @@ export const STORE_KEY = {
   SETTINGS_MAX_KEEP_TIME: 'settings.maxKeepTime',
   SETTINGS_ENABLE_LOCAL_OCR: 'settings.enableLocalOCR',
   SETTINGS_OCR_MODE: 'settings.ocrMode',
+  SETTINGS_OCR_LOCAL_MODEL: 'settings.ocrLocalModel',
   SETTINGS_OCR_REMOTE_URL: 'settings.ocrRemoteUrl',
   SETTINGS_OCR_REMOTE_EXTRA_PARAMS: 'settings.ocrRemoteExtraParams',
   SETTINGS_OCR_REMOTE_IMAGE_FIELD_NAME: 'settings.ocrRemoteImageFieldName',

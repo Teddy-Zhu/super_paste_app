@@ -1,24 +1,34 @@
 import { watch, toRefs } from 'vue'
 import type { PiniaPluginContext } from 'pinia'
 
+declare module 'pinia' {
+  export interface PiniaCustomProperties {
+    $setSilent(key: string, value: unknown): void
+  }
+}
+
 type FieldChangeCallback = (params: {
   storeId: string
   key: string
-  oldValue: any
-  newValue: any
+  oldValue: unknown
+  newValue: unknown
 }) => void
 
 export function createFieldChangePlugin(callback: FieldChangeCallback) {
   return (context: PiniaPluginContext) => {
     const { store } = context
     const stateRefs = toRefs(store.$state)
-    const silentFlags = new Set<string>()
+    let silent = false
 
     // 注入方法：store.$setSilent(key, value)
-    store.$setSilent = (key: string, value: any) => {
+    store.$setSilent = (key: string, value: unknown) => {
       if (key in store.$state) {
-        silentFlags.add(`${store.$id}.${key}`)
-        store[key] = value
+        silent = true
+        try {
+          store.$state[key] = value
+        } finally {
+          silent = false
+        }
       } else {
         console.warn(`[fieldChangePlugin] key "${key}" 不存在于 store "${store.$id}" 中`)
       }
@@ -32,9 +42,7 @@ export function createFieldChangePlugin(callback: FieldChangeCallback) {
       watch(
         stateRefs[key],
         (newVal) => {
-          const flag = `${store.$id}.${key}`
-          if (silentFlags.has(flag)) {
-            silentFlags.delete(flag)
+          if (silent) {
             oldVal = newVal
             return // 👈 跳过本次回调
           }
@@ -48,7 +56,8 @@ export function createFieldChangePlugin(callback: FieldChangeCallback) {
           oldVal = newVal
         },
         {
-          deep: true
+          deep: true,
+          flush: 'sync'
         }
       )
     }

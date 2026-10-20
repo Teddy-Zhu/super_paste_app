@@ -2,6 +2,7 @@
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useSyncStore } from '@renderer/stores/sync'
 import { invoke, onSimple } from '@renderer/api/ipc'
+import type { ScheduledSyncStatus, SyncResult } from '../../../../../main/sync/types'
 
 // 使用同步 store
 const syncStore = useSyncStore()
@@ -31,7 +32,7 @@ const isSaving = ref(false)
 const isManualSyncing = ref(false)
 const connectionTestResult = ref<{ success: boolean; message: string } | null>(null)
 const saveMessage = ref('')
-const syncStatus = ref<any>(null)
+const syncStatus = ref<ScheduledSyncStatus | null>(null)
 const lastSyncTime = ref<string>('')
 const hasUnsavedChanges = ref(false)
 const currentSyncStatus = ref<string>('idle') // 当前同步状态：idle, syncing, success, error
@@ -58,7 +59,7 @@ const directionOptions = [
 ]
 
 // 初始化本地配置
-const initializeLocalConfig = () => {
+const initializeLocalConfig = (): void => {
   localConfig.value = {
     enabled: syncStore.enabled,
     provider: syncStore.provider,
@@ -76,7 +77,7 @@ const initializeLocalConfig = () => {
 const isWebDAVProvider = computed(() => localConfig.value.provider === 'webdav')
 
 // 切换同步启用状态
-const toggleSyncEnabled = () => {
+const toggleSyncEnabled = (): void => {
   localConfig.value.enabled = !localConfig.value.enabled
   hasUnsavedChanges.value = true
   // 清除之前的连接测试结果
@@ -84,7 +85,7 @@ const toggleSyncEnabled = () => {
 }
 
 // 更新同步提供者
-const updateProvider = (provider: string) => {
+const updateProvider = (provider: string): void => {
   localConfig.value.provider = provider
   hasUnsavedChanges.value = true
   // 清除之前的连接测试结果
@@ -92,27 +93,31 @@ const updateProvider = (provider: string) => {
 }
 
 // 更新同步方向
-const updateDirection = (direction: string) => {
+const updateDirection = (direction: string): void => {
   localConfig.value.direction = direction
   hasUnsavedChanges.value = true
 }
 
 // 更新同步间隔
-const updateInterval = (interval: number) => {
+const updateInterval = (interval: number): void => {
   localConfig.value.interval = interval
   hasUnsavedChanges.value = true
 }
 
 // 更新仅同步配置选项
-const updateConfigOnly = (configOnly: boolean) => {
+const updateConfigOnly = (configOnly: boolean): void => {
   localConfig.value.configOnly = configOnly
   hasUnsavedChanges.value = true
 }
 
 // 更新 WebDAV 配置
-const updateWebDAVConfig = (field: string, value: any) => {
+type WebDAVFields = ReturnType<typeof useSyncStore>['params']['webdav']
+const updateWebDAVConfig = <K extends keyof WebDAVFields>(
+  field: K,
+  value: WebDAVFields[K]
+): void => {
   if (localConfig.value.params.webdav) {
-    ;(localConfig.value.params.webdav as any)[field] = value
+    localConfig.value.params.webdav[field] = value
     hasUnsavedChanges.value = true
     // 清除之前的连接测试结果
     connectionTestResult.value = null
@@ -142,7 +147,21 @@ const isConfigValid = computed(() => {
  * 构建同步配置对象
  * 用于测试连接和保存配置时的统一配置构建
  */
-const buildSyncConfig = () => {
+const buildSyncConfig = (): {
+  enabled: boolean
+  syncInterval: number
+  providerType: 'webdav'
+  providerConfig: {
+    syncDirection: string
+    configOnly: boolean
+    serverUrl: string
+    username: string
+    password: string
+    remotePath: string
+    timeout: number
+    useHttps: boolean
+  }
+} => {
   if (!isWebDAVProvider.value) {
     throw new Error('当前仅支持 WebDAV 提供者')
   }
@@ -167,7 +186,7 @@ const buildSyncConfig = () => {
 }
 
 // 测试连接（使用传入配置的方式）
-const testConnection = async () => {
+const testConnection = async (): Promise<void> => {
   // 预检查
   if (!isWebDAVProvider.value) {
     connectionTestResult.value = { success: false, message: '请先选择同步提供者' }
@@ -193,10 +212,11 @@ const testConnection = async () => {
     const result = await invoke('scheduled-sync:test-connection', testConfig)
 
     connectionTestResult.value = {
-      success: result,
-      message: result
-        ? '连接测试成功！服务器配置正确'
-        : '连接失败，请检查服务器地址、用户名和密码是否正确'
+      success: result === true,
+      message:
+        result === true
+          ? '连接测试成功！服务器配置正确'
+          : '连接失败，请检查服务器地址、用户名和密码是否正确'
     }
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : '未知错误'
@@ -210,7 +230,7 @@ const testConnection = async () => {
 }
 
 // 显示保存消息
-const showSaveMessage = (message: string) => {
+const showSaveMessage = (message: string): void => {
   saveMessage.value = message
   setTimeout(() => {
     saveMessage.value = ''
@@ -218,7 +238,7 @@ const showSaveMessage = (message: string) => {
 }
 
 // 保存配置
-const saveConfig = async () => {
+const saveConfig = async (): Promise<void> => {
   if (isSaving.value) return
   isSaving.value = true
   connectionTestResult.value = null
@@ -239,7 +259,7 @@ const saveConfig = async () => {
         const testConfig = buildSyncConfig()
         const connectionResult = await invoke('scheduled-sync:test-connection', testConfig)
 
-        if (!connectionResult) {
+        if (connectionResult !== true) {
           showSaveMessage('连接测试失败，请检查服务器地址、用户名和密码是否正确')
           return
         }
@@ -260,7 +280,8 @@ const saveConfig = async () => {
 
     // 等待1秒后刷新计划同步任务
     await new Promise((resolve) => setTimeout(resolve, 1000))
-    await invoke('scheduled-sync:refresh')
+    const refreshed = await invoke('scheduled-sync:refresh')
+    if (refreshed !== true) throw new Error('刷新同步任务失败')
 
     hasUnsavedChanges.value = false
     showSaveMessage('配置保存成功')
@@ -275,14 +296,14 @@ const saveConfig = async () => {
 }
 
 // 重置配置
-const resetConfig = () => {
+const resetConfig = (): void => {
   initializeLocalConfig()
   connectionTestResult.value = null
   showSaveMessage('配置已重置')
 }
 
 // 手动同步
-const manualSync = async () => {
+const manualSync = async (): Promise<void> => {
   // 防止重复点击
   if (isManualSyncing.value) return
 
@@ -307,7 +328,7 @@ const manualSync = async () => {
   isManualSyncing.value = true
 
   try {
-    let result: any
+    let result: { success: boolean; message?: string; error?: string }
     if (syncStore.enabled) {
       // 如果同步已启用，直接使用现有配置
       result = await invoke('scheduled-sync:manual-sync')
@@ -322,7 +343,7 @@ const manualSync = async () => {
       // 刷新同步状态
       await getSyncStatus()
     } else {
-      alert('手动同步失败: ' + result.message)
+      alert('手动同步失败: ' + (result.message || result.error || '未知错误'))
     }
   } catch (error) {
     alert('手动同步失败: ' + (error as Error).message)
@@ -332,10 +353,10 @@ const manualSync = async () => {
 }
 
 // 获取同步状态
-const getSyncStatus = async () => {
+const getSyncStatus = async (): Promise<void> => {
   try {
     const result = await invoke('scheduled-sync:get-status')
-    if (result.success) {
+    if (result.success && result.data) {
       syncStatus.value = result.data
       if (result.data.lastSyncTime) {
         lastSyncTime.value = new Date(result.data.lastSyncTime).toLocaleString()
@@ -350,7 +371,11 @@ const getSyncStatus = async () => {
 let syncStatusUnsubscribe: (() => void) | null = null
 
 // 处理同步状态更新事件
-const handleSyncStatusUpdate = (data: any) => {
+const handleSyncStatusUpdate = (data: {
+  type: string
+  timestamp?: number
+  result?: SyncResult
+}): void => {
   switch (data.type) {
     case 'sync-started':
     case 'manual-sync-started':
@@ -455,8 +480,8 @@ onUnmounted(() => {
         <div class="setting-control">
           <select
             :value="localConfig.provider"
-            @change="updateProvider(($event.target as HTMLSelectElement).value)"
             class="select-input"
+            @change="updateProvider(($event.target as HTMLSelectElement).value)"
           >
             <option value="">请选择同步提供者</option>
             <option value="webdav">WebDAV</option>
@@ -465,7 +490,7 @@ onUnmounted(() => {
       </div>
 
       <!-- 同步间隔 -->
-      <div class="setting-card" v-if="localConfig.enabled">
+      <div v-if="localConfig.enabled" class="setting-card">
         <div class="setting-info">
           <h4 class="setting-title">同步间隔</h4>
           <p class="setting-description">设置自动同步的时间间隔</p>
@@ -473,8 +498,8 @@ onUnmounted(() => {
         <div class="setting-control">
           <select
             :value="localConfig.interval"
-            @change="updateInterval(parseInt(($event.target as HTMLSelectElement).value))"
             class="select-input"
+            @change="updateInterval(parseInt(($event.target as HTMLSelectElement).value))"
           >
             <option v-for="option in intervalOptions" :key="option.value" :value="option.value">
               {{ option.label }}
@@ -484,7 +509,7 @@ onUnmounted(() => {
       </div>
 
       <!-- 仅同步配置 -->
-      <div class="setting-card" v-if="localConfig.enabled">
+      <div v-if="localConfig.enabled" class="setting-card">
         <div class="setting-info">
           <h4 class="setting-title">仅同步配置</h4>
           <p class="setting-description">仅同步配置文件，不进行数据同步</p>
@@ -502,7 +527,7 @@ onUnmounted(() => {
       </div>
 
       <!-- 同步方向 -->
-      <div class="setting-card" v-if="localConfig.enabled">
+      <div v-if="localConfig.enabled" class="setting-card">
         <div class="setting-info">
           <h4 class="setting-title">同步方向</h4>
           <p class="setting-description">选择数据同步的方向</p>
@@ -514,8 +539,8 @@ onUnmounted(() => {
                 type="radio"
                 :value="option.value"
                 :checked="localConfig.direction === option.value"
-                @change="updateDirection(option.value)"
                 class="radio-input"
+                @change="updateDirection(option.value)"
               />
               <span class="radio-label">
                 <strong>{{ option.label }}</strong>
@@ -545,9 +570,9 @@ onUnmounted(() => {
             <input
               type="url"
               :value="localConfig.params.webdav.serverUrl"
-              @input="updateWebDAVConfig('serverUrl', ($event.target as HTMLInputElement).value)"
               placeholder="https://example.com/webdav"
               class="text-input"
+              @input="updateWebDAVConfig('serverUrl', ($event.target as HTMLInputElement).value)"
             />
           </div>
         </div>
@@ -562,9 +587,9 @@ onUnmounted(() => {
             <input
               type="text"
               :value="localConfig.params.webdav.username"
-              @input="updateWebDAVConfig('username', ($event.target as HTMLInputElement).value)"
               placeholder="输入用户名"
               class="text-input"
+              @input="updateWebDAVConfig('username', ($event.target as HTMLInputElement).value)"
             />
           </div>
         </div>
@@ -579,9 +604,9 @@ onUnmounted(() => {
             <input
               type="password"
               :value="localConfig.params.webdav.password"
-              @input="updateWebDAVConfig('password', ($event.target as HTMLInputElement).value)"
               placeholder="输入密码"
               class="text-input"
+              @input="updateWebDAVConfig('password', ($event.target as HTMLInputElement).value)"
             />
           </div>
         </div>
@@ -596,9 +621,9 @@ onUnmounted(() => {
             <input
               type="text"
               :value="localConfig.params.webdav.remotePath"
-              @input="updateWebDAVConfig('remotePath', ($event.target as HTMLInputElement).value)"
               placeholder="/super-paste"
               class="text-input"
+              @input="updateWebDAVConfig('remotePath', ($event.target as HTMLInputElement).value)"
             />
           </div>
         </div>
@@ -614,16 +639,16 @@ onUnmounted(() => {
               <input
                 type="number"
                 :value="localConfig.params.webdav.timeout"
+                min="5000"
+                max="120000"
+                step="1000"
+                class="number-input"
                 @input="
                   updateWebDAVConfig(
                     'timeout',
                     parseInt(($event.target as HTMLInputElement).value) || 30000
                   )
                 "
-                min="5000"
-                max="120000"
-                step="1000"
-                class="number-input"
               />
               <span class="number-unit">毫秒</span>
             </div>
@@ -655,22 +680,22 @@ onUnmounted(() => {
       <div class="sync-actions">
         <div class="action-buttons">
           <button
-            @click="testConnection"
             :disabled="isTestingConnection || !isConfigValid"
             class="shortcut-button secondary"
+            @click="testConnection"
           >
             {{ isTestingConnection ? '测试中...' : '测试连接' }}
           </button>
 
           <button
-            @click="manualSync"
             :disabled="!isConfigValid || isManualSyncing"
             class="shortcut-button primary"
+            @click="manualSync"
           >
             {{ isManualSyncing ? '同步中...' : '手动同步' }}
           </button>
 
-          <button @click="getSyncStatus" class="shortcut-button secondary">刷新状态</button>
+          <button class="shortcut-button secondary" @click="getSyncStatus">刷新状态</button>
         </div>
 
         <!-- 配置验证提示 -->
@@ -698,17 +723,17 @@ onUnmounted(() => {
 
       <div class="save-actions">
         <button
-          @click="saveConfig"
           :disabled="isSaving || (!hasUnsavedChanges && !localConfig.enabled)"
           class="shortcut-button primary save-button"
+          @click="saveConfig"
         >
           {{ isSaving ? '保存中...' : '保存配置' }}
         </button>
 
         <button
-          @click="resetConfig"
           :disabled="isSaving || !hasUnsavedChanges"
           class="shortcut-button secondary"
+          @click="resetConfig"
         >
           重置配置
         </button>
@@ -739,7 +764,7 @@ onUnmounted(() => {
         </div>
 
         <!-- 实时同步状态 -->
-        <div class="status-card" v-if="currentSyncStatus !== 'idle' || syncStatusMessage">
+        <div v-if="currentSyncStatus !== 'idle' || syncStatusMessage" class="status-card">
           <div class="status-info">
             <h5 class="status-title">实时状态</h5>
             <p

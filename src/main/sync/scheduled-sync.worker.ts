@@ -140,7 +140,7 @@ class ScheduledSyncWorker extends BaseWorker {
 
     // 根据提供者类型检查具体配置
     if (config.providerType === 'webdav') {
-      const webdavConfig = config.providerConfig as any
+      const webdavConfig = config.providerConfig
       return !!(
         webdavConfig.serverUrl &&
         webdavConfig.username &&
@@ -621,11 +621,13 @@ class ScheduledSyncWorker extends BaseWorker {
 
   private async handleRequest(request: WorkerRequest): Promise<void> {
     try {
-      let result: any
+      let result: unknown
 
       switch (request.method) {
         case 'initialize':
-          result = await this.initialize(request.params)
+          result = await this.initialize(
+            request.params as Parameters<ScheduledSyncWorker['initialize']>[0]
+          )
           break
         case 'startScheduledSync':
           result = await this.startScheduledSync()
@@ -637,25 +639,33 @@ class ScheduledSyncWorker extends BaseWorker {
           result = await this.manualSync()
           break
         case 'manualSyncWithConfig':
-          result = await this.manualSyncWithConfig(request.params)
+          result = await this.manualSyncWithConfig(
+            request.params as Parameters<ScheduledSyncWorker['manualSyncWithConfig']>[0]
+          )
           break
         case 'testConnection':
           result = await this.testConnection()
           break
         case 'testConnectionWithConfig':
-          result = await this.testConnectionWithConfig(request.params)
+          result = await this.testConnectionWithConfig(
+            request.params as Parameters<ScheduledSyncWorker['testConnectionWithConfig']>[0]
+          )
           break
         case 'getSyncStatus':
           result = this.getSyncStatus()
           break
         case 'updateConfig':
-          result = await this.updateConfig(request.params)
+          result = await this.updateConfig(
+            request.params as Parameters<ScheduledSyncWorker['updateConfig']>[0]
+          )
           break
         case 'destroy':
           result = this.destroy()
           break
         case 'exportHeapdump':
-          result = this.exportHeapdump(request.params)
+          result = this.exportHeapdump(
+            request.params as Parameters<ScheduledSyncWorker['exportHeapdump']>[0]
+          )
           break
         default:
           throw new Error(`未知方法: ${request.method}`)

@@ -205,7 +205,7 @@ class ClipboardHistoryCleanerWorker extends BaseWorker {
         }
       }
 
-      let deletedRecordIds: string[] = []
+      const deletedRecordIds: string[] = []
       let deletedCount = 0
 
       // 1. 基于时间的清理
@@ -375,14 +375,18 @@ class ClipboardHistoryCleanerWorker extends BaseWorker {
    */
   private async handleRequest(request: WorkerRequest): Promise<void> {
     try {
-      let result: any
+      let result: unknown
 
       switch (request.method) {
         case 'initialize':
-          result = this.initialize(request.params)
+          result = this.initialize(
+            request.params as Parameters<ClipboardHistoryCleanerWorker['initialize']>[0]
+          )
           break
         case 'updateConfig':
-          result = this.updateConfig(request.params)
+          result = this.updateConfig(
+            request.params as Parameters<ClipboardHistoryCleanerWorker['updateConfig']>[0]
+          )
           break
         case 'getConfig':
           result = this.getConfig()
@@ -397,13 +401,17 @@ class ClipboardHistoryCleanerWorker extends BaseWorker {
           result = await this.performCleanup()
           break
         case 'checkCountBasedCleanup':
-          result = await this.checkCountBasedCleanup(request.params)
+          result = await this.checkCountBasedCleanup(
+            request.params as Parameters<ClipboardHistoryCleanerWorker['checkCountBasedCleanup']>[0]
+          )
           break
         case 'destroy':
           result = this.destroy()
           break
         case 'exportHeapdump':
-          result = this.exportHeapdump(request.params)
+          result = this.exportHeapdump(
+            request.params as Parameters<ClipboardHistoryCleanerWorker['exportHeapdump']>[0]
+          )
           break
         default:
           throw new Error(`未知方法: ${request.method}`)

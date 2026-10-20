@@ -1,3 +1,4 @@
+import { DEFAULT_OCR_MODEL_ID } from '../../../../shared/ocr-models'
 import { parentPort } from 'node:worker_threads'
 import { BaseWorker } from '../../../workers/base-worker'
 import { ClipboardData } from '@teddyzhu/clipboard'
@@ -12,7 +13,6 @@ import { ClipboardDataConverter } from '../types/clipboard-types'
 import logger from '../../../utils/worker-logger'
 import { qrCodeService } from '../../../services/qrcode-service'
 import path from 'path'
-import fs from 'fs'
 import { ocrService } from '../../../services/ocr-service'
 import type { OCRServiceOptions } from '../../../services/ocr-service'
 import type { ActiveWindowInfo } from '../../../services/active-window-provider'
@@ -35,7 +35,8 @@ class ClipboardManagerWorker extends BaseWorker {
   private sourceTracker = new ClipboardSourceTracker()
   private appSourceIssue: string | undefined
   private ocrResourcePath: string = ''
-  private ocrIsDev: boolean = false
+  private ocrUpdateQueue: Promise<void> = Promise.resolve()
+  private ocrInitializationError = ''
   private ocrInitializing: Promise<boolean> | null = null
   private ocrConfigHash: string = ''
 
@@ -46,6 +47,7 @@ class ClipboardManagerWorker extends BaseWorker {
       enableAutoSave: false,
       enableLocalOCR: false,
       ocrMode: 'local',
+      ocrLocalModel: DEFAULT_OCR_MODEL_ID,
       ocrRemoteConfig: {
         url: '',
         extraParams: '{}',
@@ -64,17 +66,20 @@ class ClipboardManagerWorker extends BaseWorker {
     return '剪贴板变化检测 Worker'
   }
 
-  public async initialize(params?: any): Promise<void> {
+  public async initialize(
+    params?:
+      | Partial<ClipboardManagerConfig>
+      | {
+          config?: Partial<ClipboardManagerConfig>
+          userDataPath: string
+        }
+  ): Promise<void> {
     // 处理参数兼容性
     let config: Partial<ClipboardManagerConfig> | undefined
     let userDataPath: string | undefined
-    let isPackaged: boolean = true
-    let appPath: string | undefined
     if (params && 'config' in params) {
       config = params.config
       userDataPath = params.userDataPath
-      isPackaged = params.isPackaged ?? true
-      appPath = params.appPath
     } else {
       config = params as Partial<ClipboardManagerConfig>
     }
@@ -100,7 +105,7 @@ class ClipboardManagerWorker extends BaseWorker {
     }
 
     // 设置 OCR 相关参数
-    this.setupOCRParameters(isPackaged, appPath)
+    if (userDataPath) this.ocrResourcePath = path.join(userDataPath, 'ocr-models')
     if (this.config.enableLocalOCR) {
       await this.ensureOCRServiceInitialized()
     }
@@ -108,10 +113,10 @@ class ClipboardManagerWorker extends BaseWorker {
     // 初始化时进行一次全量检查
     try {
       const rawData = this.poller.readClipboardDirect()
-      const converted = this.processor.convertClipboardData(rawData)
+      const converted = rawData
       await this.processor.buildClipboardContent(converted)
-      // Store current hash in processor/repo context passed if needed, 
-      // but modules handle their own state mostly. 
+      // Store current hash in processor/repo context passed if needed,
+      // but modules handle their own state mostly.
       // Sync logic might need to align last hash.
       // Actually Repository maintains lastItemHash.
       // But Processor maintains lastQuickHash.
@@ -124,68 +129,18 @@ class ClipboardManagerWorker extends BaseWorker {
     }
   }
 
-  private setupOCRParameters(isPackaged?: boolean, appPath?: string): void {
-    try {
-      logger.info('[剪贴板管理器 Worker] 是否为打包环境:', isPackaged)
-      this.ocrIsDev = !isPackaged
-      this.ocrResourcePath = this.resolveOCRResourcePath(Boolean(isPackaged), appPath)
-
-      if (this.ocrResourcePath) {
-        logger.info('[剪贴板管理器 Worker] OCR 资源路径:', this.ocrResourcePath)
-      } else {
-        logger.warn('[剪贴板管理器 Worker] 未找到可用的 OCR 资源路径')
-      }
-    } catch (error) {
-      logger.error('[剪贴板管理器 Worker] OCR 参数设置失败:', error)
-      this.ocrResourcePath = ''
-      this.ocrIsDev = false
-    }
-  }
-
-  private resolveOCRResourcePath(isPackaged: boolean, appPath?: string): string {
-    const normalizedAppPath = (appPath || '').replace(/[\\/]app\.asar$/, '')
-    const candidates = isPackaged
-      ? [
-        path.join(process.resourcesPath || '', 'resources', 'ocr'),
-        path.join(process.resourcesPath || '', 'ocr'),
-        path.join(normalizedAppPath, 'resources', 'ocr'),
-        path.join(normalizedAppPath, 'ocr')
-      ]
-      : [
-        path.resolve(process.cwd(), 'resources', 'ocr'),
-        path.resolve(normalizedAppPath, 'resources', 'ocr'),
-        path.resolve(__dirname, '..', '..', '..', '..', '..', 'resources', 'ocr')
-      ]
-
-    for (const candidate of candidates) {
-      if (this.isValidOCRResourcePath(candidate)) {
-        return candidate
-      }
-    }
-
-    logger.warn('[剪贴板管理器 Worker] OCR 资源路径候选均不可用:', candidates)
-    return ''
-  }
-
-  private isValidOCRResourcePath(resourcePath: string): boolean {
-    if (!resourcePath) {
-      return false
-    }
-    const requiredFiles = ['ppocr_det.onnx', 'ppocr_rec.onnx', 'ppocr_keys_v1.txt']
-    return requiredFiles.every((fileName) => fs.existsSync(path.join(resourcePath, fileName)))
-  }
-
   private buildOCRServiceOptions(): OCRServiceOptions | null {
     if (this.config.ocrMode === 'local') {
       if (!this.ocrResourcePath) {
-        logger.warn('[剪贴板管理器 Worker] OCR 初始化失败：资源路径为空')
+        this.ocrInitializationError = 'OCR 模型缓存路径尚未初始化'
+        logger.warn('[剪贴板管理器 Worker]', this.ocrInitializationError)
         return null
       }
 
       return {
         mode: 'local',
         resourcePath: this.ocrResourcePath,
-        isDev: this.ocrIsDev
+        modelId: this.config.ocrLocalModel
       }
     }
 
@@ -205,7 +160,7 @@ class ClipboardManagerWorker extends BaseWorker {
     return JSON.stringify({
       mode: this.config.ocrMode,
       resourcePath: this.ocrResourcePath,
-      isDev: this.ocrIsDev,
+      modelId: this.config.ocrLocalModel,
       remoteConfig: this.config.ocrRemoteConfig
     })
   }
@@ -222,7 +177,8 @@ class ClipboardManagerWorker extends BaseWorker {
     }
 
     if (this.ocrInitializing) {
-      return this.ocrInitializing
+      await this.ocrInitializing
+      return this.ensureOCRServiceInitialized(forceReinitialize)
     }
 
     this.ocrInitializing = (async () => {
@@ -232,10 +188,15 @@ class ClipboardManagerWorker extends BaseWorker {
         } else {
           await ocrService.initialize(options)
         }
+        this.ocrInitializationError = ''
         this.ocrConfigHash = nextHash
+        this.repository
+          .processPendingOCR(() => this.config.enableLocalOCR)
+          .catch((error) => logger.error('[OCR] 处理待识别图片失败:', error))
         logger.info('[剪贴板管理器 Worker] OCR 服务初始化完成')
         return true
       } catch (error) {
+        this.ocrInitializationError = error instanceof Error ? error.message : String(error)
         logger.error('[剪贴板管理器 Worker] OCR 服务初始化失败:', error)
         return false
       } finally {
@@ -283,7 +244,7 @@ class ClipboardManagerWorker extends BaseWorker {
       const content = await this.processor.buildClipboardContent(converted)
       const hash = ClipboardDataConverter.generateContentHash(content) // or processor.generateClipboardHash(converted)?
       // processor.generateClipboardHash does buildClipboardContent then hash.
-      // but we need 'content' to save it. 
+      // but we need 'content' to save it.
 
       // Check if repo has it (optimization to avoid building content if we could allow repo to just check hash?)
       // But repo needs content to insert if new.
@@ -390,33 +351,36 @@ class ClipboardManagerWorker extends BaseWorker {
     return { ...this.config }
   }
 
-  public async updateConfig(newConfig: Partial<ClipboardManagerConfig>): Promise<void> {
-    const prevConfigHash = this.buildOCRConfigHash()
-    const prevEnableLocalOCR = this.config.enableLocalOCR
-    this.config = {
-      ...this.config,
-      ...newConfig,
-      ocrRemoteConfig: {
-        ...this.config.ocrRemoteConfig,
-        ...(newConfig.ocrRemoteConfig || {})
+  public updateConfig(newConfig: Partial<ClipboardManagerConfig>): Promise<void> {
+    const update = this.ocrUpdateQueue.then(async () => {
+      const previous = this.config
+      const previousHash = this.buildOCRConfigHash()
+      this.config = {
+        ...previous,
+        ...newConfig,
+        ocrRemoteConfig: { ...previous.ocrRemoteConfig, ...newConfig.ocrRemoteConfig }
       }
-    }
-    const hasOCRConfigChanged = prevConfigHash !== this.buildOCRConfigHash()
-
-    if (!prevEnableLocalOCR && this.config.enableLocalOCR) {
-      await this.ensureOCRServiceInitialized()
-      return
-    }
-
-    if (prevEnableLocalOCR && !this.config.enableLocalOCR) {
-      ocrService.stop()
-      this.ocrConfigHash = ''
-      return
-    }
-
-    if (this.config.enableLocalOCR && hasOCRConfigChanged) {
-      await this.ensureOCRServiceInitialized()
-    }
+      try {
+        if (
+          !this.config.enableLocalOCR &&
+          (previous.enableLocalOCR || previousHash !== this.buildOCRConfigHash())
+        ) {
+          await ocrService.stop()
+          this.ocrConfigHash = ''
+        } else if (this.config.enableLocalOCR && !(await this.ensureOCRServiceInitialized())) {
+          throw new Error(this.ocrInitializationError || 'OCR 服务初始化失败')
+        }
+        if (!this.config.enableLocalOCR) this.repository.clearPendingOCR()
+      } catch (error) {
+        this.config = previous
+        throw error
+      }
+    })
+    this.ocrUpdateQueue = update.then(
+      () => undefined,
+      () => undefined
+    )
+    return update
   }
 
   public isListeningActive(): boolean {
@@ -426,20 +390,22 @@ class ClipboardManagerWorker extends BaseWorker {
   public async syncClipboardHash(): Promise<void> {
     try {
       const raw = this.poller.readClipboardDirect()
-      const converted = this.processor.convertClipboardData(raw)
+      const converted = raw
       await this.processor.generateClipboardHash(converted)
       // We might want to update repo's 'lastItemHash' without saving?
       // Or just update internal state (which is now in repo).
       // If we want to align, we might need a method in repo `setLastItemHash`?
       // Or just let it be.
       this.processor.checkQuickClipboardChange(converted)
-    } catch (e) { }
+    } catch (error) {
+      logger.warn('[ClipboardManagerWorker] 同步剪贴板哈希失败:', error)
+    }
     this.resetErrorState()
   }
 
   public async getCurrentClipboard(): Promise<ClipboardContent> {
     const raw = this.poller.readClipboardDirect()
-    return this.processor.buildClipboardContent(this.processor.convertClipboardData(raw))
+    return this.processor.buildClipboardContent(raw)
   }
 
   // Restore Methods
@@ -468,12 +434,15 @@ class ClipboardManagerWorker extends BaseWorker {
         text
       })
       return true
-    } catch (e) {
+    } catch (error) {
+      logger.error('[ClipboardManagerWorker] 还原纯文本失败:', error)
       return false
     }
   }
 
-  public async restoreClipboardFromDatabase(itemId: string): Promise<{ success: boolean; message?: string }> {
+  public async restoreClipboardFromDatabase(
+    itemId: string
+  ): Promise<{ success: boolean; message?: string }> {
     const record = this.repository.getById(itemId)
     if (!record) return { success: false, message: 'Item not found' }
 
@@ -490,12 +459,16 @@ class ClipboardManagerWorker extends BaseWorker {
     return { success, message: success ? 'Restored' : 'Failed' }
   }
 
-  public async restoreClipboardFromDatabaseAsText(itemId: string): Promise<{ success: boolean; message?: string }> {
+  public async restoreClipboardFromDatabaseAsText(
+    itemId: string
+  ): Promise<{ success: boolean; message?: string }> {
     const record = this.repository.getById(itemId)
     if (!record) return { success: false, message: 'Item not found' }
 
     const item = ClipboardDataConverter.recordToItem(record)
-    const success = this.restoreClipboardContentAsText({ content: item.content as ClipboardContent })
+    const success = this.restoreClipboardContentAsText({
+      content: item.content as ClipboardContent
+    })
 
     if (success) {
       const hash = ClipboardDataConverter.generateContentHash(item.content as ClipboardContent)
@@ -504,7 +477,9 @@ class ClipboardManagerWorker extends BaseWorker {
     return { success, message: success ? 'Restored as Text' : 'Failed' }
   }
 
-  public async restoreClipboardFromDatabaseAsOcrText(itemId: string): Promise<{ success: boolean; message?: string }> {
+  public async restoreClipboardFromDatabaseAsOcrText(
+    itemId: string
+  ): Promise<{ success: boolean; message?: string }> {
     const record = this.repository.getById(itemId)
     if (!record || !record.content_ocr) return { success: false, message: 'No OCR text' }
 
@@ -515,7 +490,9 @@ class ClipboardManagerWorker extends BaseWorker {
     return { success: true, message: 'Restored OCR text' }
   }
 
-  public async parseQRCodeFromItem(itemId: string): Promise<{ success: boolean; message?: string }> {
+  public async parseQRCodeFromItem(
+    itemId: string
+  ): Promise<{ success: boolean; message?: string }> {
     const record = this.repository.getById(itemId)
     if (!record || !record.content_image) return { success: false, message: 'Not an image' }
 
@@ -526,7 +503,8 @@ class ClipboardManagerWorker extends BaseWorker {
         return { success: true, message: 'QR Code parsed' }
       }
       return { success: false, message: 'No QR Code found' }
-    } catch (e) {
+    } catch (error) {
+      logger.error('[ClipboardManagerWorker] 解析二维码失败:', error)
       return { success: false, message: 'Parse error' }
     }
   }
@@ -539,12 +517,9 @@ class ClipboardManagerWorker extends BaseWorker {
       // 使用repository的updateOCR方法来触发OCR解析
       // 这里直接调用ocrService进行OCR解析
       logger.info('[ClipboardManagerWorker] Parsing OCR from item:', itemId)
-      if (!ocrService.ready) {
-        const initialized = await this.ensureOCRServiceInitialized()
-        if (!initialized) {
-          return { success: false, message: 'OCR service initialization failed' }
-        }
-      }
+      const initialized = await this.ensureOCRServiceInitialized()
+      if (!initialized)
+        return { success: false, message: this.ocrInitializationError || 'OCR 服务初始化失败' }
 
       const ocrResult = await ocrService.recognizeText(record.content_image)
       if (ocrResult.success && ocrResult.text && ocrResult.text.trim()) {
@@ -568,7 +543,7 @@ class ClipboardManagerWorker extends BaseWorker {
     }
   }
 
-  public setImageToClipboard(imageBuffer: any): boolean {
+  public setImageToClipboard(imageBuffer: unknown): boolean {
     // Logic from original worker
     // Need to handle buffer conversion?
     // Processor or Poller could handle this?
@@ -576,7 +551,14 @@ class ClipboardManagerWorker extends BaseWorker {
     let buffer: Buffer
     if (Buffer.isBuffer(imageBuffer)) buffer = imageBuffer
     else if (imageBuffer instanceof Uint8Array) buffer = Buffer.from(imageBuffer)
-    else if (imageBuffer?.data) buffer = Buffer.from(imageBuffer.data)
+    else if (
+      imageBuffer &&
+      typeof imageBuffer === 'object' &&
+      'data' in imageBuffer &&
+      Array.isArray(imageBuffer.data) &&
+      imageBuffer.data.every((value) => Number.isInteger(value) && value >= 0 && value <= 255)
+    )
+      buffer = Buffer.from(imageBuffer.data)
     else return false
 
     this.poller.setContents({
@@ -594,40 +576,121 @@ class ClipboardManagerWorker extends BaseWorker {
 
   private getLastItemId(): string {
     // Helper to access repo state indirectly?
-    // Actually handleClipboardChange uses result.id. 
+    // Actually handleClipboardChange uses result.id.
     // This is not a critical method, just for logic check.
     return ''
   }
 
   private async handleRequest(request: WorkerRequest): Promise<void> {
     try {
-      let result: any
+      let result: unknown
 
       switch (request.method) {
-        case 'initialize': result = await this.initialize(request.params); break
-        case 'updateConfig': result = await this.updateConfig(request.params); break
-        case 'getConfig': result = this.getConfig(); break
-        case 'startListening': result = this.startListening(); break
-        case 'stopListening': result = this.stopListening(); break
-        case 'getAccessStatus': result = this.poller.getAccessStatus(); break
-        case 'isListeningActive': result = this.isListeningActive(); break
-        case 'syncClipboardHash': result = await this.syncClipboardHash(); break
-        case 'resetErrorState': result = this.resetErrorState(); break
-        case 'syncDeletedRecords': result = this.repository.syncDeletedRecords(request.params); break
-        case 'syncDeletedRecordsByHash': result = this.repository.syncDeletedRecordsByHash(request.params); break
-        case 'syncDeletedRecordsByIds': result = this.repository.syncDeletedRecordsByIds(request.params); break
-        case 'exportHeapdump': result = this.exportHeapdump(request.params); break
-        case 'restoreClipboardContent': result = this.restoreClipboardContent(request.params); break
-        case 'restoreClipboardContentAsText': result = this.restoreClipboardContentAsText(request.params); break
-        case 'restoreClipboardFromDatabase': result = await this.restoreClipboardFromDatabase(request.params); break
-        case 'restoreClipboardFromDatabaseAsText': result = await this.restoreClipboardFromDatabaseAsText(request.params); break
-        case 'restoreClipboardFromDatabaseAsOcrText': result = await this.restoreClipboardFromDatabaseAsOcrText(request.params); break
-        case 'parseQRCodeFromItem': result = await this.parseQRCodeFromItem(request.params); break
-        case 'parseOcrFromItem': result = await this.parseOcrFromItem(request.params); break
-        case 'setImageToClipboard': result = this.setImageToClipboard(request.params); break
-        case 'getCurrentClipboard': result = await this.getCurrentClipboard(); break
-        case 'updateActiveWindow': result = this.updateActiveWindow(request.params); break
-        default: throw new Error(`Unknown method: ${request.method}`)
+        case 'initialize':
+          result = await this.initialize(
+            request.params as Parameters<ClipboardManagerWorker['initialize']>[0]
+          )
+          break
+        case 'updateConfig':
+          result = await this.updateConfig(
+            request.params as Parameters<ClipboardManagerWorker['updateConfig']>[0]
+          )
+          break
+        case 'getConfig':
+          result = this.getConfig()
+          break
+        case 'startListening':
+          result = this.startListening()
+          break
+        case 'stopListening':
+          result = this.stopListening()
+          break
+        case 'getAccessStatus':
+          result = this.poller.getAccessStatus()
+          break
+        case 'isListeningActive':
+          result = this.isListeningActive()
+          break
+        case 'syncClipboardHash':
+          result = await this.syncClipboardHash()
+          break
+        case 'resetErrorState':
+          result = this.resetErrorState()
+          break
+        case 'syncDeletedRecords':
+          result = this.repository.syncDeletedRecords(
+            request.params as Parameters<ClipboardRepository['syncDeletedRecords']>[0]
+          )
+          break
+        case 'syncDeletedRecordsByHash':
+          result = this.repository.syncDeletedRecordsByHash(
+            request.params as Parameters<ClipboardRepository['syncDeletedRecordsByHash']>[0]
+          )
+          break
+        case 'syncDeletedRecordsByIds':
+          result = this.repository.syncDeletedRecordsByIds(
+            request.params as Parameters<ClipboardRepository['syncDeletedRecordsByIds']>[0]
+          )
+          break
+        case 'exportHeapdump':
+          result = this.exportHeapdump(
+            request.params as Parameters<ClipboardManagerWorker['exportHeapdump']>[0]
+          )
+          break
+        case 'restoreClipboardContent':
+          result = this.restoreClipboardContent(
+            request.params as Parameters<ClipboardManagerWorker['restoreClipboardContent']>[0]
+          )
+          break
+        case 'restoreClipboardContentAsText':
+          result = this.restoreClipboardContentAsText(
+            request.params as Parameters<ClipboardManagerWorker['restoreClipboardContentAsText']>[0]
+          )
+          break
+        case 'restoreClipboardFromDatabase':
+          result = await this.restoreClipboardFromDatabase(
+            request.params as Parameters<ClipboardManagerWorker['restoreClipboardFromDatabase']>[0]
+          )
+          break
+        case 'restoreClipboardFromDatabaseAsText':
+          result = await this.restoreClipboardFromDatabaseAsText(
+            request.params as Parameters<
+              ClipboardManagerWorker['restoreClipboardFromDatabaseAsText']
+            >[0]
+          )
+          break
+        case 'restoreClipboardFromDatabaseAsOcrText':
+          result = await this.restoreClipboardFromDatabaseAsOcrText(
+            request.params as Parameters<
+              ClipboardManagerWorker['restoreClipboardFromDatabaseAsOcrText']
+            >[0]
+          )
+          break
+        case 'parseQRCodeFromItem':
+          result = await this.parseQRCodeFromItem(
+            request.params as Parameters<ClipboardManagerWorker['parseQRCodeFromItem']>[0]
+          )
+          break
+        case 'parseOcrFromItem':
+          result = await this.parseOcrFromItem(
+            request.params as Parameters<ClipboardManagerWorker['parseOcrFromItem']>[0]
+          )
+          break
+        case 'setImageToClipboard':
+          result = this.setImageToClipboard(
+            request.params as Parameters<ClipboardManagerWorker['setImageToClipboard']>[0]
+          )
+          break
+        case 'getCurrentClipboard':
+          result = await this.getCurrentClipboard()
+          break
+        case 'updateActiveWindow':
+          result = this.updateActiveWindow(
+            request.params as Parameters<ClipboardManagerWorker['updateActiveWindow']>[0]
+          )
+          break
+        default:
+          throw new Error(`Unknown method: ${request.method}`)
       }
 
       const response: WorkerResponse = {

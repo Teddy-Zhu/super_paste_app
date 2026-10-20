@@ -2,11 +2,14 @@ import {
   ClipboardManager as TeddyClipboardManager,
   ClipboardListener,
   ClipboardData,
+  ClipboardContents,
+  ImageData,
   isWaylandClipboardAvailable
 } from '@teddyzhu/clipboard'
 import logger from '../../../../utils/worker-logger'
 import { EventEmitter } from 'events'
 import { isWayland } from '../../../../system/session'
+import type { ClipboardSnapshot } from '../../types/clipboard-types'
 
 export class ClipboardPoller extends EventEmitter {
   private clipboardInstance: TeddyClipboardManager | null = null
@@ -67,25 +70,31 @@ export class ClipboardPoller extends EventEmitter {
    * Reads clipboard content directly.
    * Mirrors the original readClipboardDirect logic.
    */
-  public readClipboardDirect(): any {
+  public readClipboardDirect(): ClipboardSnapshot {
     try {
       // Safe text access
       let text: string | undefined = undefined
       try {
         text = this.clipboard.getText()
-      } catch (e) {}
+      } catch {
+        // 某些应用只提供部分格式，缺失格式保持未定义。
+      }
 
       // Safe HTML access
       let html: string | undefined = undefined
       try {
         html = this.clipboard.getHtml()
-      } catch (e) {}
+      } catch {
+        // 某些应用只提供部分格式，缺失格式保持未定义。
+      }
 
       // Safe RTF access
       let rtf: string | undefined = undefined
       try {
         rtf = this.clipboard.getRichText()
-      } catch (e) {}
+      } catch {
+        // 某些应用只提供部分格式，缺失格式保持未定义。
+      }
 
       // Safe Files access
       let files: string[] | undefined = undefined
@@ -100,19 +109,21 @@ export class ClipboardPoller extends EventEmitter {
             totalSize: files!.reduce((total, file) => total + file.length, 0)
           }
         }
-      } catch (e) {}
+      } catch {
+        // 某些应用只提供部分格式，缺失格式保持未定义。
+      }
 
       // Image access
-      let imageData: any = null
+      let imageData: ImageData | null = null
       let hasImage = false
       try {
         imageData = this.clipboard.getImageData()
         hasImage = !!(imageData && imageData.data && Buffer.isBuffer(imageData.data))
-      } catch (e) {
+      } catch {
         hasImage = false
       }
 
-      const result: any = {
+      const result: ClipboardSnapshot = {
         text: text || undefined,
         html: html || undefined,
         rtf: rtf || undefined,
@@ -137,11 +148,11 @@ export class ClipboardPoller extends EventEmitter {
       return result
     } catch (error) {
       logger.error('[ClipboardPoller] Direct read failed:', error)
-      return {}
+      return { hasImage: false, hasFiles: false }
     }
   }
 
-  public setContents(data: any): void {
+  public setContents(data: ClipboardContents): void {
     this.clipboard.setContents(data)
   }
 }

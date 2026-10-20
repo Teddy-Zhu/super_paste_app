@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onUnmounted, ref } from 'vue'
+import { computed, onUnmounted, ref, type CSSProperties } from 'vue'
 import { useContextMenu, type ContextMenuItem } from '@renderer/composables/useContextMenu'
 import IconChevronRight from '~icons/mdi/chevron-right'
 
@@ -27,7 +27,7 @@ const isMouseInMainMenu = ref(false)
 const isMouseInSubmenu = ref(false)
 let closeMenuTimer: number | null = null
 
-const getMenuStyle = (visible: boolean, x: number, y: number, zIndex: number) => {
+const getMenuStyle = (visible: boolean, x: number, y: number, zIndex: number): CSSProperties => {
   if (!visible) {
     return { display: 'none' }
   }
@@ -48,14 +48,14 @@ const submenuStyle = computed(() =>
   getMenuStyle(submenuState.value.visible, submenuState.value.x, submenuState.value.y, 10000)
 )
 
-const clearCloseMenuTimer = () => {
+const clearCloseMenuTimer = (): void => {
   if (closeMenuTimer !== null) {
     clearTimeout(closeMenuTimer)
     closeMenuTimer = null
   }
 }
 
-const scheduleMenuClose = (callback: () => void) => {
+const scheduleMenuClose = (callback: () => void): void => {
   clearCloseMenuTimer()
   closeMenuTimer = window.setTimeout(() => {
     if (!isMouseInMainMenu.value && !isMouseInSubmenu.value) {
@@ -64,7 +64,7 @@ const scheduleMenuClose = (callback: () => void) => {
   }, MENU_CLOSE_DELAY)
 }
 
-const hideSubmenu = () => {
+const hideSubmenu = (): void => {
   submenuState.value = {
     ...submenuState.value,
     visible: false,
@@ -74,12 +74,12 @@ const hideSubmenu = () => {
   clearCloseMenuTimer()
 }
 
-const closeAllMenus = () => {
+const closeAllMenus = (): void => {
   hideSubmenu()
   hideContextMenu()
 }
 
-const handleItemClick = (item: ContextMenuItem) => {
+const handleItemClick = (item: ContextMenuItem): void => {
   if (item.disabled) return
 
   if (item.submenu?.length) {
@@ -91,7 +91,7 @@ const handleItemClick = (item: ContextMenuItem) => {
   closeAllMenus()
 }
 
-const showSubmenu = (item: ContextMenuItem, event?: MouseEvent) => {
+const showSubmenu = (item: ContextMenuItem, event?: MouseEvent): void => {
   const submenuItems = item.submenu ?? []
   if (submenuItems.length === 0) {
     hideSubmenu()
@@ -125,33 +125,33 @@ const showSubmenu = (item: ContextMenuItem, event?: MouseEvent) => {
   clearCloseMenuTimer()
 }
 
-const handleSubmenuItemClick = (item: ContextMenuItem) => {
+const handleSubmenuItemClick = (item: ContextMenuItem): void => {
   if (item.disabled) return
   item.action()
   closeAllMenus()
 }
 
-const handleMainMenuMouseEnter = () => {
+const handleMainMenuMouseEnter = (): void => {
   isMouseInMainMenu.value = true
   clearCloseMenuTimer()
 }
 
-const handleMainMenuMouseLeave = () => {
+const handleMainMenuMouseLeave = (): void => {
   isMouseInMainMenu.value = false
   scheduleMenuClose(closeAllMenus)
 }
 
-const handleSubmenuMouseEnter = () => {
+const handleSubmenuMouseEnter = (): void => {
   isMouseInSubmenu.value = true
   clearCloseMenuTimer()
 }
 
-const handleSubmenuMouseLeave = () => {
+const handleSubmenuMouseLeave = (): void => {
   isMouseInSubmenu.value = false
   scheduleMenuClose(closeAllMenus)
 }
 
-const handleMenuItemMouseEnter = (item: ContextMenuItem, event: Event) => {
+const handleMenuItemMouseEnter = (item: ContextMenuItem, event: Event): void => {
   clearCloseMenuTimer()
 
   if (item.submenu?.length) {
@@ -190,7 +190,7 @@ onUnmounted(clearCloseMenuTimer)
             class="menu-item-icon"
             :style="{ color: item.iconColor || 'inherit' }"
           >
-            <component v-if="typeof item.icon !== 'string'" :is="item.icon" />
+            <component :is="item.icon" v-if="typeof item.icon !== 'string'" />
             <span v-else>{{ item.icon }}</span>
           </span>
           <span class="menu-item-label">{{ item.label }}</span>
@@ -226,7 +226,7 @@ onUnmounted(clearCloseMenuTimer)
             class="menu-item-icon"
             :style="{ color: item.iconColor || 'inherit' }"
           >
-            <component v-if="typeof item.icon !== 'string'" :is="item.icon" />
+            <component :is="item.icon" v-if="typeof item.icon !== 'string'" />
             <span v-else>{{ item.icon }}</span>
           </span>
           <span class="menu-item-label">{{ item.label }}</span>

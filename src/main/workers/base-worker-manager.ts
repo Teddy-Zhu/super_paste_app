@@ -21,7 +21,7 @@ export abstract class BaseWorkerManager extends EventEmitter implements WorkerMa
   protected pendingRequests: Map<
     string,
     {
-      resolve: (value: any) => void
+      resolve: (value: unknown) => void
       reject: (error: Error) => void
       timeout: NodeJS.Timeout
     }
@@ -84,16 +84,21 @@ export abstract class BaseWorkerManager extends EventEmitter implements WorkerMa
 
       // 给 Worker 一点时间完成清理(如果有destroy方法的话)
       logger.debug(`[${this.config.name}] 等待 100ms 让 Worker 完成清理...`)
-      await new Promise(resolve => setTimeout(resolve, 100))
+      await new Promise((resolve) => setTimeout(resolve, 100))
 
       // 设置终止超时,避免无限等待
       logger.debug(`[${this.config.name}] 开始终止 Worker (5秒超时)...`)
       const terminatePromise = this.worker.terminate()
-      const timeoutPromise = new Promise((_, reject) =>
-        setTimeout(() => reject(new Error('Worker 终止超时')), 5000)
-      )
+      let terminationTimeout: NodeJS.Timeout
+      const timeoutPromise = new Promise<never>((_, reject) => {
+        terminationTimeout = setTimeout(() => reject(new Error('Worker 终止超时')), 5000)
+      })
 
-      await Promise.race([terminatePromise, timeoutPromise])
+      try {
+        await Promise.race([terminatePromise, timeoutPromise])
+      } finally {
+        clearTimeout(terminationTimeout!)
+      }
 
       this.worker = null
       this.isInitialized = false
@@ -111,12 +116,12 @@ export abstract class BaseWorkerManager extends EventEmitter implements WorkerMa
   /**
    * 调用 Worker 方法
    */
-  public async call<T = any>(method: string, params?: any): Promise<T> {
+  public async call<T = unknown>(method: string, params?: unknown): Promise<T> {
     if (!this.worker || !this.isInitialized) {
       throw new Error(`Worker ${this.config.name} 未初始化`)
     }
 
-    return new Promise((resolve, reject) => {
+    return new Promise<T>((resolve, reject) => {
       const requestId = this.generateRequestId()
 
       const request: WorkerRequest = {
@@ -134,7 +139,11 @@ export abstract class BaseWorkerManager extends EventEmitter implements WorkerMa
       }, this.requestTimeout)
 
       // 保存请求信息
-      this.pendingRequests.set(requestId, { resolve, reject, timeout })
+      this.pendingRequests.set(requestId, {
+        resolve: (value) => resolve(value as T),
+        reject,
+        timeout
+      })
 
       // 发送请求
       this.worker!.postMessage(request)
@@ -158,7 +167,7 @@ export abstract class BaseWorkerManager extends EventEmitter implements WorkerMa
     }
 
     try {
-      const result = await this.call('exportHeapdump', desktopPath)
+      const result = await this.call<string>('exportHeapdump', desktopPath)
       logger.info(`[${this.config.name}] Worker heapdump 导出成功:`, result)
       return result
     } catch (error) {
@@ -251,6 +260,7 @@ export abstract class BaseWorkerManager extends EventEmitter implements WorkerMa
   private async waitForWorkerReady(): Promise<void> {
     return new Promise((resolve, reject) => {
       const timeout = setTimeout(() => {
+        this.off('worker-ready', onReady)
         reject(new Error(`Worker ${this.config.name} 初始化超时`))
       }, 10000) // 10秒超时
 

@@ -202,7 +202,9 @@ const normalizeAfterAction = async (): Promise<void> => {
   }
 }
 
-const getRestoreMethodMeta = (restoreMethod: RestoreMethod) => {
+const getRestoreMethodMeta = (
+  restoreMethod: RestoreMethod
+): { typeName: string; action: string } => {
   const typeNameMap: Record<RestoreMethod, string> = {
     restore: '',
     restoreAsText: '纯文本',
@@ -265,17 +267,19 @@ const restoreClipboard = async (itemId: string, restoreMethod: RestoreMethod): P
 /**
  * 还原剪贴板内容
  */
-const restoreClipboardContent = (itemId: string) => restoreClipboard(itemId, 'restore')
+const restoreClipboardContent = (itemId: string): Promise<void> =>
+  restoreClipboard(itemId, 'restore')
 
 /**
  * 还原剪贴板内容为纯文本
  */
-const restoreClipboardContentAsText = (itemId: string) => restoreClipboard(itemId, 'restoreAsText')
+const restoreClipboardContentAsText = (itemId: string): Promise<void> =>
+  restoreClipboard(itemId, 'restoreAsText')
 
 /**
  * 还原剪贴板内容为OCR文字
  */
-const restoreClipboardContentAsOcrText = (itemId: string) =>
+const restoreClipboardContentAsOcrText = (itemId: string): Promise<void> =>
   restoreClipboard(itemId, 'restoreOcrText')
 
 /**
@@ -297,12 +301,13 @@ const parseOcrFromClipboardItem = async (itemId: string): Promise<void> => {
 /**
  * 解析剪贴板项目中的二维码
  */
-const parseQRCodeFromClipboardItem = (itemId: string) => restoreClipboard(itemId, 'parseQRCode')
+const parseQRCodeFromClipboardItem = (itemId: string): Promise<void> =>
+  restoreClipboard(itemId, 'parseQRCode')
 
 /**
  * 生成剪贴板项目的二维码
  */
-const generateQRCodeFromClipboardItem = (itemId: string) =>
+const generateQRCodeFromClipboardItem = (itemId: string): Promise<void> =>
   restoreClipboard(itemId, 'generateQRCode')
 
 /**
@@ -364,7 +369,7 @@ const clearClipboardHistory = async (): Promise<void> => {
 }
 
 /** 关闭动画不等待搜索框收起或重新查询历史。 */
-const closeWindow = async () => {
+const closeWindow = async (): Promise<void> => {
   const id = transitionId
   if (closingTransitionId === id) return
   closingTransitionId = id
@@ -633,7 +638,7 @@ const handleCloseWindow = async (force = false, id = transitionId): Promise<void
 /**
  * 处理键盘按下事件
  */
-const handleKeyboardEvent = (event: KeyboardEvent) => {
+const handleKeyboardEvent = (event: KeyboardEvent): void => {
   const isCtrlOrCmd = event.ctrlKey || event.metaKey
 
   if (isCtrlOrCmd) {
@@ -661,7 +666,7 @@ const handleKeyboardEvent = (event: KeyboardEvent) => {
 /**
  * 处理键盘释放事件
  */
-const handleKeyboardUpEvent = (event: KeyboardEvent) => {
+const handleKeyboardUpEvent = (event: KeyboardEvent): void => {
   if (!event.ctrlKey && !event.metaKey && isQuickSelectMode.value) {
     isQuickSelectMode.value = false
   }
@@ -922,8 +927,8 @@ onUnmounted(() => {
 
         <!-- 搜索输入框 -->
         <div
-          ref="searchContainerRef"
           v-show="animationManager.showSearchContainer.value"
+          ref="searchContainerRef"
           class="search-container"
         >
           <input
@@ -938,8 +943,8 @@ onUnmounted(() => {
 
         <!-- 标签组 -->
         <div
-          ref="tabsContainerRef"
           v-show="animationManager.showTabsContainer.value"
+          ref="tabsContainerRef"
           class="tabs-container"
         >
           <div

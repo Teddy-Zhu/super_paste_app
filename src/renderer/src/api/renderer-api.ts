@@ -36,16 +36,16 @@ import type {
  * 存储操作封装
  */
 export const store: StoreOperations = {
-  async get<T = any>(key: string, defaultValue?: T): Promise<T> {
-    const result = await invoke('store-get', { key, defaultValue })
+  async get<T = unknown>(key: string, defaultValue?: T): Promise<T> {
+    const result = await invoke<ClipboardIpcResponse<T>>('store-get', key, defaultValue)
     if (result.success) {
-      return result.data ?? defaultValue
+      return (result.data ?? defaultValue) as T
     }
     throw new Error(result.error || '获取存储值失败')
   },
 
-  async set<T = any>(key: string, value: T): Promise<void> {
-    const result = await invoke('store-set', { key, value })
+  async set<T = unknown>(key: string, value: T): Promise<void> {
+    const result = await invoke('store-set', key, value)
     if (!result.success) {
       throw new Error(result.error || '设置存储值失败')
     }
@@ -105,11 +105,16 @@ export const clipboard: ClipboardOperations = {
     return result.success
   },
 
-  async generateQRCode(itemId: string): Promise<{ success: boolean; message?: string; data?: { qrCodeDataUrl: string } }> {
-    const result: ClipboardIpcResponse<{ qrCodeDataUrl: string }> = await invoke('clipboard-generate-qrcode', itemId)
+  async generateQRCode(
+    itemId: string
+  ): Promise<{ success: boolean; message?: string; data?: { qrCodeDataUrl: string } }> {
+    const result: ClipboardIpcResponse<{ qrCodeDataUrl: string }> = await invoke(
+      'clipboard-generate-qrcode',
+      itemId
+    )
     return {
       success: result.success,
-      message: result.success ? (result.message || '二维码生成成功') : result.error,
+      message: result.success ? result.message || '二维码生成成功' : result.error,
       data: result.success ? result.data : undefined
     }
   },
@@ -315,7 +320,7 @@ export const rendererAPI: RendererAPI = {
     sendSync,
     removeListener,
     removeAllListeners
-  } as any
+  }
 }
 
 // 默认导出

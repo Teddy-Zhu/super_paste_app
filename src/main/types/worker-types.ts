@@ -1,3 +1,16 @@
+import type { Transferable } from 'node:worker_threads'
+import type {
+  ClipboardContent,
+  ClipboardManagerConfig,
+  CleanupConfig,
+  CleanupStats,
+  ClipboardHistoryRecord,
+  TagGroup,
+  TagStats,
+  QueryOptions
+} from '../features/clipboard/types/clipboard-types'
+import type { SyncResult } from '../sync/types'
+
 /**
  * Worker Thread 通信类型定义
  */
@@ -13,7 +26,7 @@ export interface BaseWorkerMessage {
 export interface WorkerRequest extends BaseWorkerMessage {
   type: 'request'
   method: string
-  params?: any
+  params?: unknown
 }
 
 // 响应消息
@@ -21,7 +34,7 @@ export interface WorkerResponse extends BaseWorkerMessage {
   type: 'response'
   requestId: string
   success: boolean
-  data?: any
+  data?: unknown
   error?: string
 }
 
@@ -29,7 +42,7 @@ export interface WorkerResponse extends BaseWorkerMessage {
 export interface WorkerEvent extends BaseWorkerMessage {
   type: 'event'
   event: string
-  data?: any
+  data?: unknown
 }
 
 // 所有消息类型的联合
@@ -43,12 +56,12 @@ export interface ClipboardHistoryCleanerWorkerMethods {
     maxHistorySize?: number
     enableCountBasedCleanup?: boolean
   }) => void
-  getConfig: () => any
+  getConfig: () => CleanupConfig
 
   // 清理操作
   startAutoCleanup: () => void
   stopAutoCleanup: () => void
-  performCleanup: () => Promise<any>
+  performCleanup: () => Promise<CleanupStats>
   checkCountBasedCleanup: (maxHistorySize: number) => Promise<void>
 
   // 生命周期
@@ -59,9 +72,9 @@ export interface ClipboardHistoryCleanerWorkerMethods {
 // 剪贴板管理器 Worker 方法
 export interface ClipboardManagerWorkerMethods {
   // 初始化和配置
-  initialize: (config?: any) => void
-  updateConfig: (config: any) => void
-  getConfig: () => any
+  initialize: (config?: Partial<ClipboardManagerConfig>) => Promise<void>
+  updateConfig: (config: Partial<ClipboardManagerConfig>) => Promise<void>
+  getConfig: () => ClipboardManagerConfig
 
   // 监听控制
   startListening: () => void
@@ -69,31 +82,34 @@ export interface ClipboardManagerWorkerMethods {
   isListeningActive: () => boolean
 
   // 剪贴板操作
-  getCurrentClipboard: () => any
+  getCurrentClipboard: () => Promise<ClipboardContent>
   syncClipboardHash: () => void
   resetErrorState: () => void
 
   // 历史记录管理
   deleteHistoryItem: (itemId: string) => boolean
   clearHistory: () => void
-  searchHistory: (options: any) => any[]
+  searchHistory: (options: QueryOptions) => ClipboardHistoryRecord[]
 
   // 标签管理
   createTagGroup: (name: string, color: string, description?: string) => string | null
-  getAllTagGroups: () => any[]
-  updateTagGroup: (tagId: string, updates: any) => boolean
+  getAllTagGroups: () => TagGroup[]
+  updateTagGroup: (
+    tagId: string,
+    updates: Partial<Pick<TagGroup, 'name' | 'color' | 'description'>>
+  ) => boolean
   deleteTagGroup: (tagId: string) => boolean
   bindTagToRecord: (contentId: string, tagId: string) => boolean
   unbindTagFromRecord: (contentId: string, tagId: string) => boolean
-  getRecordsByTags: (tagIds: string[]) => any[]
-  getRecordsByParseType: (parseType: string) => any[]
-  getTagStats: () => any[]
+  getRecordsByTags: (tagIds: string[]) => ClipboardHistoryRecord[]
+  getRecordsByParseType: (parseType: string) => ClipboardHistoryRecord[]
+  getTagStats: () => TagStats[]
 }
 
 // Worker 事件类型
 export interface WorkerEvents {
   // 历史记录清理器事件
-  'cleanup-completed': { stats: any }
+  'cleanup-completed': { stats: CleanupStats }
   'cleanup-error': { error: string }
 
   // 剪贴板管理器事件
@@ -102,24 +118,24 @@ export interface WorkerEvents {
 
   // 定时同步事件
   'sync-scheduled-started': { interval: number; nextSyncTime: number }
-  'sync-scheduled-stopped': {}
+  'sync-scheduled-stopped': Record<string, never>
   'sync-scheduled-start-failed': { reason: string; timestamp: number }
   'sync-started': { timestamp: number }
-  'sync-completed': { timestamp: number; result: any; nextSyncTime: number }
-  'sync-failed': { timestamp: number; result: any; nextSyncTime: number }
+  'sync-completed': { timestamp: number; result: SyncResult; nextSyncTime: number }
+  'sync-failed': { timestamp: number; result: SyncResult; nextSyncTime: number }
   'sync-error': { timestamp: number; error: string }
   'manual-sync-started': { timestamp: number }
-  'manual-sync-completed': { timestamp: number; result: any }
-  'manual-sync-failed': { timestamp: number; result: any }
+  'manual-sync-completed': { timestamp: number; result: SyncResult }
+  'manual-sync-failed': { timestamp: number; result: SyncResult }
   'manual-sync-error': { timestamp: number; error: string }
   'connection-test-success': { timestamp: number }
   'connection-test-failed': { timestamp: number }
   'connection-test-error': { timestamp: number; error: string }
 
   // 通用事件
-  'worker-ready': {}
+  'worker-ready': { workerName?: string }
   'worker-error': { error: string }
-  'worker-destroyed': {}
+  'worker-destroyed': Record<string, never>
 }
 
 // Worker 配置
@@ -127,8 +143,8 @@ export interface WorkerConfig {
   name: string
   workerPath: string
   options?: {
-    workerData?: any
-    transferList?: any[]
+    workerData?: unknown
+    transferList?: Transferable[]
   }
 }
 
@@ -136,8 +152,8 @@ export interface WorkerConfig {
 export interface WorkerManager {
   start(): Promise<void>
   stop(): Promise<void>
-  call<T = any>(method: string, params?: any): Promise<T>
-  on(event: string, listener: (data: any) => void): void
-  off(event: string, listener: (data: any) => void): void
+  call<T = unknown>(method: string, params?: unknown): Promise<T>
+  on(event: string, listener: (data: unknown) => void): void
+  off(event: string, listener: (data: unknown) => void): void
   isRunning(): boolean
 }

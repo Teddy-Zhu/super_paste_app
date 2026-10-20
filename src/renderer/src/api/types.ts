@@ -1,18 +1,26 @@
+import type { OCRSettings, OCRModelStatus, OCRModelId } from '../../../shared/ocr-models'
 /**
  * IPC 通信类型定义
  * 为 IPC 频道和消息提供类型安全
  */
 
 import type { IpcRendererEvent } from 'electron'
+import type { ScheduledSyncStatus } from '../../../main/sync/types'
+export type { IpcRendererListener } from '../../../preload/index.d'
 
 // 基础类型
-export type IpcRendererListener = (event: IpcRendererEvent, ...args: any[]) => void
-export type SimpleListener = (...args: any[]) => void
+export type SimpleListener<Args extends unknown[] = unknown[]> = (...args: Args) => void
 
 // 常用 IPC 频道定义
 export type OverlayPosition = 'top' | 'bottom' | 'left' | 'right'
 
 export interface IpcChannels {
+  'ocr:list-models': void
+  'ocr:download-model': OCRModelId
+  'ocr:cancel-download': OCRModelId
+  'ocr:save-settings': OCRSettings
+  'ocr:model-status': OCRModelStatus
+
   // 窗口相关
   'open-overlay-window': void
   'close-overlay-window': void
@@ -25,9 +33,9 @@ export interface IpcChannels {
   'trigger-close-window': void
 
   // 存储相关
-  'store-get': { key: string; defaultValue?: any }
-  'store-set': { key: string; value: any }
-  'store-value-changed': { key: string; value: any; timestamp: number }
+  'store-get': { key: string; defaultValue?: unknown }
+  'store-set': { key: string; value: unknown }
+  'store-value-changed': { key: string; value: unknown; timestamp: number }
 
   // 剪贴板相关
   'clipboard-get-history': ClipboardHistoryQueryOptions | { limit?: number } | void
@@ -42,7 +50,7 @@ export interface IpcChannels {
   'clipboard-get-status': void
   'clipboard-start-listening': void
   'clipboard-stop-listening': void
-  'clipboard-update-config': { config: any }
+  'clipboard-update-config': { config: Partial<ClipboardManagerConfig> }
 
   // 标签相关
   'get-all-tags': void
@@ -65,19 +73,35 @@ export interface IpcChannels {
 
 // IPC 响应类型
 export interface IpcResponses {
-  'store-get': { success: boolean; data?: any; error?: string }
+  'ocr:list-models': { success: boolean; data?: OCRModelStatus[]; error?: string }
+  'ocr:download-model': { success: boolean; error?: string }
+  'ocr:cancel-download': { success: boolean; error?: string }
+  'ocr:save-settings': { success: boolean; data?: OCRSettings; error?: string }
+
+  'scheduled-sync:test-connection': boolean | { success: false; error: string }
+  'scheduled-sync:manual-sync': { success: boolean; message?: string; error?: string }
+  'scheduled-sync:manual-sync-with-config': { success: boolean; message?: string; error?: string }
+  'scheduled-sync:get-status': { success: boolean; data?: ScheduledSyncStatus; error?: string }
+  'scheduled-sync:refresh': boolean | { success: false; error: string }
+
+  'store-get': { success: boolean; data?: unknown; error?: string }
   'store-set': { success: boolean; error?: string }
 
   // 剪贴板相关响应
-  'clipboard-get-history': { success: boolean; data?: any[]; error?: string }
+  'clipboard-get-history': { success: boolean; data?: ClipboardItem[]; error?: string }
   'clipboard-restore': { success: boolean; message?: string; error?: string }
   'clipboard-restore-as-text': { success: boolean; message?: string; error?: string }
   'clipboard-restore-ocr-text': { success: boolean; message?: string; error?: string }
   'clipboard-parse-ocr': { success: boolean; message?: string; error?: string }
-  'clipboard-generate-qrcode': { success: boolean; message?: string; error?: string; data?: { qrCodeDataUrl: string } }
+  'clipboard-generate-qrcode': {
+    success: boolean
+    message?: string
+    error?: string
+    data?: { qrCodeDataUrl: string }
+  }
   'clipboard-delete-item': { success: boolean; message?: string; error?: string }
   'clipboard-clear-history': { success: boolean; message?: string; error?: string }
-  'clipboard-get-status': { success: boolean; data?: any; error?: string }
+  'clipboard-get-status': { success: boolean; data?: ClipboardStatus; error?: string }
   'clipboard-start-listening': { success: boolean; message?: string; error?: string }
   'clipboard-stop-listening': { success: boolean; message?: string; error?: string }
   'clipboard-update-config': { success: boolean; message?: string; error?: string }
@@ -128,24 +152,27 @@ export interface TypedIpcRenderer {
   // 调用方法
   invoke<K extends keyof IpcResponses>(
     channel: K,
-    data: K extends keyof IpcChannels ? IpcChannels[K] : any
+    data: K extends keyof IpcChannels ? IpcChannels[K] : unknown
   ): Promise<IpcResponses[K]>
 
   // 同步调用
   sendSync<K extends keyof IpcResponses>(
     channel: K,
-    data: K extends keyof IpcChannels ? IpcChannels[K] : any
+    data: K extends keyof IpcChannels ? IpcChannels[K] : unknown
   ): IpcResponses[K]
 
   // 移除监听器
-  removeListener(channel: string, listener: (...args: any[]) => void): void
+  removeListener(
+    channel: string,
+    listener: (event: IpcRendererEvent, ...args: unknown[]) => void
+  ): void
   removeAllListeners(channel: string): void
 }
 
 // 存储操作类型
 export interface StoreOperations {
-  get<T = any>(key: string, defaultValue?: T): Promise<T>
-  set<T = any>(key: string, value: T): Promise<void>
+  get<T = unknown>(key: string, defaultValue?: T): Promise<T>
+  set<T = unknown>(key: string, value: T): Promise<void>
 }
 
 // 剪贴板内容数据类型（前端版本 - 图片数据为 Uint8Array）
@@ -196,17 +223,17 @@ export interface ClipboardItem {
   id: string
   content: ClipboardContent
   primaryType:
-  | 'text'
-  | 'html'
-  | 'image'
-  | 'rtf'
-  | 'files'
-  | 'url'
-  | 'email'
-  | 'phone'
-  | 'code'
-  | 'color'
-  | 'empty'
+    | 'text'
+    | 'html'
+    | 'image'
+    | 'rtf'
+    | 'files'
+    | 'url'
+    | 'email'
+    | 'phone'
+    | 'code'
+    | 'color'
+    | 'empty'
   availableFormats: string[]
   timestamp: number
   lastUsed: number
@@ -231,6 +258,7 @@ export interface ClipboardManagerConfig {
   enableAutoSave: boolean
   enableLocalOCR: boolean
   ocrMode: 'local' | 'remote'
+  ocrLocalModel: OCRModelId
   ocrRemoteConfig: {
     url: string
     extraParams: string
@@ -248,7 +276,7 @@ export interface ClipboardStatus {
 }
 
 // 剪贴板 IPC 响应类型
-export interface ClipboardIpcResponse<T = any> {
+export interface ClipboardIpcResponse<T = unknown> {
   success: boolean
   data?: T
   apps?: Record<string, AppInfo> // 应用信息映射
@@ -271,7 +299,9 @@ export interface ClipboardOperations {
   restoreOcrText(itemId: string): Promise<boolean>
   parseOcr(itemId: string): Promise<boolean>
   parseQRCode(itemId: string): Promise<boolean>
-  generateQRCode(itemId: string): Promise<{ success: boolean; message?: string; data?: { qrCodeDataUrl: string } }>
+  generateQRCode(
+    itemId: string
+  ): Promise<{ success: boolean; message?: string; data?: { qrCodeDataUrl: string } }>
   deleteItem(itemId: string): Promise<boolean>
   clearHistory(): Promise<boolean>
   getStatus(): Promise<ClipboardStatus>

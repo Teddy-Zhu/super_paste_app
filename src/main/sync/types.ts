@@ -104,7 +104,7 @@ export interface SyncEvent {
   /** 事件类型 */
   type: 'status-changed' | 'progress' | 'file-synced' | 'error' | 'config-updated'
   /** 事件数据 */
-  data: any
+  data: unknown
 }
 
 /**

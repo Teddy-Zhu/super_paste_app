@@ -311,7 +311,7 @@ class ClipboardDatabase {
       } = options
 
       let querySQL = 'SELECT DISTINCT ch.* FROM clipboard_history ch'
-      const params: any[] = []
+      const params: unknown[] = []
       const whereConditions: string[] = []
 
       // 如果有标签过滤条件
@@ -402,7 +402,7 @@ class ClipboardDatabase {
 
       // 只查询 content_id 和 hash 字段
       let querySQL = 'SELECT content_id, hash FROM clipboard_history'
-      const params: any[] = []
+      const params: unknown[] = []
 
       // 添加ORDER BY子句
       querySQL += ` ORDER BY ${orderBy} ${orderDirection}`
@@ -442,7 +442,7 @@ class ClipboardDatabase {
           SELECT DISTINCT content_id FROM clipboard_history_tags
         )
       `
-      const params: any[] = []
+      const params: unknown[] = []
 
       // 添加ORDER BY子句
       querySQL += ` ORDER BY ${orderBy} ${orderDirection}`
@@ -527,7 +527,9 @@ class ClipboardDatabase {
       const stmt = this.db.prepare(deleteSQL)
       const result = stmt.run()
 
-      logger.info(`[剪贴板数据库] 清空历史记录完成，删除了 ${result.changes} 条记录（保留有标签的记录）`)
+      logger.info(
+        `[剪贴板数据库] 清空历史记录完成，删除了 ${result.changes} 条记录（保留有标签的记录）`
+      )
 
       return true
     } catch (error) {
@@ -742,7 +744,7 @@ class ClipboardDatabase {
 
     try {
       let sql = 'SELECT * FROM tag_groups'
-      const params: any[] = []
+      const params: unknown[] = []
 
       // 构建ORDER BY子句
       if (options?.orderBy) {
@@ -816,7 +818,7 @@ class ClipboardDatabase {
 
     try {
       const updateFields: string[] = []
-      const params: any[] = []
+      const params: unknown[] = []
 
       if (updates.name !== undefined) {
         updateFields.push('name = ?')
@@ -1064,7 +1066,7 @@ class ClipboardDatabase {
 
       // 按 content_id 分组
       for (const result of results) {
-        const { content_id, tag_created_at, ...tagData } = result
+        const { content_id, ...tagData } = result
 
         if (!tagsMap.has(content_id)) {
           tagsMap.set(content_id, [])

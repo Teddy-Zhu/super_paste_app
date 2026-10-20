@@ -88,7 +88,7 @@ export function useAnimation(
   tabsContainerRef: Ref<HTMLElement | undefined>
 ): AnimationManager {
   const animations = new Map<HTMLElement, Animation>()
-  const cancelAnimations = () => {
+  const cancelAnimations = (): void => {
     animations.forEach((animation) => animation.cancel())
     animations.clear()
   }
@@ -267,7 +267,7 @@ export function useAnimation(
     )
   }
 
-  const resetOverlayState = () => {
+  const resetOverlayState = (): void => {
     cancelAnimations()
     overlayStateManager.resetState()
 
@@ -422,7 +422,7 @@ export function useAnimation(
     )
   }
 
-  const resetSearchStyles = () => {
+  const resetSearchStyles = (): void => {
     nextTick(() => {
       if (searchContainerRef.value) {
         const el = searchContainerRef.value
@@ -442,7 +442,7 @@ export function useAnimation(
     })
   }
 
-  const initializeStyles = () => {
+  const initializeStyles = (): void => {
     if (overlayContentRef.value) {
       overlayContentRef.value.style.transform = getHiddenTransform(slideDirection.value)
     }
@@ -451,11 +451,11 @@ export function useAnimation(
 
   // ==================== 状态设置方法 ====================
 
-  const setSearchVisible = (visible: boolean) => {
+  const setSearchVisible = (visible: boolean): void => {
     isSearchVisible.value = visible
   }
 
-  const setSearchAnimating = (animating: boolean) => {
+  const setSearchAnimating = (animating: boolean): void => {
     isSearchAnimating.value = animating
   }
 

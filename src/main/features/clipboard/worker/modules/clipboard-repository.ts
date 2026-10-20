@@ -1,264 +1,299 @@
 import { ClipboardDatabase } from '../../../../infrastructure/database/clipboard-database'
-import { ClipboardContent, ClipboardDataConverter, AppInfo, ClipboardHistoryRecord } from '../../types/clipboard-types'
+import {
+  ClipboardContent,
+  ClipboardDataConverter,
+  AppInfo,
+  ClipboardHistoryRecord
+} from '../../types/clipboard-types'
 import { ocrService } from '../../../../services/ocr-service'
 import logger from '../../../../utils/worker-logger'
 
+type OCRUpdateCallback = (payload: { contentId: string; ocrText: string }) => void
+
 export class ClipboardRepository {
-    private database: ClipboardDatabase
-    private historyCache: Map<string, { id: string; hash: string }> = new Map()
-    private idToHashIndex: Map<string, string> = new Map()
-    private maxCacheSize: number = 10000
-    private lastItemId: string = ''
-    private lastItemHash: string = ''
+  private database: ClipboardDatabase
+  private historyCache: Map<string, { id: string; hash: string }> = new Map()
+  private idToHashIndex: Map<string, string> = new Map()
+  private maxCacheSize: number = 10000
+  private lastItemId: string = ''
+  private lastItemHash: string = ''
+  private pendingOCR = new Map<string, OCRUpdateCallback | undefined>()
+  private processingPendingOCR = false
 
-    constructor() {
-        this.database = ClipboardDatabase.getInstance()
+  constructor() {
+    this.database = ClipboardDatabase.getInstance()
+  }
+
+  public initialize(config?: { maxCacheSize?: number; userDataPath?: string }): void {
+    if (config?.maxCacheSize) {
+      this.maxCacheSize = config.maxCacheSize
     }
-
-    public initialize(config?: { maxCacheSize?: number; userDataPath?: string }): void {
-        if (config?.maxCacheSize) {
-            this.maxCacheSize = config.maxCacheSize
-        }
-        if (config?.userDataPath) {
-            this.database.initialize(config.userDataPath)
-        }
-        this.initializeHistoryCache()
-        this.loadLastItemInfo()
+    if (config?.userDataPath) {
+      this.database.initialize(config.userDataPath)
     }
+    this.initializeHistoryCache()
+    this.loadLastItemInfo()
+  }
 
-    private initializeHistoryCache(): void {
-        try {
-            const records = this.database.queryRecordIdsAndHashes({
-                limit: this.maxCacheSize,
-                orderBy: 'last_used',
-                orderDirection: 'DESC'
-            })
+  private initializeHistoryCache(): void {
+    try {
+      const records = this.database.queryRecordIdsAndHashes({
+        limit: this.maxCacheSize,
+        orderBy: 'last_used',
+        orderDirection: 'DESC'
+      })
 
-            this.historyCache.clear()
-            this.idToHashIndex.clear()
+      this.historyCache.clear()
+      this.idToHashIndex.clear()
 
-            for (const record of records) {
-                this.historyCache.set(record.hash, {
-                    id: record.content_id,
-                    hash: record.hash
-                })
-                this.idToHashIndex.set(record.content_id, record.hash)
-            }
-        } catch (error) {
-            logger.error('[ClipboardRepository] Cache initialization failed:', error)
-        }
-    }
-
-    private loadLastItemInfo(): void {
-        try {
-            const lastRecordInfo = this.database.getLastRecordInfo()
-            if (lastRecordInfo) {
-                this.lastItemId = lastRecordInfo.content_id
-                this.lastItemHash = lastRecordInfo.hash
-            } else {
-                this.lastItemId = ''
-                this.lastItemHash = ''
-            }
-        } catch (error) {
-            this.lastItemId = ''
-            this.lastItemHash = ''
-        }
-    }
-
-    public async saveItem(
-        content: ClipboardContent,
-        contentHash: string,
-        options?: {
-            appInfo?: AppInfo
-            refreshSourceApp?: boolean
-            enableLocalOCR?: boolean
-            onOCRUpdated?: (payload: { contentId: string; ocrText: string }) => void
-        }
-    ): Promise<{ saved: boolean; id: string; isNew: boolean; sourceUpdated?: boolean }> {
-        if (!content || ClipboardDataConverter.isEmptyContent(content)) {
-            return { saved: false, id: '', isNew: false }
-        }
-
-        const now = Date.now()
-
-        const existingId = this.lastItemHash === contentHash
-            ? this.lastItemId
-            : this.historyCache.get(contentHash)?.id
-
-        let sourceAppId: string | undefined
-        if (options?.appInfo && (!existingId || options.refreshSourceApp)) {
-            sourceAppId = this.database.insertOrUpdateApp(
-                options.appInfo.application,
-                options.appInfo.path,
-                options.appInfo.icon
-            ) || undefined
-        }
-
-        if (existingId) {
-            const updated = this.database.updateLastUsed(existingId, now, sourceAppId)
-            if (sourceAppId && updated) {
-                logger.debug('[ActiveWindowService] Clipboard source refreshed', {
-                    recordId: existingId,
-                    sourceAppId,
-                    application: options?.appInfo?.application
-                })
-            }
-            this.lastItemId = existingId
-            this.lastItemHash = contentHash
-            return {
-                saved: true,
-                id: existingId,
-                isNew: false,
-                sourceUpdated: Boolean(sourceAppId && updated)
-            }
-        }
-
-        // Verify against database (double check if cache missed but DB has it?)
-        // The queryRecordIdsAndHashes loads most recent, but maybe it's an old item not in cache.
-        // For now, let's assume if it's not in cache (and cache is full-ish), we treat as new or rely on DB constraints?
-        // The original worker logic: check cache -> if not, insert new.
-        // Assuming we want to preserve that behavior for now.
-
-        const newItemId = ClipboardDataConverter.generateId()
-        const availableFormats = ClipboardDataConverter.getAvailableFormats(content)
-
-        this.database.insertRecord(
-            newItemId,
-            content,
-            ClipboardDataConverter.detectPrimaryType(content, availableFormats),
-            availableFormats,
-            now,
-            now,
-            sourceAppId,
-            contentHash
-        )
-        logger.debug('[ActiveWindowService] Clipboard source saved', {
-            recordId: newItemId,
-            sourceAppId: sourceAppId ?? null,
-            application: options?.appInfo?.application
+      for (const record of records) {
+        this.historyCache.set(record.hash, {
+          id: record.content_id,
+          hash: record.hash
         })
+        this.idToHashIndex.set(record.content_id, record.hash)
+      }
+    } catch (error) {
+      logger.error('[ClipboardRepository] Cache initialization failed:', error)
+    }
+  }
 
-        this.addToCache(newItemId, contentHash)
-        this.lastItemId = newItemId
-        this.lastItemHash = contentHash
+  private loadLastItemInfo(): void {
+    try {
+      const lastRecordInfo = this.database.getLastRecordInfo()
+      if (lastRecordInfo) {
+        this.lastItemId = lastRecordInfo.content_id
+        this.lastItemHash = lastRecordInfo.hash
+      } else {
+        this.lastItemId = ''
+        this.lastItemHash = ''
+      }
+    } catch {
+      this.lastItemId = ''
+      this.lastItemHash = ''
+    }
+  }
 
-        // Async OCR
-        if (options?.enableLocalOCR && content.image) {
-            this.performAsyncOCR(newItemId, content.image, options.onOCRUpdated)
-        }
-
-        return { saved: true, id: newItemId, isNew: true }
+  public async saveItem(
+    content: ClipboardContent,
+    contentHash: string,
+    options?: {
+      appInfo?: AppInfo
+      refreshSourceApp?: boolean
+      enableLocalOCR?: boolean
+      onOCRUpdated?: OCRUpdateCallback
+    }
+  ): Promise<{ saved: boolean; id: string; isNew: boolean; sourceUpdated?: boolean }> {
+    if (!content || ClipboardDataConverter.isEmptyContent(content)) {
+      return { saved: false, id: '', isNew: false }
     }
 
-    private addToCache(id: string, hash: string): void {
-        if (this.historyCache.size >= this.maxCacheSize) {
-            const firstKey = this.historyCache.keys().next().value
-            if (firstKey) {
-                const oldRecord = this.historyCache.get(firstKey)
-                if (oldRecord) {
-                    this.idToHashIndex.delete(oldRecord.id)
-                }
-                this.historyCache.delete(firstKey)
-            }
-        }
-        this.historyCache.set(hash, { id, hash })
-        this.idToHashIndex.set(id, hash)
+    const now = Date.now()
+
+    const existingId =
+      this.lastItemHash === contentHash ? this.lastItemId : this.historyCache.get(contentHash)?.id
+
+    let sourceAppId: string | undefined
+    if (options?.appInfo && (!existingId || options.refreshSourceApp)) {
+      sourceAppId =
+        this.database.insertOrUpdateApp(
+          options.appInfo.application,
+          options.appInfo.path,
+          options.appInfo.icon
+        ) || undefined
     }
 
-    public getById(id: string): ClipboardHistoryRecord | undefined {
-        return this.database.getRecordByContentId(id) || undefined
+    if (existingId) {
+      const updated = this.database.updateLastUsed(existingId, now, sourceAppId)
+      if (sourceAppId && updated) {
+        logger.debug('[ActiveWindowService] Clipboard source refreshed', {
+          recordId: existingId,
+          sourceAppId,
+          application: options?.appInfo?.application
+        })
+      }
+      this.lastItemId = existingId
+      this.lastItemHash = contentHash
+      return {
+        saved: true,
+        id: existingId,
+        isNew: false,
+        sourceUpdated: Boolean(sourceAppId && updated)
+      }
     }
 
-    public getLastItemHash(): string {
-        return this.lastItemHash
+    // Verify against database (double check if cache missed but DB has it?)
+    // The queryRecordIdsAndHashes loads most recent, but maybe it's an old item not in cache.
+    // For now, let's assume if it's not in cache (and cache is full-ish), we treat as new or rely on DB constraints?
+    // The original worker logic: check cache -> if not, insert new.
+    // Assuming we want to preserve that behavior for now.
+
+    const newItemId = ClipboardDataConverter.generateId()
+    const availableFormats = ClipboardDataConverter.getAvailableFormats(content)
+
+    this.database.insertRecord(
+      newItemId,
+      content,
+      ClipboardDataConverter.detectPrimaryType(content, availableFormats),
+      availableFormats,
+      now,
+      now,
+      sourceAppId,
+      contentHash
+    )
+    logger.debug('[ActiveWindowService] Clipboard source saved', {
+      recordId: newItemId,
+      sourceAppId: sourceAppId ?? null,
+      application: options?.appInfo?.application
+    })
+
+    this.addToCache(newItemId, contentHash)
+    this.lastItemId = newItemId
+    this.lastItemHash = contentHash
+
+    // Async OCR
+    if (options?.enableLocalOCR && content.image) {
+      this.performAsyncOCR(newItemId, content.image, options.onOCRUpdated)
     }
 
-    public syncDeletedRecords(deletedIds: string[]): string[] {
-        if (deletedIds.includes('*')) {
-            this.lastItemId = ''
-            this.lastItemHash = ''
-            this.historyCache.clear()
-            this.idToHashIndex.clear()
-            return [] // All deleted
-        }
+    return { saved: true, id: newItemId, isNew: true }
+  }
 
-        const deletedHashes: string[] = []
-        for (const [hash, record] of this.historyCache.entries()) {
-            if (deletedIds.includes(record.id)) {
-                deletedHashes.push(hash)
-            }
+  private addToCache(id: string, hash: string): void {
+    if (this.historyCache.size >= this.maxCacheSize) {
+      const firstKey = this.historyCache.keys().next().value
+      if (firstKey) {
+        const oldRecord = this.historyCache.get(firstKey)
+        if (oldRecord) {
+          this.idToHashIndex.delete(oldRecord.id)
         }
+        this.historyCache.delete(firstKey)
+      }
+    }
+    this.historyCache.set(hash, { id, hash })
+    this.idToHashIndex.set(id, hash)
+  }
 
-        for (const hash of deletedHashes) {
-            this.removeFromCache(hash)
-        }
+  public getById(id: string): ClipboardHistoryRecord | undefined {
+    return this.database.getRecordByContentId(id) || undefined
+  }
 
-        if (deletedIds.includes(this.lastItemId)) {
-            this.loadLastItemInfo()
-        }
+  public getLastItemHash(): string {
+    return this.lastItemHash
+  }
 
-        return deletedHashes
+  public syncDeletedRecords(deletedIds: string[]): string[] {
+    if (deletedIds.includes('*')) {
+      this.lastItemId = ''
+      this.lastItemHash = ''
+      this.historyCache.clear()
+      this.idToHashIndex.clear()
+      return [] // All deleted
     }
 
-    public syncDeletedRecordsByHash(deletedHashes: string[]): void {
-        if (deletedHashes.includes(this.lastItemHash)) {
-            this.lastItemId = ''
-            this.lastItemHash = ''
-            this.loadLastItemInfo()
-        }
-        for (const hash of deletedHashes) {
-            this.removeFromCache(hash)
-        }
+    const deletedHashes: string[] = []
+    for (const [hash, record] of this.historyCache.entries()) {
+      if (deletedIds.includes(record.id)) {
+        deletedHashes.push(hash)
+      }
     }
 
-    public syncDeletedRecordsByIds(deletedIds: string[]): void {
-        if (deletedIds.includes(this.lastItemId)) {
-            this.lastItemId = ''
-            this.lastItemHash = ''
-            this.loadLastItemInfo()
-        }
-        for (const id of deletedIds) {
-            const hash = this.idToHashIndex.get(id)
-            if (hash) {
-                this.historyCache.delete(hash)
-                this.idToHashIndex.delete(id)
-            }
-        }
+    for (const hash of deletedHashes) {
+      this.removeFromCache(hash)
     }
 
-    private removeFromCache(hash: string): void {
-        const record = this.historyCache.get(hash)
-        if (record) {
-            this.idToHashIndex.delete(record.id)
-        }
+    if (deletedIds.includes(this.lastItemId)) {
+      this.loadLastItemInfo()
+    }
+
+    return deletedHashes
+  }
+
+  public syncDeletedRecordsByHash(deletedHashes: string[]): void {
+    if (deletedHashes.includes(this.lastItemHash)) {
+      this.lastItemId = ''
+      this.lastItemHash = ''
+      this.loadLastItemInfo()
+    }
+    for (const hash of deletedHashes) {
+      this.removeFromCache(hash)
+    }
+  }
+
+  public syncDeletedRecordsByIds(deletedIds: string[]): void {
+    if (deletedIds.includes(this.lastItemId)) {
+      this.lastItemId = ''
+      this.lastItemHash = ''
+      this.loadLastItemInfo()
+    }
+    for (const id of deletedIds) {
+      const hash = this.idToHashIndex.get(id)
+      if (hash) {
         this.historyCache.delete(hash)
+        this.idToHashIndex.delete(id)
+      }
     }
+  }
 
-    // Moved from worker
-    private async performAsyncOCR(
-        contentId: string,
-        imageBuffer: Buffer,
-        onOCRUpdated?: (payload: { contentId: string; ocrText: string }) => void
-    ): Promise<void> {
-        try {
-            if (!ocrService.ready) {
-                // OCR service should be initialized from worker or elsewhere
-                // For now we assume the worker initializes OCR service before calling repo (or we check status)
-                // But repo doesn't have config.
-            }
-            // ... (Logic relies on ocrService singleton, so it's fine)
-            const ocrResult = await ocrService.recognizeText(imageBuffer)
-            if (ocrResult.success && ocrResult.text && ocrResult.text.trim()) {
-                this.database.updateOCR(contentId, ocrResult.text)
-                onOCRUpdated?.({ contentId, ocrText: ocrResult.text })
-            }
-        } catch (error) {
-            logger.error('[ClipboardRepository] OCR failed:', error)
+  private removeFromCache(hash: string): void {
+    const record = this.historyCache.get(hash)
+    if (record) {
+      this.idToHashIndex.delete(record.id)
+    }
+    this.historyCache.delete(hash)
+  }
+
+  public clearPendingOCR(): void {
+    this.pendingOCR.clear()
+  }
+
+  public async processPendingOCR(shouldContinue: () => boolean): Promise<void> {
+    if (this.processingPendingOCR) return
+    this.processingPendingOCR = true
+    try {
+      while (this.pendingOCR.size && ocrService.ready && shouldContinue()) {
+        const [contentId, onUpdated] = this.pendingOCR.entries().next().value!
+        this.pendingOCR.delete(contentId)
+        const record = this.getById(contentId)
+        if (!record) continue
+        if (record.content_image)
+          await this.performAsyncOCR(contentId, record.content_image, onUpdated)
+      }
+    } finally {
+      this.processingPendingOCR = false
+    }
+  }
+
+  // Moved from worker
+  private async performAsyncOCR(
+    contentId: string,
+    imageBuffer: Buffer,
+    onOCRUpdated?: OCRUpdateCallback
+  ): Promise<void> {
+    try {
+      if (!ocrService.ready) {
+        // 下载模型期间只保留记录 ID，识别时再读取图片，避免积压图片内存。
+        if (this.pendingOCR.size >= this.maxCacheSize) {
+          const oldest = this.pendingOCR.keys().next().value
+          if (oldest) this.pendingOCR.delete(oldest)
         }
+        this.pendingOCR.set(contentId, onOCRUpdated)
+        return
+      }
+      const ocrResult = await ocrService.recognizeText(imageBuffer)
+      if (ocrResult.success && ocrResult.text && ocrResult.text.trim()) {
+        this.database.updateOCR(contentId, ocrResult.text)
+        onOCRUpdated?.({ contentId, ocrText: ocrResult.text })
+      } else if (!ocrResult.success) {
+        logger.error('[ClipboardRepository] OCR failed:', ocrResult.error)
+      }
+    } catch (error) {
+      logger.error('[ClipboardRepository] OCR failed:', error)
     }
+  }
 
-    // Helper to re-expose database methods needed
-    public updateOCR(id: string, text: string): boolean {
-        return this.database.updateOCR(id, text)
-    }
+  // Helper to re-expose database methods needed
+  public updateOCR(id: string, text: string): boolean {
+    return this.database.updateOCR(id, text)
+  }
 }

@@ -110,7 +110,7 @@ export class ScheduledSyncManager extends BaseWorkerManager {
 
     // 根据提供者类型检查具体配置
     if (config.providerType === 'webdav') {
-      const webdavConfig = config.providerConfig as any
+      const webdavConfig = config.providerConfig
       return !!(
         webdavConfig.serverUrl &&
         webdavConfig.username &&
@@ -330,7 +330,7 @@ export class ScheduledSyncManager extends BaseWorkerManager {
   private sendWorkerResponse(
     requestId: string,
     success: boolean,
-    data?: any,
+    data?: unknown,
     error?: string
   ): void {
     if (!this.worker) {
@@ -353,7 +353,7 @@ export class ScheduledSyncManager extends BaseWorkerManager {
   /**
    * 向所有窗口发送IPC事件
    */
-  private sendIpcEventToAllWindows(channel: string, data?: any): void {
+  private sendIpcEventToAllWindows(channel: string, data?: unknown): void {
     try {
       const allWindows = BrowserWindow.getAllWindows()
 

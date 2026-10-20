@@ -1,341 +1,161 @@
-import { setOCREnv, init } from '../ocr/main'
+import { init, setOCREnv, type initType, type InitOcrBase, type detResultType } from 'esearch-ocr'
 import * as ort from 'onnxruntime-node'
-import { promises as fs } from 'fs'
-import path from 'path'
-import logger from '../utils/logger'
+import { promises as fs } from 'node:fs'
 import { createCanvas, loadImage, createImageData } from 'canvas'
+import type { OCRModelId } from '../../shared/ocr-models'
+import { getInstalledOCRModel } from './model-store'
+import logger from '../utils/logger'
 
-/**
- * OCR 识别结果类型
- */
-export interface OCRResult {
-  text: string
-  mean: number
-  box: [number, number][] // 文字框坐标 ↖ ↗ ↘ ↙
-  style: {
-    bg: [number, number, number] // RGB背景色
-    text: [number, number, number] // RGB文字色
-  }
-}
+export type OCROutput = Awaited<ReturnType<initType['ocr']>>
 
-/**
- * OCR 输出结果类型
- */
-export interface OCROutput {
-  src: OCRResult[] // 每个视觉行
-  columns: {
-    src: OCRResult[]
-    outerBox: [number, number][]
-    parragraphs: {
-      src: OCRResult[]
-      parse: OCRResult
-    }[]
-  }[]
-  parragraphs: OCRResult[] // 聚合的段落
-  readingDir: {
-    inline: 'lr' | 'rl' | 'tb' | 'bt' // 行内阅读方向
-    block: 'lr' | 'rl' | 'tb' | 'bt' // 行排版方向
-  }
-  angle: {
-    reading: { inline: number; block: number } // 阅读方向角度
-    angle: number // 整体旋转角
-  }
-}
-
-/**
- * OCR 配置选项
- */
 export interface OCRConfig {
-  detRatio?: number // 检测缩放比例，默认 1.0
-  recImgHeight?: number // 识别图片高度，默认 48
-  enableSpaceOptimize?: boolean // 是否启用空格优化，默认 true
-  enableDocCls?: boolean // 是否启用文档方向识别，默认 false
+  detRatio?: number
+  recImgHeight?: number
+  enableSpaceOptimize?: boolean
 }
 
-/**
- * OCR 管理器构造选项
- */
 export interface OCRManagerOptions {
-  resourcePath: string // OCR 资源文件路径
-  isDev?: boolean // 是否为开发环境，默认 false
+  resourcePath: string
+  modelId: OCRModelId
 }
 
-/**
- * OCR 管理器类
- * 基于 esearch-ocr 和 onnxruntime-node 实现的 OCR 识别工具
- */
 export class OCRManager {
-  private static instance: OCRManager | null = null
-  private ocrInstance: any = null
-  private isInitialized = false
-  private resourcePath = ''
-  private isDev = false
+  private ocrInstance: initType | null = null
+  private sessions = new Map<string, ort.InferenceSession>()
+  private operations: Promise<void> = Promise.resolve()
+  private modelDirectory = ''
 
-  private constructor(options: OCRManagerOptions) {
-    this.resourcePath = options.resourcePath
-    this.isDev = options.isDev || false
+  constructor(private readonly options: OCRManagerOptions) {}
+
+  // eSearch-OCR 的图像处理共享运行环境，识别与释放必须按顺序执行。
+  private enqueue<T>(operation: () => Promise<T>): Promise<T> {
+    const result = this.operations.then(operation)
+    this.operations = result.then(
+      () => undefined,
+      () => undefined
+    )
+    return result
   }
 
-  /**
-   * 更新 OCR 管理器配置
-   * 当资源路径变化且已初始化时，重置实例以便后续按新路径重新初始化
-   */
-  private updateOptions(options: OCRManagerOptions): void {
-    const nextResourcePath = options.resourcePath
-    const nextIsDev = options.isDev || false
-    const resourcePathChanged = this.resourcePath !== nextResourcePath
-
-    if (resourcePathChanged && this.isInitialized) {
-      logger.warn('OCR 资源路径发生变化，重置已初始化实例以重新加载模型')
-      this.destroy()
-    }
-
-    this.resourcePath = nextResourcePath
-    this.isDev = nextIsDev
-  }
-
-  /**
-   * 获取 OCR 管理器单例
-   * @param options 构造选项，可用于更新资源路径和运行模式
-   */
-  public static getInstance(options?: OCRManagerOptions): OCRManager {
-    if (!OCRManager.instance) {
-      if (!options) {
-        throw new Error('首次调用 getInstance 时必须提供 options 参数')
-      }
-      OCRManager.instance = new OCRManager(options)
-    } else if (options) {
-      OCRManager.instance.updateOptions(options)
-    }
-    return OCRManager.instance
-  }
-
-  /**
-   * 初始化 OCR 引擎
-   */
-  public async initialize(config: OCRConfig = {}): Promise<void> {
-    if (this.isInitialized) {
-      logger.info('OCR 引擎已经初始化')
-      return
-    }
-
-    try {
-      logger.info('开始初始化 OCR 引擎...')
-
-      // 设置 Node.js 环境的 canvas 支持
-      setOCREnv({
-        canvas: (w: number, h: number) => createCanvas(w, h),
-        imageData: createImageData
-      })
-
-      // 检查资源文件是否存在
-      const detModelPath = path.join(this.resourcePath, 'ppocr_det.onnx')
-      const recModelPath = path.join(this.resourcePath, 'ppocr_rec.onnx')
-      const keysPath = path.join(this.resourcePath, 'ppocr_keys_v1.txt')
-
-      await this.checkResourceFiles([detModelPath, recModelPath, keysPath])
-
-      // 读取字典文件
-      const decodeDic = await fs.readFile(keysPath, 'utf-8')
-
-      // 初始化 OCR 配置
-      const initConfig: any = {
-        ort: ort as any,
-        det: {
-          input: detModelPath,
-          ratio: config.detRatio || 1.0,
-          on: (result: any) => {
-            logger.debug('检测完成:', result.length, '个文字区域')
-          }
-        },
-        rec: {
-          input: recModelPath,
-          decodeDic: decodeDic.trim(),
-          imgh: config.recImgHeight || 48,
-          on: (index: number, _result: any, total: number) => {
-            logger.debug(`识别进度: ${index + 1}/${total}`)
-          },
-          optimize: {
-            space: config.enableSpaceOptimize !== false
-          }
-        },
-        dev: this.isDev // 开发环境启用调试
-      }
-
-      // 如果启用文档方向识别，添加相关配置
-      if (config.enableDocCls) {
-        // 注意：需要额外的文档方向识别模型文件
-        const clsModelPath = path.join(this.resourcePath, 'ppocr_cls.onnx')
-        try {
-          await fs.access(clsModelPath)
-            ; (initConfig as any).docCls = {
-              input: clsModelPath
-            }
-          logger.info('启用文档方向识别')
-        } catch (error) {
-          logger.warn('文档方向识别模型不存在，跳过该功能')
-        }
-      }
-
-      // 初始化 OCR 实例
-      this.ocrInstance = await init(initConfig)
-      this.isInitialized = true
-
-      logger.info('OCR 引擎初始化成功')
-    } catch (error) {
-      logger.error('OCR 引擎初始化失败:', error)
-      throw new Error(`OCR 引擎初始化失败: ${error}`)
-    }
-  }
-
-  /**
-   * 检查资源文件是否存在
-   */
-  private async checkResourceFiles(filePaths: string[]): Promise<void> {
-    for (const filePath of filePaths) {
+  public initialize(config: OCRConfig = {}): Promise<void> {
+    return this.enqueue(async () => {
+      if (this.ocrInstance) return
+      const installed = await getInstalledOCRModel(
+        this.options.resourcePath,
+        this.options.modelId,
+        true
+      )
+      if (!installed) throw new Error('本地 OCR 模型未下载或已损坏，请在 OCR 设置中下载模型')
+      setOCREnv({ canvas: createCanvas, imageData: createImageData, dev: false, log: false })
       try {
-        await fs.access(filePath)
-        logger.debug(`资源文件存在: ${filePath}`)
+        const sessionOptions: ort.InferenceSession.SessionOptions = {
+          executionProviders: ['cpu'],
+          graphOptimizationLevel: 'all'
+        }
+        for (const file of [installed.det, installed.rec]) {
+          this.sessions.set(file, await ort.InferenceSession.create(file, sessionOptions))
+        }
+        const metadata = this.sessions.get(installed.rec)!.inputMetadata[0]
+        const height = metadata?.isTensor ? metadata.shape[2] : undefined
+        // 复用已加载的原生会话，同时兼容上游声明的 onnxruntime-common 类型。
+        const runtime = {
+          ...ort,
+          InferenceSession: {
+            create: async (input: unknown): Promise<ort.InferenceSession> => {
+              const session = typeof input === 'string' ? this.sessions.get(input) : undefined
+              if (!session) throw new Error('未知的 OCR 模型会话')
+              return session
+            }
+          }
+        } as unknown as InitOcrBase['ort']
+        this.ocrInstance = await init({
+          ort: runtime,
+          det: { input: installed.det, ratio: config.detRatio ?? 1 },
+          rec: {
+            input: installed.rec,
+            // 保留字典中的空白字符，避免改变词表索引。
+            decodeDic: (await fs.readFile(installed.dictionary, 'utf8')).replace(/^\uFEFF/, ''),
+            imgh: config.recImgHeight ?? (typeof height === 'number' && height > 0 ? height : 48),
+            optimize: { space: config.enableSpaceOptimize ?? installed.model.optimizeSpace }
+          },
+          dev: false,
+          log: false
+        })
+        this.modelDirectory = installed.directory
+        logger.info('[OCR] 模型加载完成:', installed.model.id)
       } catch (error) {
-        throw new Error(`资源文件不存在: ${filePath}`)
+        try {
+          await this.releaseSessions()
+        } catch (releaseError) {
+          logger.error('[OCR] 初始化失败后释放模型失败:', releaseError)
+        }
+        throw error
+      }
+    })
+  }
+
+  public recognize(imageInput: string | Buffer): Promise<OCROutput> {
+    return this.enqueue(async () => {
+      if (!this.ocrInstance) throw new Error('OCR 引擎未初始化')
+      return this.ocrInstance.ocr(await this.convertToImageData(imageInput))
+    })
+  }
+
+  public detect(imageInput: string | Buffer): Promise<detResultType> {
+    return this.enqueue(async () => {
+      if (!this.ocrInstance) throw new Error('OCR 引擎未初始化')
+      return this.ocrInstance.det(await this.convertToImageData(imageInput))
+    })
+  }
+
+  private async convertToImageData(imageInput: string | Buffer): Promise<ImageData> {
+    let source: string | Buffer = imageInput
+    if (typeof source === 'string' && !source.startsWith('data:')) {
+      try {
+        await fs.access(source)
+      } catch (error) {
+        if (!['ENOENT', 'ENAMETOOLONG'].includes((error as NodeJS.ErrnoException).code || ''))
+          throw error
+        source = Buffer.from(source, 'base64')
       }
     }
+    const image = await loadImage(source)
+    if (!image.width || !image.height) throw new Error('图片尺寸无效')
+    const canvas = createCanvas(image.width, image.height)
+    const context = canvas.getContext('2d')
+    context.drawImage(image, 0, 0)
+    return context.getImageData(0, 0, image.width, image.height) as unknown as ImageData
   }
 
-  /**
-   * 执行 OCR 识别
-   * @param imageInput 图片输入，支持 base64 字符串、文件路径、Buffer 等
-   * @returns OCR 识别结果
-   */
-  public async recognize(imageInput: string | Buffer): Promise<OCROutput> {
-    if (!this.isInitialized || !this.ocrInstance) {
-      throw new Error('OCR 引擎未初始化，请先调用 initialize() 方法')
-    }
-
-    try {
-      logger.debug('开始 OCR 识别...')
-
-      // 将输入转换为 ImageData
-      const imageData = await this.convertToImageData(imageInput)
-
-      // 执行 OCR 识别
-      const result = await this.ocrInstance.ocr(imageData)
-
-      logger.debug('OCR 识别完成，识别到', result.src?.length || 0, '个文字区域')
-
-      return result as OCROutput
-    } catch (error) {
-      logger.error('OCR 识别失败:', error)
-      throw new Error(`OCR 识别失败: ${error}`)
-    }
-  }
-
-  /**
-   * 仅执行文字检测（不识别文字内容）
-   */
-  public async detect(imageInput: string | Buffer): Promise<any> {
-    if (!this.isInitialized || !this.ocrInstance) {
-      throw new Error('OCR 引擎未初始化，请先调用 initialize() 方法')
-    }
-
-    try {
-      logger.debug('开始文字检测...')
-
-      // 将输入转换为 ImageData
-      const imageData = await this.convertToImageData(imageInput)
-
-      const result = await this.ocrInstance.det(imageData)
-      logger.debug('文字检测完成，检测到', result?.length || 0, '个文字区域')
-
-      return result
-    } catch (error) {
-      logger.error('文字检测失败:', error)
-      throw new Error(`文字检测失败: ${error}`)
-    }
-  }
-
-  /**
-   * 将输入转换为 ImageData
-   */
-  private async convertToImageData(imageInput: string | Buffer): Promise<any> {
-    try {
-      let image: any
-
-      if (Buffer.isBuffer(imageInput)) {
-        // 如果是 Buffer，直接使用 loadImage
-        image = await loadImage(imageInput)
-      } else if (imageInput.startsWith('data:image/')) {
-        // 如果是 base64 格式，直接使用 loadImage
-        image = await loadImage(imageInput)
-      } else if (imageInput.startsWith('/') || imageInput.includes(':\\')) {
-        // 如果是文件路径，读取文件
-        image = await loadImage(imageInput)
-      } else {
-        // 假设是 base64 字符串，添加前缀
-        const dataUrl = `data:image/png;base64,${imageInput}`
-        image = await loadImage(dataUrl)
-      }
-
-      // 创建 canvas 并绘制图片
-      const canvas = createCanvas(image.width, image.height)
-      const ctx = canvas.getContext('2d')
-      ctx.drawImage(image, 0, 0)
-
-      // 获取 ImageData (使用 any 类型避免类型冲突)
-      return ctx.getImageData(0, 0, image.width, image.height) as any
-    } catch (error) {
-      logger.error('转换 ImageData 失败:', error)
-      throw new Error(`转换 ImageData 失败: ${error}`)
-    }
-  }
-
-  /**
-   * 获取识别结果的纯文本
-   */
   public extractText(result: OCROutput): string {
-    if (!result.parragraphs || result.parragraphs.length === 0) {
-      return ''
-    }
-
-    return result.parragraphs.map((item) => item.text).join('\n')
+    const lines = result.parragraphs.length ? result.parragraphs : result.src
+    return lines.map((item) => item.text).join('\n')
   }
 
-  /**
-   * 静态方法：获取识别结果的纯文本
-   */
-  public static extractText(result: OCROutput): string {
-    if (!result.parragraphs || result.parragraphs.length === 0) {
-      return ''
-    }
-
-    return result.parragraphs.map((item) => item.text).join('\n')
+  private async releaseSessions(): Promise<void> {
+    const results = await Promise.allSettled(
+      [...this.sessions.values()].map((session) => session.release())
+    )
+    this.sessions.clear()
+    const errors = results
+      .filter((result) => result.status === 'rejected')
+      .map((result) => result.reason)
+    if (errors.length) throw new AggregateError(errors, '释放 OCR 模型失败')
   }
 
-  /**
-   * 销毁 OCR 实例
-   */
-  public destroy(): void {
-    if (this.ocrInstance) {
+  public destroy(): Promise<void> {
+    return this.enqueue(async () => {
       this.ocrInstance = null
-      this.isInitialized = false
-      logger.info('OCR 引擎已销毁')
-    }
+      this.modelDirectory = ''
+      await this.releaseSessions()
+    })
   }
 
-  /**
-   * 检查是否已初始化
-   */
   public get initialized(): boolean {
-    return this.isInitialized
+    return this.ocrInstance !== null
   }
 
-  /**
-   * 获取资源路径
-   */
   public get resourcesPath(): string {
-    return this.resourcePath
+    return this.modelDirectory
   }
 }
-
-// 导出单例实例
-// export const ocrManager = OCRManager.getInstance()

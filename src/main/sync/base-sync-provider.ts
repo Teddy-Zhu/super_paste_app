@@ -184,10 +184,10 @@ export abstract class BaseSyncProvider {
   /**
    * 触发事件
    */
-  protected emitEvent(type: string, data: any): void {
+  protected emitEvent(type: SyncEvent['type'], data: unknown): void {
     const listeners = this.eventListeners.get(type)
     if (listeners && listeners.length > 0) {
-      const event: SyncEvent = { type: type as any, data }
+      const event: SyncEvent = { type, data }
       listeners.forEach((listener) => {
         try {
           listener(event)

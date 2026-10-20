@@ -115,7 +115,7 @@ export function useSearchAndNavigation(
     return document.querySelector<HTMLInputElement>(SEARCH_INPUT_SELECTOR)
   }
 
-  const syncInput = (value: string, focus = false) => {
+  const syncInput = (value: string, focus = false): void => {
     nextTick(() => {
       const searchInput = getSearchInput()
       if (!searchInput) return
@@ -131,14 +131,14 @@ export function useSearchAndNavigation(
     })
   }
 
-  const appendInputBuffer = (value: string) => {
+  const appendInputBuffer = (value: string): void => {
     searchStateManager.setState((prev) => ({
       ...prev,
       inputBuffer: prev.inputBuffer + value
     }))
   }
 
-  const closeSearchOrWindow = () => {
+  const closeSearchOrWindow = (): void => {
     if (isSearchVisible.value) {
       onToggleSearch()
     } else {
@@ -158,14 +158,14 @@ export function useSearchAndNavigation(
     return event.key.length === 1
   }
 
-  const handleSearchInput = (event: Event) => {
+  const handleSearchInput = (event: Event): void => {
     const target = event.target as HTMLInputElement
     const newText = target.value
     searchStateManager.setState((prev) => ({ ...prev, text: newText }))
     debouncedSearchFn(newText)
   }
 
-  const applyInputBuffer = () => {
+  const applyInputBuffer = (): void => {
     const { text, inputBuffer } = searchStateManager.state.value
     if (!inputBuffer) {
       return
@@ -182,7 +182,7 @@ export function useSearchAndNavigation(
     debouncedSearchFn(mergedText)
   }
 
-  const focusSearchInput = () => {
+  const focusSearchInput = (): void => {
     const currentText = searchStateManager.state.value.text
     syncInput(currentText, true)
   }
@@ -193,7 +193,7 @@ export function useSearchAndNavigation(
     opening: boolean,
     animating: boolean,
     toggleSearch: ToggleSearchFn
-  ) => {
+  ): void => {
     if (!visible || opening || animating) {
       event.preventDefault()
       appendInputBuffer(event.key)
@@ -213,20 +213,20 @@ export function useSearchAndNavigation(
     }
   }
 
-  const resetSearchState = () => {
+  const resetSearchState = (): void => {
     searchStateManager.resetState()
     debouncedSearchFn.cancel()
     syncInput('')
   }
 
-  const setKeyboardNavigation = (value: boolean) => {
+  const setKeyboardNavigation = (value: boolean): void => {
     navigationStateManager.setState((prev) => ({
       ...prev,
       isKeyboardNavigation: value
     }))
   }
 
-  const handleSearchInputNavigation = (event: KeyboardEvent) => {
+  const handleSearchInputNavigation = (event: KeyboardEvent): void => {
     switch (event.key) {
       case 'Escape':
         event.preventDefault()
@@ -243,7 +243,7 @@ export function useSearchAndNavigation(
     }
   }
 
-  const handleEmptyHistoryNavigation = (event: KeyboardEvent) => {
+  const handleEmptyHistoryNavigation = (event: KeyboardEvent): void => {
     if (event.key === 'Escape') {
       event.preventDefault()
       closeSearchOrWindow()
@@ -255,7 +255,7 @@ export function useSearchAndNavigation(
     }
   }
 
-  const handleNavigationWithHistory = (event: KeyboardEvent, isCtrlOrCmd: boolean) => {
+  const handleNavigationWithHistory = (event: KeyboardEvent, isCtrlOrCmd: boolean): void => {
     const maxIndex = clipboardHistory.value.length - 1
 
     switch (event.key) {
@@ -311,7 +311,7 @@ export function useSearchAndNavigation(
     }
   }
 
-  const handleKeyNavigation = (event: KeyboardEvent) => {
+  const handleKeyNavigation = (event: KeyboardEvent): void => {
     const isCtrlOrCmd = event.ctrlKey || event.metaKey
 
     if (isSearchVisible.value) {
@@ -330,7 +330,7 @@ export function useSearchAndNavigation(
     handleNavigationWithHistory(event, isCtrlOrCmd)
   }
 
-  const cleanup = () => {
+  const cleanup = (): void => {
     debouncedSearchFn.cancel()
   }
 

@@ -13,6 +13,7 @@ import { appEventBus } from '../../utils/app-event-bus'
  */
 export class TrayManager {
   private tray: Tray | null = null
+  private updatingOCR = false
 
   /**
    * 创建任务栏图标
@@ -92,16 +93,21 @@ export class TrayManager {
         label: '自动 OCR',
         type: 'checkbox',
         checked: enableLocalOCR,
-        click: async () => {
-          const newValue = !enableLocalOCR
-          store.set(STORE_KEY.SETTINGS_ENABLE_LOCAL_OCR, newValue)
+        enabled: !this.updatingOCR,
+        click: async (menuItem) => {
+          const newValue = menuItem.checked
+          this.updatingOCR = true
+          this.setupContextMenu()
 
           // 实际更新剪贴板管理器的 OCR 配置
           try {
             await clipboardManager.updateConfig({ enableLocalOCR: newValue })
+            store.set(STORE_KEY.SETTINGS_ENABLE_LOCAL_OCR, newValue)
             logger.debug(`[主进程] 从托盘更新自动 OCR 状态: ${newValue}`)
           } catch (error) {
             logger.error('[主进程] 从托盘更新自动 OCR 配置失败:', error)
+          } finally {
+            this.updatingOCR = false
           }
 
           // 重新构建菜单以更新勾选状态

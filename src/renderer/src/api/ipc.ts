@@ -1,40 +1,16 @@
-import type { IpcRendererEvent } from 'electron'
-
 /**
  * IPC 渲染进程服务封装
  * 只暴露项目中实际使用的 IPC 方法，提高安全性和性能
  */
 
-// 类型定义
-type IpcRendererListener = (event: IpcRendererEvent, ...args: any[]) => void
-type SimpleListener = (...args: any[]) => void
-
-// 确保 window.electron 类型可用
-declare global {
-  interface Window {
-    electron: {
-      ipcRenderer: {
-        on: (channel: string, listener: (...args: any[]) => void) => () => void
-        once: (channel: string, listener: (...args: any[]) => void) => () => void
-        send: (channel: string, ...args: any[]) => void
-        invoke: (channel: string, ...args: any[]) => Promise<any>
-        sendSync: (channel: string, ...args: any[]) => any
-        off: (channel: string, listener: (...args: any[]) => void) => void
-        removeListener: (channel: string, listener: (...args: any[]) => void) => void
-        removeAllListeners: (channel: string) => void
-      }
-      process: {
-        platform: NodeJS.Platform
-        versions: NodeJS.ProcessVersions
-      }
-    }
-  }
-}
+import type { CustomElectronAPI, IpcRendererListener } from '../../../preload/index.d'
+import type { IpcResponses } from './types'
+type SimpleListener<Args extends unknown[]> = (...args: Args) => void
 
 /**
  * 获取 ipcRenderer 实例
  */
-function getIpcRenderer() {
+function getIpcRenderer(): CustomElectronAPI['ipcRenderer'] {
   if (!window.electron?.ipcRenderer) {
     throw new Error('ipcRenderer 不可用，请确保在 Electron 环境中运行')
   }
@@ -47,7 +23,10 @@ function getIpcRenderer() {
  * @param listener 监听器函数
  * @returns 返回一个取消监听的函数
  */
-export function on(channel: string, listener: IpcRendererListener): () => void {
+export function on<Args extends unknown[]>(
+  channel: string,
+  listener: IpcRendererListener<Args>
+): () => void {
   const ipcRenderer = getIpcRenderer()
   return ipcRenderer.on(channel, listener)
 }
@@ -58,9 +37,12 @@ export function on(channel: string, listener: IpcRendererListener): () => void {
  * @param listener 监听器函数
  * @returns 返回一个取消监听的函数
  */
-export function onSimple(channel: string, listener: SimpleListener): () => void {
+export function onSimple<Args extends unknown[]>(
+  channel: string,
+  listener: SimpleListener<Args>
+): () => void {
   const ipcRenderer = getIpcRenderer()
-  return ipcRenderer.on(channel, (_: any, ...args: any[]) => listener(...args))
+  return ipcRenderer.on(channel, (_, ...args: Args) => listener(...args))
 }
 
 /**
@@ -69,7 +51,10 @@ export function onSimple(channel: string, listener: SimpleListener): () => void 
  * @param listener 监听器函数
  * @returns 返回一个取消监听的函数
  */
-export function once(channel: string, listener: IpcRendererListener): () => void {
+export function once<Args extends unknown[]>(
+  channel: string,
+  listener: IpcRendererListener<Args>
+): () => void {
   const ipcRenderer = getIpcRenderer()
   return ipcRenderer.once(channel, listener)
 }
@@ -80,9 +65,12 @@ export function once(channel: string, listener: IpcRendererListener): () => void
  * @param listener 监听器函数
  * @returns 返回一个取消监听的函数
  */
-export function onceSimple(channel: string, listener: SimpleListener): () => void {
+export function onceSimple<Args extends unknown[]>(
+  channel: string,
+  listener: SimpleListener<Args>
+): () => void {
   const ipcRenderer = getIpcRenderer()
-  return ipcRenderer.once(channel, (_: any, ...args: any[]) => listener(...args))
+  return ipcRenderer.once(channel, (_, ...args: Args) => listener(...args))
 }
 
 /**
@@ -91,9 +79,11 @@ export function onceSimple(channel: string, listener: SimpleListener): () => voi
  * @param listener 要移除的监听器函数
  * @deprecated 推荐使用 on() 方法返回的取消函数
  */
-export function removeListener(channel: string, listener: (...args: any[]) => void): void {
+export function removeListener<Args extends unknown[]>(
+  channel: string,
+  listener: IpcRendererListener<Args>
+): void {
   const ipcRenderer = getIpcRenderer()
-  // @ts-ignore - 已废弃的方法，但仍需支持
   ipcRenderer.removeListener(channel, listener)
 }
 
@@ -111,7 +101,7 @@ export function removeAllListeners(channel: string): void {
  * @param channel 频道名称
  * @param args 要发送的参数
  */
-export function send(channel: string, ...args: any[]): void {
+export function send(channel: string, ...args: unknown[]): void {
   const ipcRenderer = getIpcRenderer()
   ipcRenderer.send(channel, ...args)
 }
@@ -122,9 +112,14 @@ export function send(channel: string, ...args: any[]): void {
  * @param args 要发送的参数
  * @returns Promise，解析为主进程的响应
  */
-export function invoke<T = any>(channel: string, ...args: any[]): Promise<T> {
+export function invoke<K extends keyof IpcResponses>(
+  channel: K,
+  ...args: unknown[]
+): Promise<IpcResponses[K]>
+export function invoke<T = unknown>(channel: string, ...args: unknown[]): Promise<T>
+export function invoke<T = unknown>(channel: string, ...args: unknown[]): Promise<T> {
   const ipcRenderer = getIpcRenderer()
-  return ipcRenderer.invoke(channel, ...args)
+  return ipcRenderer.invoke(channel, ...args) as Promise<T>
 }
 
 /**
@@ -133,9 +128,9 @@ export function invoke<T = any>(channel: string, ...args: any[]): Promise<T> {
  * @param args 要发送的参数
  * @returns 主进程的同步响应
  */
-export function sendSync<T = any>(channel: string, ...args: any[]): T {
+export function sendSync<T = unknown>(channel: string, ...args: unknown[]): T {
   const ipcRenderer = getIpcRenderer()
-  return ipcRenderer.sendSync(channel, ...args)
+  return ipcRenderer.sendSync(channel, ...args) as T
 }
 
 // 默认导出实际使用的方法

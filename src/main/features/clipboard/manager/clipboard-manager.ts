@@ -1,3 +1,7 @@
+import { DEFAULT_OCR_MODEL_ID, type OCRModelId } from '../../../../shared/ocr-models'
+import { getOCRModelStore } from '../../../ocr/model-service'
+import { getInstalledOCRModel } from '../../../ocr/model-store'
+import path from 'node:path'
 import { BaseWorkerManager } from '../../../workers/base-worker-manager'
 import { NotificationService } from '../../../services/notification-service'
 import store from '../../../config/store'
@@ -15,6 +19,7 @@ import clipboardManagerWorkerPath from '../worker/clipboard-manager.worker?modul
  */
 class ClipboardManager extends BaseWorkerManager {
   private static instance: ClipboardManager
+  private configUpdates: Promise<void> = Promise.resolve()
 
   private constructor() {
     const config: WorkerConfig = {
@@ -38,7 +43,7 @@ class ClipboardManager extends BaseWorkerManager {
     })
 
     // 监听历史记录更新事件
-    this.on('history-updated', (_: { timestamp: number; source?: string }) => {
+    this.on('history-updated', () => {
       // 通知前端剪贴板历史更新
       // this.notifyFrontendUpdate('history-updated', data)
     })
@@ -75,11 +80,13 @@ class ClipboardManager extends BaseWorkerManager {
   /**
    * 通知前端剪贴板历史更新
    */
-  private notifyFrontendUpdate(eventType: string, data: any): void {
+  private notifyFrontendUpdate(
+    eventType: string,
+    data: { timestamp: number; source?: string }
+  ): void {
     try {
       NotificationService.notifyClipboardHistoryUpdate({
         eventType,
-        timestamp: Date.now(),
         ...data
       })
     } catch (error) {
@@ -118,11 +125,12 @@ class ClipboardManager extends BaseWorkerManager {
 
   private getOCRConfigFromStore(): Pick<
     ClipboardManagerConfig,
-    'enableLocalOCR' | 'ocrMode' | 'ocrRemoteConfig'
+    'enableLocalOCR' | 'ocrMode' | 'ocrLocalModel' | 'ocrRemoteConfig'
   > {
     return {
       enableLocalOCR: store.get(STORE_KEY.SETTINGS_ENABLE_LOCAL_OCR, false),
       ocrMode: store.get(STORE_KEY.SETTINGS_OCR_MODE, 'local'),
+      ocrLocalModel: store.get(STORE_KEY.SETTINGS_OCR_LOCAL_MODEL, DEFAULT_OCR_MODEL_ID),
       ocrRemoteConfig: {
         url: store.get(STORE_KEY.SETTINGS_OCR_REMOTE_URL, ''),
         extraParams: store.get(STORE_KEY.SETTINGS_OCR_REMOTE_EXTRA_PARAMS, '{}'),
@@ -198,12 +206,7 @@ class ClipboardManager extends BaseWorkerManager {
   public async restoreClipboardContentAsText(params: {
     content: ClipboardContent
   }): Promise<boolean> {
-    return this.safeCall(
-      'restoreClipboardContentAsText',
-      '还原剪贴板为纯文本失败',
-      false,
-      params
-    )
+    return this.safeCall('restoreClipboardContentAsText', '还原剪贴板为纯文本失败', false, params)
   }
 
   /**
@@ -229,12 +232,36 @@ class ClipboardManager extends BaseWorkerManager {
       }
     }
 
-    // 需要导入 app 来获取 userDataPath、isPackaged 和 appPath
     const userDataPath = app.getPath('userData')
-    const isPackaged = app.isPackaged
-    const appPath = app.getAppPath()
+    await this.call('initialize', { config: finalConfig, userDataPath })
+    this.prepareAutoOCRModel().catch((error) => logger.error('[OCR] 自动准备模型失败:', error))
+  }
 
-    await this.call('initialize', { config: finalConfig, userDataPath, isPackaged, appPath })
+  private async prepareOCRModel(modelId: OCRModelId, verify = true): Promise<boolean> {
+    const root = path.join(app.getPath('userData'), 'ocr-models')
+    if (await getInstalledOCRModel(root, modelId, verify)) return false
+    await getOCRModelStore().download(modelId)
+    return true
+  }
+
+  private async prepareAutoOCRModel(): Promise<void> {
+    const config = await this.getConfig()
+    if (!config.enableLocalOCR || config.ocrMode !== 'local') return
+    if (!(await this.prepareOCRModel(config.ocrLocalModel))) return
+    const current = await this.getConfig()
+    if (
+      current.enableLocalOCR &&
+      current.ocrMode === 'local' &&
+      current.ocrLocalModel === config.ocrLocalModel
+    ) {
+      await this.updateConfig({})
+    }
+  }
+
+  public async parseOcrFromItem(itemId: string): Promise<{ success: boolean; message?: string }> {
+    const config = await this.getConfig()
+    if (config.ocrMode === 'local') await this.prepareOCRModel(config.ocrLocalModel)
+    return this.call('parseOcrFromItem', itemId)
   }
 
   /**
@@ -273,8 +300,23 @@ class ClipboardManager extends BaseWorkerManager {
   /**
    * 更新配置
    */
-  public async updateConfig(newConfig: Partial<ClipboardManagerConfig>): Promise<void> {
-    await this.safeCall('updateConfig', '更新配置失败', undefined, newConfig)
+  public updateConfig(newConfig: Partial<ClipboardManagerConfig>): Promise<void> {
+    const update = this.configUpdates.then(async () => {
+      const config = { ...(await this.getConfig()), ...newConfig }
+      if (config.enableLocalOCR && config.ocrMode === 'local') {
+        const verify =
+          newConfig.enableLocalOCR !== undefined ||
+          newConfig.ocrMode !== undefined ||
+          newConfig.ocrLocalModel !== undefined
+        await this.prepareOCRModel(config.ocrLocalModel, verify)
+      }
+      await this.call<void>('updateConfig', newConfig)
+    })
+    this.configUpdates = update.then(
+      () => undefined,
+      () => undefined
+    )
+    return update
   }
 
   /**

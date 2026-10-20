@@ -15,7 +15,7 @@ export interface WorkerInitConfig {
   /** 日志作用域（可选，默认使用 worker 名称） */
   logScope?: string
   /** 其他配置参数 */
-  [key: string]: any
+  [key: string]: unknown
 }
 
 /**
@@ -38,7 +38,7 @@ export abstract class BaseWorker {
     this.initializeLogger(config)
 
     // 子类可以重写此方法来添加额外的初始化逻辑
-    this.onWorkerInitialized(config)
+    this.onWorkerInitialized()
   }
 
   /**
@@ -83,14 +83,14 @@ export abstract class BaseWorker {
   /**
    * Worker 初始化完成后的回调（子类可以重写）
    */
-  protected onWorkerInitialized(_config: WorkerInitConfig): void {
+  protected onWorkerInitialized(): void {
     // 子类可以重写此方法来添加额外的初始化逻辑
   }
 
   /**
    * 发送事件到主线程
    */
-  protected sendEvent(event: string, data?: any): void {
+  protected sendEvent(event: string, data?: unknown): void {
     const eventMessage: WorkerEvent = {
       id: `event-${Date.now()}-${Math.random()}`,
       type: 'event',
@@ -111,7 +111,7 @@ export abstract class BaseWorker {
   /**
    * 处理检查错误（可被子类重写）
    */
-  protected handleCheckError(error: any, operation: string = '操作'): void {
+  protected handleCheckError(error: unknown, operation: string = '操作'): void {
     this.consecutiveErrors++
 
     const isTimeoutError = error instanceof Error && error.message.includes('超时')

@@ -59,7 +59,7 @@ export class HashUtils {
    * 生成对象内容哈希值
    * 将对象序列化后生成哈希
    */
-  static generateContentHash(content: any): string {
+  static generateContentHash(content: unknown): string {
     const contentStr = JSON.stringify(content)
     return this.generateStringHash(contentStr)
   }
@@ -117,7 +117,7 @@ export class HashUtils {
       const hash = createHash('md5')
       hash.update(fileBuffer)
       return hash.digest('hex')
-    } catch (error) {
+    } catch {
       // 如果文件不存在或读取失败，返回空字符串
       return ''
     }
@@ -133,7 +133,7 @@ export class HashUtils {
       const hash = createHash('sha256')
       hash.update(fileBuffer)
       return hash.digest('hex')
-    } catch (error) {
+    } catch {
       // 如果文件不存在或读取失败，返回空字符串
       return ''
     }

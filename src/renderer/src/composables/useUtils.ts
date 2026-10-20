@@ -40,13 +40,13 @@ export interface TimerManager {
   cleanup: () => void
 }
 
-export interface DebounceFunction<T extends (...args: any[]) => any> {
-  (...args: Parameters<T>): void
+export interface DebounceFunction<Args extends unknown[]> {
+  (...args: Args): void
   cancel: () => void
 }
 
-export interface ThrottleFunction<T extends (...args: any[]) => any> {
-  (...args: Parameters<T>): void
+export interface ThrottleFunction<Args extends unknown[]> {
+  (...args: Args): void
   cancel: () => void
 }
 
@@ -73,7 +73,7 @@ export function useEventManager(): EventManager {
   ): EventListenerCleanup => {
     element.addEventListener(event, handler, options)
 
-    const cleanup = () => {
+    const cleanup = (): void => {
       element.removeEventListener(event, handler, options)
       const index = listeners.findIndex(
         (l) =>
@@ -91,7 +91,7 @@ export function useEventManager(): EventManager {
     return cleanup
   }
 
-  const removeAllListeners = () => {
+  const removeAllListeners = (): void => {
     while (listeners.length > 0) {
       const listener = listeners[listeners.length - 1]
       listener.cleanup()
@@ -145,22 +145,22 @@ export function useTimerManager(): TimerManager {
     return id
   }
 
-  const clearTimeout = (id: number) => {
+  const clearTimeout = (id: number): void => {
     window.clearTimeout(id)
     timeouts.delete(id)
   }
 
-  const clearInterval = (id: number) => {
+  const clearInterval = (id: number): void => {
     window.clearInterval(id)
     intervals.delete(id)
   }
 
-  const cancelAnimationFrame = (id: number) => {
+  const cancelAnimationFrame = (id: number): void => {
     window.cancelAnimationFrame(id)
     rafs.delete(id)
   }
 
-  const cleanup = () => {
+  const cleanup = (): void => {
     timeouts.forEach((id) => window.clearTimeout(id))
     intervals.forEach((id) => window.clearInterval(id))
     rafs.forEach((id) => window.cancelAnimationFrame(id))
@@ -191,14 +191,14 @@ export function useTimerManager(): TimerManager {
  * @param fn 要防抖的函数
  * @param delay 延迟时间（毫秒）
  */
-export function useDebounce<T extends (...args: any[]) => any>(
-  fn: T,
+export function useDebounce<Args extends unknown[]>(
+  fn: (...args: Args) => unknown,
   delay: number = 300
-): DebounceFunction<T> {
+): DebounceFunction<Args> {
   const timerManager = useTimerManager()
   let timeoutId: number | null = null
 
-  const debouncedFn = ((...args: Parameters<T>) => {
+  const debouncedFn = ((...args: Args) => {
     if (timeoutId !== null) {
       timerManager.clearTimeout(timeoutId)
     }
@@ -207,7 +207,7 @@ export function useDebounce<T extends (...args: any[]) => any>(
       fn(...args)
       timeoutId = null
     }, delay)
-  }) as DebounceFunction<T>
+  }) as DebounceFunction<Args>
 
   debouncedFn.cancel = () => {
     if (timeoutId !== null) {
@@ -226,15 +226,15 @@ export function useDebounce<T extends (...args: any[]) => any>(
  * @param fn 要节流的函数
  * @param delay 节流间隔（毫秒）
  */
-export function useThrottle<T extends (...args: any[]) => any>(
-  fn: T,
+export function useThrottle<Args extends unknown[]>(
+  fn: (...args: Args) => unknown,
   delay: number = 100
-): ThrottleFunction<T> {
+): ThrottleFunction<Args> {
   const timerManager = useTimerManager()
   let isThrottled = false
   let timeoutId: number | null = null
 
-  const throttledFn = ((...args: Parameters<T>) => {
+  const throttledFn = ((...args: Args) => {
     if (isThrottled) return
 
     fn(...args)
@@ -244,7 +244,7 @@ export function useThrottle<T extends (...args: any[]) => any>(
       isThrottled = false
       timeoutId = null
     }, delay)
-  }) as ThrottleFunction<T>
+  }) as ThrottleFunction<Args>
 
   throttledFn.cancel = () => {
     if (timeoutId !== null) {
@@ -263,12 +263,14 @@ export function useThrottle<T extends (...args: any[]) => any>(
  * 创建 RAF 节流函数（用于动画和滚动）
  * @param fn 要节流的函数
  */
-export function useRafThrottle<T extends (...args: any[]) => any>(fn: T): ThrottleFunction<T> {
+export function useRafThrottle<Args extends unknown[]>(
+  fn: (...args: Args) => unknown
+): ThrottleFunction<Args> {
   const timerManager = useTimerManager()
   let rafId: number | null = null
   let isScheduled = false
 
-  const rafThrottledFn = ((...args: Parameters<T>) => {
+  const rafThrottledFn = ((...args: Args) => {
     if (isScheduled) return
 
     isScheduled = true
@@ -277,7 +279,7 @@ export function useRafThrottle<T extends (...args: any[]) => any>(fn: T): Thrott
       isScheduled = false
       rafId = null
     })
-  }) as ThrottleFunction<T>
+  }) as ThrottleFunction<Args>
 
   rafThrottledFn.cancel = () => {
     if (rafId !== null) {
@@ -342,7 +344,7 @@ export function useStateManager<T>(initialState: T): StateManager<T> {
   const state = ref<T>(initialState)
   const previousState = ref<T>(initialState)
 
-  const setState = (newState: T | ((prev: T) => T)) => {
+  const setState = (newState: T | ((prev: T) => T)): void => {
     previousState.value = state.value
     if (typeof newState === 'function') {
       state.value = (newState as (prev: T) => T)(state.value)
@@ -351,11 +353,11 @@ export function useStateManager<T>(initialState: T): StateManager<T> {
     }
   }
 
-  const resetState = () => {
+  const resetState = (): void => {
     setState(initialState)
   }
 
-  const revertState = () => {
+  const revertState = (): void => {
     setState(previousState.value)
   }
 

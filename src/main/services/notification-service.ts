@@ -9,7 +9,11 @@ export class NotificationService {
   /**
    * 通知前端剪贴板历史已更新
    */
-  static notifyClipboardHistoryUpdate(data: { timestamp: number; source?: string }): void {
+  static notifyClipboardHistoryUpdate(data: {
+    timestamp: number
+    source?: string
+    eventType?: string
+  }): void {
     try {
       const allWindows = BrowserWindow.getAllWindows()
 
@@ -81,7 +85,7 @@ export class NotificationService {
   /**
    * 通用的前端事件通知方法
    */
-  static notifyFrontend(eventName: string, data: any): void {
+  static notifyFrontend(eventName: string, data: unknown): void {
     try {
       const allWindows = BrowserWindow.getAllWindows()
 

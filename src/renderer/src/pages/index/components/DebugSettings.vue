@@ -1,10 +1,13 @@
 <script setup lang="ts">
+import type { SettingsStore } from '@renderer/stores/common'
 import { send } from '@renderer/api'
+import { onMounted } from 'vue'
+import { invoke } from '@renderer/api/ipc'
 import { clipboard } from '@renderer/api/renderer-api'
 
 // Props
 interface Props {
-  settingsStore: any
+  settingsStore: SettingsStore
 }
 
 const props = defineProps<Props>()
@@ -15,21 +18,21 @@ const openOverlayWindow = (): void => {
 }
 
 // 切换剪贴板监听
-const toggleClipboardListening = async () => {
+const toggleClipboardListening = async (): Promise<void> => {
   try {
     const newState = !props.settingsStore.clipboardListening
 
     if (newState) {
       const success = await clipboard.startListening()
       if (success) {
-        props.settingsStore.clipboardListening = true
+        props.settingsStore.$patch({ clipboardListening: true })
       } else {
         console.error('开启剪贴板监听失败')
       }
     } else {
       const success = await clipboard.stopListening()
       if (success) {
-        props.settingsStore.clipboardListening = false
+        props.settingsStore.$patch({ clipboardListening: false })
       } else {
         console.error('关闭剪贴板监听失败')
       }
@@ -40,11 +43,11 @@ const toggleClipboardListening = async () => {
 }
 
 // 同步剪贴板监听状态
-const syncClipboardListeningStatus = async () => {
+const syncClipboardListeningStatus = async (): Promise<void> => {
   try {
     const status = await clipboard.getStatus()
     if (status && typeof status.isListening === 'boolean') {
-      props.settingsStore.clipboardListening = status.isListening
+      props.settingsStore.$patch({ clipboardListening: status.isListening })
     }
   } catch (error) {
     console.error('获取剪贴板监听状态失败:', error)
@@ -52,9 +55,15 @@ const syncClipboardListeningStatus = async () => {
 }
 
 // 导出 heapdump
-const exportHeapdump = async () => {
+const exportHeapdump = async (): Promise<void> => {
   try {
-    const result = await window.electron.ipcRenderer.invoke('export-heapdump')
+    const result = await invoke<{
+      success: boolean
+      message: string
+      files?: string[]
+      mainFile?: string
+      error?: string
+    }>('export-heapdump')
     if (result.success) {
       // 构建详细的成功消息
       let message = result.message

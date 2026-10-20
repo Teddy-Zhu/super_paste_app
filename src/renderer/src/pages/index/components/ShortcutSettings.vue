@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import type { SettingsStore } from '@renderer/stores/common'
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { invoke } from '@renderer/api/ipc'
 import {
@@ -10,7 +11,7 @@ import {
 const accessStatus = ref<SystemAccessStatus>()
 const accessError = ref('')
 const accessBusy = ref(false)
-const refreshAccess = async (retry = false) => {
+const refreshAccess = async (retry = false): Promise<void> => {
   accessBusy.value = true
   accessError.value = ''
   try {
@@ -25,7 +26,7 @@ onMounted(() => refreshAccess())
 
 // Props
 interface Props {
-  settingsStore: any
+  settingsStore: SettingsStore
 }
 
 const props = defineProps<Props>()
@@ -187,7 +188,7 @@ const setGlobalShortcut = async (electronAccelerator: string): Promise<boolean> 
 }
 
 // 开始监听快捷键
-const startListeningForShortcut = () => {
+const startListeningForShortcut = (): void => {
   isListeningForShortcut.value = true
   shortcutPreview.value = ''
   shortcutError.value = ''
@@ -320,7 +321,7 @@ const handleKeyUp = async (event: KeyboardEvent): Promise<void> => {
 }
 
 // 取消设置快捷键
-const cancelShortcutSetting = () => {
+const cancelShortcutSetting = (): void => {
   stopListeningForShortcut()
 }
 
@@ -347,7 +348,7 @@ onUnmounted(() => {
     </div>
 
     <div class="settings-grid">
-      <div class="setting-card" v-if="accessStatus || accessError">
+      <div v-if="accessStatus || accessError" class="setting-card">
         <div class="setting-info">
           <h4 class="setting-title">{{ SYSTEM_ACCESS_TEXT.title }}</h4>
           <p v-if="accessError" class="shortcut-error">{{ accessError }}</p>

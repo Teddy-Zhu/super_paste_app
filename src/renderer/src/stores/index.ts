@@ -25,18 +25,21 @@ store.use(
   })
 )
 
-on('store-value-changed', ({ key, value }) => {
-  const parsedKey = key.split('.')
-  const storeId = parsedKey[0]
-  const fieldKey = parsedKey[1]
-
-  //@ts-ignore
-  const stores = Array.from(store._s.values())
-  stores.forEach((store: any) => {
-    if (store.$id === storeId) {
-      store.$setSilent(fieldKey, value)
+store.use(({ store: activeStore }) => {
+  const unsubscribe = on(
+    'store-value-changed',
+    ({ key, value }: { key: string; value: unknown }) => {
+      const [storeId, ...fieldParts] = key.split('.')
+      if (activeStore.$id === storeId && fieldParts.length === 1) {
+        activeStore.$setSilent(fieldParts[0], value)
+      }
     }
-  })
+  )
+  const dispose = activeStore.$dispose.bind(activeStore)
+  activeStore.$dispose = () => {
+    unsubscribe()
+    dispose()
+  }
 })
 
 export default store

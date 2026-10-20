@@ -1,4 +1,5 @@
 import { defineStore } from 'pinia'
+import { DEFAULT_OCR_MODEL_ID, type OCRModelId } from '../../../shared/ocr-models'
 
 export const useSettingsStore = defineStore('settings', {
   state: () => ({
@@ -10,6 +11,7 @@ export const useSettingsStore = defineStore('settings', {
     clipboardListening: true, // 剪贴板监听状态，默认开启
     enableLocalOCR: false, // 是否启用自动OCR，默认关闭
     ocrMode: 'local' as 'local' | 'remote',
+    ocrLocalModel: DEFAULT_OCR_MODEL_ID as OCRModelId,
     ocrRemoteUrl: '',
     ocrRemoteExtraParams: '{}',
     ocrRemoteImageFieldName: 'image',
@@ -20,3 +22,5 @@ export const useSettingsStore = defineStore('settings', {
   actions: {},
   persist: true
 })
+
+export type SettingsStore = ReturnType<typeof useSettingsStore>

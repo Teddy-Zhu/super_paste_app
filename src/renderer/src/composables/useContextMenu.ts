@@ -30,7 +30,7 @@ const contextMenuState = reactive<ContextMenuState>({
   sourceId: undefined
 })
 
-const hideContextMenu = () => {
+const hideContextMenu = (): void => {
   contextMenuState.visible = false
   contextMenuState.items = []
   contextMenuState.sourceId = undefined
@@ -40,7 +40,11 @@ const clamp = (value: number, min: number, max: number): number => {
   return Math.min(Math.max(value, min), max)
 }
 
-const calculateMenuPosition = (clientX: number, clientY: number, itemCount: number) => {
+const calculateMenuPosition = (
+  clientX: number,
+  clientY: number,
+  itemCount: number
+): { x: number; y: number } => {
   const menuHeight = itemCount * MENU_ITEM_HEIGHT + MENU_VERTICAL_PADDING
   const maxX = window.innerWidth - MENU_WIDTH - VIEWPORT_MARGIN
   const maxY = window.innerHeight - menuHeight - VIEWPORT_MARGIN
@@ -66,7 +70,7 @@ const isTargetInsideContextMenu = (target: EventTarget | null): boolean => {
 
 let globalListenersRegistered = false
 
-const registerGlobalListeners = () => {
+const registerGlobalListeners = (): void => {
   if (globalListenersRegistered || typeof document === 'undefined') {
     return
   }
@@ -88,8 +92,17 @@ const registerGlobalListeners = () => {
 
 registerGlobalListeners()
 
-export function useContextMenu() {
-  const showContextMenu = (event: MouseEvent, items: ContextMenuItem[], sourceId?: string) => {
+export function useContextMenu(): {
+  contextMenuState: ContextMenuState
+  showContextMenu: (event: MouseEvent, items: ContextMenuItem[], sourceId?: string) => void
+  hideContextMenu: () => void
+  isMenuFromSource: (sourceId: string) => boolean
+} {
+  const showContextMenu = (
+    event: MouseEvent,
+    items: ContextMenuItem[],
+    sourceId?: string
+  ): void => {
     event.preventDefault()
     event.stopPropagation()
 
@@ -102,7 +115,7 @@ export function useContextMenu() {
     contextMenuState.sourceId = sourceId
   }
 
-  const isMenuFromSource = (sourceId: string) => {
+  const isMenuFromSource = (sourceId: string): boolean => {
     return contextMenuState.visible && contextMenuState.sourceId === sourceId
   }
 

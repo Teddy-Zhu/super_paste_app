@@ -21,8 +21,8 @@ importers:
         specifier: workspace:*
         version: link:packages/active-window-kwin
       '@teddyzhu/auto-launch':
-        specifier: 6.0.0-rc.8
-        version: 6.0.0-rc.8
+        specifier: 6.0.1
+        version: 6.0.1
       '@teddyzhu/clipboard':
         specifier: 0.0.12
         version: 0.0.12
@@ -41,12 +41,12 @@ importers:
       electron-store:
         specifier: ^10.1.0
         version: 10.1.0
+      esearch-ocr:
+        specifier: 8.5.2
+        version: 8.5.2
       jimp:
         specifier: ^1.6.0
         version: 1.6.0
-      onnxruntime-common:
-        specifier: ^1.22.0
-        version: 1.24.2
       onnxruntime-node:
         specifier: 1.22.0-rev
         version: 1.22.0-rev
@@ -59,6 +59,9 @@ importers:
       webdav:
         specifier: ^5.8.0
         version: 5.9.0
+      yauzl:
+        specifier: 3.4.0
+        version: 3.4.0
     devDependencies:
       '@electron-toolkit/eslint-config-prettier':
         specifier: 3.0.0
@@ -78,6 +81,9 @@ importers:
       '@types/node':
         specifier: ^24.9.1
         version: 24.10.15
+      '@types/yauzl':
+        specifier: 3.4.0
+        version: 3.4.0
       '@vitejs/plugin-vue':
         specifier: ^6.0.10
         version: 6.0.10(vite@7.3.7(@types/node@24.10.15)(jiti@2.6.1)(yaml@2.8.2))(vue@3.5.29(typescript@5.9.3))
@@ -1110,9 +1116,9 @@ packages:
     resolution: {integrity: sha512-4BAffykYOgO+5nzBWYwE3W90sBgLJoUPRWWcL8wlyiM8IB8ipJz3UMJ9KXQd1RKQXpKp8Tutn80HZtWsu2u76w==}
     engines: {node: '>=10'}
 
-  '@teddyzhu/auto-launch@6.0.0-rc.8':
-    resolution: {integrity: sha512-1JSJYZesXZ7xFzk9CfnZEI8xjAifWKvT27Huxo61Lk2KP2WE+rJPMdr+Eijv7Eq+K2bu5mTRNTZIh0qNXo7Fuw==}
-    engines: {node: '>=14.0.0'}
+  '@teddyzhu/auto-launch@6.0.1':
+    resolution: {integrity: sha512-L7l4EigyCov+e0h0Kw9csXHXUpNqHJsZwhccICS3W/790DTuYfJ0J/xKDCipcugcG2b1x5xUwzrHZGjRZCFNpQ==}
+    engines: {node: '>=22.14.0'}
 
   '@teddyzhu/clipboard-darwin-arm64@0.0.12':
     resolution: {integrity: sha512-eMBTo1BB2KKzXSsrzTvI9uBtLOmRWEama1NfBOlI+qy2cvK43lHyE2ftmmLeaJX23xyh9SkTajI0B1+oG1cDKg==}
@@ -1200,6 +1206,9 @@ packages:
 
   '@types/web-bluetooth@0.0.21':
     resolution: {integrity: sha512-oIQLCGWtcFZy2JW77j9k8nHzAOpqMHLQejDA48XXMWH6tjCQHz5RCFz1bzsmROyL6PUm+LLnUiI4BCn221inxA==}
+
+  '@types/yauzl@3.4.0':
+    resolution: {integrity: sha512-NRPn5w6h8dhcnmx3YIRQcqMywY/+nND/uOkJessedcrowO3C0AssHp3tMJpxKAwOhFOo0OV1y9VtsC5hbKKBAw==}
 
   '@typescript-eslint/eslint-plugin@8.56.1':
     resolution: {integrity: sha512-Jz9ZztpB37dNC+HU2HI28Bs9QXpzCz+y/twHOwhyrIRdbuVDxSytJNDl6z/aAKlaRIwC7y8wJdkBv7FxYGgi0A==}
@@ -1943,6 +1952,9 @@ packages:
   escape-string-regexp@5.0.0:
     resolution: {integrity: sha512-/veY75JbMK4j1yjvuUxuVsiS/hr/4iHs9FTT6cgTexxdE0Ly/glccBAkloH/DofkjRbZU3bnoj38mOmhkZ0lHw==}
     engines: {node: '>=12'}
+
+  esearch-ocr@8.5.2:
+    resolution: {integrity: sha512-F06NKlvOEiDX6VewWjQ3JLffYHx8DC5V5AOp8ZCq6xwWg9y8PeNNMtqw272k3lAuipxhfK2k0DzsJL3Hay8ipQ==}
 
   eslint-config-prettier@10.1.8:
     resolution: {integrity: sha512-82GZUjRS0p/jganf6q1rEO25VSoHH0hKPCTrgillPjdI/3bgBhAE1QzHrHTizjpRvy6pGAvKjDJtk2pF9NDq8w==}
@@ -2786,6 +2798,9 @@ packages:
     resolution: {integrity: sha512-ZI3LnwUv5nOGbQzD9c2iDG6toheuXSZP5esSHBjopsXH4dg19soufvpUGA3uohi5anFtGb2lhAVdHzH6R/Evvg==}
     engines: {node: '>=8'}
 
+  pend@1.2.0:
+    resolution: {integrity: sha512-F3asv42UuXchdzt+xXqfW1OGlVBe+mxa2mqI0pg5yAHZPvFmY3Y6drSf/GQ1A86WgWEN9Kzh/WrgKa6iGcHXLg==}
+
   perfect-debounce@1.0.0:
     resolution: {integrity: sha512-xCy9V055GLEqoFaHoC1SoLIaLmWctgCUaBaWxDZ7/Zx4CTyX7cJQLJOok/orfjZAh9kEYpjJa4d0KcJmCbctZA==}
 
@@ -3392,10 +3407,6 @@ packages:
     resolution: {integrity: sha512-5uKD0nqiYVzlmCRs01Fhs2BdkEgBS3SAVP6ndrBsuK42iC2+JHyxM05Rm9G8+5mkmRtzMZGY8Ct5+mliZxU/Ww==}
     engines: {node: '>=18.12.0'}
 
-  untildify@5.0.0:
-    resolution: {integrity: sha512-bOgQLUnd2G5rhzaTvh1VCI9Fo6bC5cLTpH17T5aFfamyXFYDbbdzN6IXdeoc3jBS7T9hNTmJtYUzJCJ2Xlc9gA==}
-    engines: {node: '>=16'}
-
   unzipper@0.12.5:
     resolution: {integrity: sha512-tXYOi9R57Uj/2Z25SOs5RRSzq886MBQj2gY8dPL+xl/kv6s6SvByoKfAtvfVeEuhntWDgjd2o9p2lb4TVPAz0A==}
 
@@ -3641,6 +3652,10 @@ packages:
 
   yargs@17.7.2:
     resolution: {integrity: sha512-7dSzzRQ++CKnNI/krKnYRV7JKKPUXMEh61soaHKg9mrWEhzFWhFnxPxGl+69cD1Ou63C13NUPCnmIcrvqCuM6w==}
+    engines: {node: '>=12'}
+
+  yauzl@3.4.0:
+    resolution: {integrity: sha512-jIH9yLR9wqr0wOS0TpBvo/g/2UgZH5qePVbjgRliiF0BYvOZyaBknKsF+x9Iht0O6sqgnB93rCICdOZFecJuDw==}
     engines: {node: '>=12'}
 
   yocto-queue@0.1.0:
@@ -4636,10 +4651,9 @@ snapshots:
     dependencies:
       defer-to-connect: 2.0.1
 
-  '@teddyzhu/auto-launch@6.0.0-rc.8':
+  '@teddyzhu/auto-launch@6.0.1':
     dependencies:
       applescript: 1.0.0
-      untildify: 5.0.0
       winreg: 1.2.4
 
   '@teddyzhu/clipboard-darwin-arm64@0.0.12':
@@ -4714,6 +4728,10 @@ snapshots:
     optional: true
 
   '@types/web-bluetooth@0.0.21': {}
+
+  '@types/yauzl@3.4.0':
+    dependencies:
+      '@types/node': 24.10.15
 
   '@typescript-eslint/eslint-plugin@8.56.1(@typescript-eslint/parser@8.56.1(eslint@9.39.3(jiti@2.6.1))(typescript@5.9.3))(eslint@9.39.3(jiti@2.6.1))(typescript@5.9.3)':
     dependencies:
@@ -5619,6 +5637,10 @@ snapshots:
 
   escape-string-regexp@5.0.0: {}
 
+  esearch-ocr@8.5.2:
+    dependencies:
+      onnxruntime-common: 1.24.2
+
   eslint-config-prettier@10.1.8(eslint@9.39.3(jiti@2.6.1)):
     dependencies:
       eslint: 9.39.3(jiti@2.6.1)
@@ -6460,6 +6482,8 @@ snapshots:
 
   peek-readable@4.1.0: {}
 
+  pend@1.2.0: {}
+
   perfect-debounce@1.0.0: {}
 
   perfect-debounce@2.1.0: {}
@@ -7098,8 +7122,6 @@ snapshots:
       picomatch: 4.0.3
       webpack-virtual-modules: 0.6.2
 
-  untildify@5.0.0: {}
-
   unzipper@0.12.5:
     dependencies:
       bluebird: 3.7.2
@@ -7364,6 +7386,10 @@ snapshots:
       string-width: 4.2.3
       y18n: 5.0.8
       yargs-parser: 21.1.1
+
+  yauzl@3.4.0:
+    dependencies:
+      pend: 1.2.0
 
   yocto-queue@0.1.0: {}
 

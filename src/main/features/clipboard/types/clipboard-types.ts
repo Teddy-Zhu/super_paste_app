@@ -1,3 +1,4 @@
+import type { OCRModelId } from '../../../../shared/ocr-models'
 import { HashUtils } from '../../../utils/common'
 
 /**
@@ -10,6 +11,14 @@ export interface ClipboardContent {
   rtf?: string
   files?: string[] // 文件路径列表
   ocr?: string // OCR识别的文本内容
+}
+
+/** 剪贴板原生数据规范化后的快照，用于轮询和变化检测。 */
+export interface ClipboardSnapshot extends ClipboardContent {
+  hasImage: boolean
+  hasFiles: boolean
+  imageInfo?: { width: number; height: number; quickId: string }
+  filesInfo?: { count: number; totalSize: number }
 }
 
 /**
@@ -56,17 +65,17 @@ export interface ClipboardItem {
   id: string
   content: ClipboardContent | ClipboardContentForUI
   primaryType:
-  | 'text'
-  | 'html'
-  | 'image'
-  | 'rtf'
-  | 'files'
-  | 'url'
-  | 'email'
-  | 'phone'
-  | 'code'
-  | 'color'
-  | 'empty'
+    | 'text'
+    | 'html'
+    | 'image'
+    | 'rtf'
+    | 'files'
+    | 'url'
+    | 'email'
+    | 'phone'
+    | 'code'
+    | 'color'
+    | 'empty'
   availableFormats: string[]
   timestamp: number
   lastUsed: number
@@ -102,6 +111,7 @@ export interface ClipboardManagerConfig {
   enableAutoSave: boolean
   enableLocalOCR: boolean
   ocrMode: 'local' | 'remote'
+  ocrLocalModel: OCRModelId
   ocrRemoteConfig: {
     url: string
     extraParams: string
@@ -208,7 +218,7 @@ export class ClipboardDataConverter {
    * 注意：为了前端显示，图片 Buffer 数据会被转换为 Uint8Array
    */
   static recordToItem(record: ClipboardHistoryRecord, tags?: TagGroup[]): ClipboardItem {
-    const content: any = {} // 使用 any 来避免类型冲突，因为前端需要 Uint8Array
+    const content: ClipboardContentForUI = {}
     if (record.content_text) content.text = record.content_text
     if (record.content_html) content.html = record.content_html
     if (record.content_image) {

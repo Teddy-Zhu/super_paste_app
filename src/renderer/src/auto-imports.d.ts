@@ -316,6 +316,12 @@ declare global {
   // @ts-ignore
   export type { Component, Slot, Slots, ComponentPublicInstance, ComputedRef, DirectiveBinding, ExtractDefaultPropTypes, ExtractPropTypes, ExtractPublicPropTypes, InjectionKey, PropType, Ref, MaybeRef, MaybeRefOrGetter, VNode, WritableComputedRef } from 'vue'
   import('vue')
+  // @ts-ignore
+  export type { SettingsStore } from './stores/common'
+  import('./stores/common')
+  // @ts-ignore
+  export type { PiniaCustomProperties } from './stores/fieldChangePlugin'
+  import('./stores/fieldChangePlugin')
 }
 
 // for vue template auto import

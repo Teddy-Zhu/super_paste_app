@@ -1,7 +1,6 @@
-const fs = require('fs')
-const path = require('path')
-
 module.exports = async function (context) {
+  const fs = await import('node:fs')
+  const path = await import('node:path')
   const unpackedDir = path.join(context.appOutDir, 'resources', 'app.asar.unpacked')
   const napiBinBase = path.join(unpackedDir, 'node_modules', 'onnxruntime-node', 'bin', 'napi-v6')
   console.log(`[afterPack] napiBinBase: ${napiBinBase}`)

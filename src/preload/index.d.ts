@@ -1,16 +1,24 @@
-/**
- * 自定义 Electron API 类型定义
- * 只包含项目中实际使用的 API
- */
-interface CustomElectronAPI {
+import type { IpcRendererEvent } from 'electron'
+
+export type IpcRendererListener<Args extends unknown[] = unknown[]> = (
+  event: IpcRendererEvent,
+  ...args: Args
+) => void
+
+/** 渲染进程可用的受控 Electron 桥接接口。 */
+export interface CustomElectronAPI {
   ipcRenderer: {
-    on: (channel: string, listener: (...args: any[]) => void) => () => void
-    once: (channel: string, listener: (...args: any[]) => void) => () => void
-    send: (channel: string, ...args: any[]) => void
-    invoke: (channel: string, ...args: any[]) => Promise<any>
-    sendSync: (channel: string, ...args: any[]) => any
-    removeListener: (channel: string, listener: (...args: any[]) => void) => void
-    removeAllListeners: (channel: string) => void
+    on<Args extends unknown[]>(channel: string, listener: IpcRendererListener<Args>): () => void
+    once<Args extends unknown[]>(channel: string, listener: IpcRendererListener<Args>): () => void
+    send(channel: string, ...args: unknown[]): void
+    invoke(channel: string, ...args: unknown[]): Promise<unknown>
+    sendSync(channel: string, ...args: unknown[]): unknown
+    off<Args extends unknown[]>(channel: string, listener: IpcRendererListener<Args>): void
+    removeListener<Args extends unknown[]>(
+      channel: string,
+      listener: IpcRendererListener<Args>
+    ): void
+    removeAllListeners(channel: string): void
   }
   process: {
     platform: NodeJS.Platform

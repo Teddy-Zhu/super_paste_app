@@ -126,7 +126,7 @@ export function useScrollAndTags(
    * 初始化 smooth-scrollbar 实例
    * 注意：滚动条隐藏样式已在 overlay.vue 的 CSS 中直接定义
    */
-  const initializeScrollbar = () => {
+  const initializeScrollbar = (): void => {
     if (
       scrollbarInstance &&
       scrollbarInstance.containerEl === clipboardScrollRef.value &&
@@ -159,7 +159,7 @@ export function useScrollAndTags(
     }
   }
 
-  const destroyScrollbar = () => {
+  const destroyScrollbar = (): void => {
     lastWheelDirection = 0
     if (scrollbarInstance) {
       try {
@@ -179,7 +179,14 @@ export function useScrollAndTags(
     return clipboardScrollRef.value.querySelector<HTMLElement>('.clipboard-card.selected')
   }
 
-  const getScrollMetrics = () => {
+  const getScrollMetrics = (): {
+    scrollLeft: number
+    scrollTop: number
+    containerWidth: number
+    containerHeight: number
+    contentWidth: number
+    contentHeight: number
+  } | null => {
     if (scrollbarInstance) {
       return {
         scrollLeft: scrollbarInstance.scrollLeft,
@@ -205,7 +212,7 @@ export function useScrollAndTags(
     }
   }
 
-  const scrollToAxisPosition = (target: number, axis: 'x' | 'y') => {
+  const scrollToAxisPosition = (target: number, axis: 'x' | 'y'): void => {
     hideContextMenu()
 
     if (scrollbarInstance) {
@@ -374,7 +381,7 @@ export function useScrollAndTags(
     }
   }
 
-  const ensureSelectedItemVisible = () => {
+  const ensureSelectedItemVisible = (): void => {
     nextTick(() => {
       // 只有在选中项不可见时才滚动
       if (!isSelectedItemVisible()) {
@@ -385,7 +392,7 @@ export function useScrollAndTags(
 
   // ==================== 标签管理 ====================
 
-  const loadAllTags = async () => {
+  const loadAllTags = async (): Promise<void> => {
     try {
       const tagList = await tags.getAllTags()
       tagStateManager.setState((prev) => ({
@@ -404,7 +411,7 @@ export function useScrollAndTags(
     }
   }
 
-  const loadTagStats = async () => {
+  const loadTagStats = async (): Promise<void> => {
     try {
       // 从后端获取标签统计数据
       const statsArray = await tags.getTagStats()
@@ -428,7 +435,7 @@ export function useScrollAndTags(
     }
   }
 
-  const switchTag = async (tagId: string) => {
+  const switchTag = async (tagId: string): Promise<void> => {
     if (activeTagId.value === tagId || isTagSwitching.value) return
 
     tagStateManager.setState((prev) => ({
@@ -458,7 +465,7 @@ export function useScrollAndTags(
     }
   }
 
-  const reloadTags = async () => {
+  const reloadTags = async (): Promise<void> => {
     try {
       await loadAllTags()
     } catch (error) {

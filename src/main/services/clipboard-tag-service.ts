@@ -66,7 +66,7 @@ class ClipboardTagService {
     return this.execute(
       async () => {
         const records = clipboardDatabase.getAllTagGroups()
-        return records.map((record: any) => ClipboardDataConverter.tagRecordToTag(record))
+        return records.map((record) => ClipboardDataConverter.tagRecordToTag(record))
       },
       '获取标签组列表失败',
       []

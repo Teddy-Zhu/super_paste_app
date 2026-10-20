@@ -1,55 +1,59 @@
 import { contextBridge, ipcRenderer } from 'electron'
+import type { CustomElectronAPI } from './index.d'
 
 /**
  * 自定义 Electron API
  * 只暴露项目中实际使用的 API，提高安全性
  */
-const electronAPI = {
+const electronAPI: CustomElectronAPI = {
   // IPC 渲染进程 API
   ipcRenderer: {
     // 监听消息
-    on: (channel: string, listener: (...args: any[]) => void) => {
+    on: (channel: string, listener) => {
       ipcRenderer.on(channel, listener)
       // 返回取消监听的函数
-      return () => ipcRenderer.off(channel, listener)
+      return () => {
+        ipcRenderer.off(channel, listener)
+      }
     },
 
     // 一次性监听
-    once: (channel: string, listener: (...args: any[]) => void) => {
+    once: (channel: string, listener) => {
       ipcRenderer.once(channel, listener)
       // 返回取消监听的函数
-      return () => ipcRenderer.off(channel, listener)
+      return () => {
+        ipcRenderer.off(channel, listener)
+      }
     },
 
     // 发送异步消息
-    send: (channel: string, ...args: any[]) => {
+    send: (channel: string, ...args: unknown[]) => {
       ipcRenderer.send(channel, ...args)
     },
 
     // 发送消息并等待响应
-    invoke: (channel: string, ...args: any[]) => {
+    invoke: (channel: string, ...args: unknown[]) => {
       return ipcRenderer.invoke(channel, ...args)
     },
 
     // 发送同步消息（仅在必要时使用）
-    sendSync: (channel: string, ...args: any[]) => {
+    sendSync: (channel: string, ...args: unknown[]) => {
       return ipcRenderer.sendSync(channel, ...args)
     },
 
     // 移除监听器
-    off: (channel: string, listener: (...args: any[]) => void) => {
-      return ipcRenderer.off(channel, listener)
+    off: (channel: string, listener) => {
+      ipcRenderer.off(channel, listener)
     },
 
     // 移除监听器（已废弃，但项目中仍在使用）
-    removeListener: (channel: string, listener: (...args: any[]) => void) => {
-      // @ts-ignore - 已废弃的方法，但仍需支持
-      return ipcRenderer.removeListener(channel, listener)
+    removeListener: (channel: string, listener) => {
+      ipcRenderer.removeListener(channel, listener)
     },
 
     // 移除所有监听器
     removeAllListeners: (channel: string) => {
-      return ipcRenderer.removeAllListeners(channel)
+      ipcRenderer.removeAllListeners(channel)
     }
   },
 
@@ -68,6 +72,5 @@ if (process.contextIsolated) {
     console.error('Failed to expose electron API:', error)
   }
 } else {
-  // @ts-ignore (define in dts)
   window.electron = electronAPI
 }

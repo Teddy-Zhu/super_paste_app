@@ -87,42 +87,42 @@ class Logger {
   /**
    * 记录错误信息
    */
-  public error(message: string, ...args: any[]): void {
+  public error(message: string, ...args: unknown[]): void {
     log.error(message, ...args)
   }
 
   /**
    * 记录警告信息
    */
-  public warn(message: string, ...args: any[]): void {
+  public warn(message: string, ...args: unknown[]): void {
     log.warn(message, ...args)
   }
 
   /**
    * 记录信息
    */
-  public info(message: string, ...args: any[]): void {
+  public info(message: string, ...args: unknown[]): void {
     log.info(message, ...args)
   }
 
   /**
    * 记录调试信息
    */
-  public debug(message: string, ...args: any[]): void {
+  public debug(message: string, ...args: unknown[]): void {
     log.debug(message, ...args)
   }
 
   /**
    * 记录详细信息
    */
-  public verbose(message: string, ...args: any[]): void {
+  public verbose(message: string, ...args: unknown[]): void {
     log.verbose(message, ...args)
   }
 
   /**
    * 记录最详细信息
    */
-  public silly(message: string, ...args: any[]): void {
+  public silly(message: string, ...args: unknown[]): void {
     log.silly(message, ...args)
   }
 }

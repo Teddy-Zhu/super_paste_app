@@ -22,19 +22,20 @@ export class SyncConfigUtils {
     // 读取基础同步配置
     const enabled = store.get<boolean>(STORE_KEY.SYNC_ENABLED, false)
     const provider = store.get<string>(STORE_KEY.SYNC_PROVIDER, 'webdav')
-    const interval = store.get<number>(STORE_KEY.SYNC_INTERVAL, 30)
+    const interval = store.get<number>(STORE_KEY.SYNC_INTERVAL, 30 * 60000)
     const direction = store.get<string>(STORE_KEY.SYNC_DIRECTION, 'bidirectional')
 
     // 读取 provider 配置参数
     let providerConfig: WebDAVConfig
 
     if (provider === 'webdav') {
-      const webdavParams = store.get<any>(
+      const webdavParams = store.get<Partial<WebDAVConfig>>(
         STORE_KEY.SYNC_PROVIDER_PARAMS.replace('%s', 'webdav'),
         {}
       )
       providerConfig = {
         syncDirection: this.parseSyncDirection(direction),
+        configOnly: store.get<boolean>(STORE_KEY.SYNC_CONFIG_ONLY, false),
         serverUrl: webdavParams.serverUrl || '',
         username: webdavParams.username || '',
         password: webdavParams.password || '',
@@ -46,6 +47,7 @@ export class SyncConfigUtils {
       // 默认 WebDAV 配置
       providerConfig = {
         syncDirection: this.parseSyncDirection(direction),
+        configOnly: store.get<boolean>(STORE_KEY.SYNC_CONFIG_ONLY, false),
         serverUrl: '',
         username: '',
         password: '',
@@ -58,7 +60,7 @@ export class SyncConfigUtils {
     // 构建配置
     const config: ScheduledSyncConfig = {
       enabled: enabled,
-      syncInterval: interval > 0 ? interval : 30,
+      syncInterval: Number.isFinite(interval) && interval > 0 ? interval / 60000 : 30,
       providerType: this.parseProviderType(provider),
       providerConfig: providerConfig,
       userDataPath: app.getPath('userData')
@@ -76,7 +78,7 @@ export class SyncConfigUtils {
       // 读取基础同步配置
       const enabled = store.get<boolean>(STORE_KEY.SYNC_ENABLED, false)
       const provider = store.get<string>(STORE_KEY.SYNC_PROVIDER, '')
-      const interval = store.get<number>(STORE_KEY.SYNC_INTERVAL, 30)
+      const interval = store.get<number>(STORE_KEY.SYNC_INTERVAL, 30 * 60000)
       const direction = store.get<string>(STORE_KEY.SYNC_DIRECTION, 'bidirectional')
 
       // 如果提供者未配置，返回 null（但不检查 enabled 状态）
@@ -89,7 +91,7 @@ export class SyncConfigUtils {
 
       if (provider === 'webdav') {
         // 读取 WebDAV 配置参数
-        const webdavParams = store.get<any>(
+        const webdavParams = store.get<Partial<WebDAVConfig>>(
           STORE_KEY.SYNC_PROVIDER_PARAMS.replace('%s', 'webdav'),
           {}
         )
@@ -101,6 +103,7 @@ export class SyncConfigUtils {
 
         providerConfig = {
           syncDirection: this.parseSyncDirection(direction),
+          configOnly: store.get<boolean>(STORE_KEY.SYNC_CONFIG_ONLY, false),
           serverUrl: webdavParams.serverUrl,
           username: webdavParams.username,
           password: webdavParams.password,
@@ -118,7 +121,7 @@ export class SyncConfigUtils {
       // 构建完整的定时同步配置
       const syncConfig: ScheduledSyncConfig = {
         enabled: enabled,
-        syncInterval: interval,
+        syncInterval: Number.isFinite(interval) && interval > 0 ? interval / 60000 : 30,
         providerType: this.parseProviderType(provider),
         providerConfig: providerConfig,
         userDataPath: app.getPath('userData')

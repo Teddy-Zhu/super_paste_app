@@ -24,7 +24,9 @@ export class SyncService {
 
   constructor(
     userDataPath: string,
-    options?: { onSyncRequiresRestart?: (data: { downloadedFiles: string[]; message: string }) => void }
+    options?: {
+      onSyncRequiresRestart?: (data: { downloadedFiles: string[]; message: string }) => void
+    }
   ) {
     this.userDataPath = userDataPath
     this.onSyncRequiresRestart = options?.onSyncRequiresRestart
@@ -426,7 +428,10 @@ export class SyncService {
       const configFileHash = await HashUtils.generateFileHash(localConfigPath)
 
       // 创建版本信息
-      const versionInfo: any = {
+      const versionInfo: {
+        lastUpdateTime: number
+        files: { config: { hash: string; path: string }; database?: { hash: string; path: string } }
+      } = {
         lastUpdateTime: Date.now(),
         files: {
           config: {

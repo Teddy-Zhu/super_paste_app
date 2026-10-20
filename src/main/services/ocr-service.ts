@@ -2,6 +2,7 @@ import { OCRManager, OCRManagerOptions, OCRConfig, OCROutput } from '../ocr/ocr-
 import logger from '../utils/logger'
 import fs from 'fs'
 import path from 'path'
+import { DEFAULT_OCR_MODEL_ID } from '../../shared/ocr-models'
 
 export type OCRMode = 'local' | 'remote'
 export type OCRRemoteRequestFormat = 'json' | 'form'
@@ -50,7 +51,9 @@ export class OCRService {
   private mode: OCRMode = 'local'
   private remoteConfig: ParsedRemoteConfig | null = null
 
-  private constructor() { }
+  private constructor() {
+    // 通过静态方法统一创建单例。
+  }
 
   /**
    * 获取 OCR 服务单例
@@ -67,53 +70,39 @@ export class OCRService {
    * @param options 服务配置选项，包含资源路径和 OCR 配置
    */
   public async initialize(options: OCRServiceOptions): Promise<void> {
-    try {
-      logger.info('正在初始化 OCR 服务...')
-      this.mode = options.mode || 'local'
-
-      if (this.mode === 'remote') {
-        this.setupRemoteConfig(options.remoteConfig)
-
-        if (this.ocrManager) {
-          this.ocrManager.destroy()
-          this.ocrManager = null
-        }
-
-        this.isServiceReady = true
-        logger.info('OCR 远程服务初始化成功')
-        return
-      }
-
-      if (!options.resourcePath) {
-        throw new Error('OCR 资源路径为空')
-      }
-
-      this.remoteConfig = null
-
-      // 初始化 OCR 管理器
-      this.ocrManager = OCRManager.getInstance({
-        resourcePath: options.resourcePath,
-        isDev: options.isDev
-      })
-
-      // 使用默认配置或用户提供的配置
-      const defaultConfig: OCRConfig = {
-        detRatio: 1.0,
-        recImgHeight: 48,
-        enableSpaceOptimize: true,
-        enableDocCls: false
-      }
-
-      const finalConfig = { ...defaultConfig, ...options.ocrConfig }
-
-      await this.ocrManager.initialize(finalConfig)
+    const mode = options.mode || 'local'
+    if (mode === 'remote') {
+      this.setupRemoteConfig(options.remoteConfig)
+      const previousManager = this.ocrManager
+      this.ocrManager = null
+      this.mode = mode
       this.isServiceReady = true
-
-      logger.info('OCR 本地服务初始化成功')
-    } catch (error) {
-      this.isServiceReady = false
-      logger.error('OCR 服务初始化失败:', error)
-      throw error
+      if (previousManager) {
+        try {
+          await previousManager.destroy()
+        } catch (error) {
+          logger.error('[OCR] 释放旧模型失败:', error)
+        }
+      }
+      return
+    }
+    if (!options.resourcePath) throw new Error('OCR 模型缓存路径为空')
+    const nextManager = new OCRManager({
+      resourcePath: options.resourcePath,
+      modelId: options.modelId || DEFAULT_OCR_MODEL_ID
+    })
+    await nextManager.initialize(options.ocrConfig)
+    const previousManager = this.ocrManager
+    this.ocrManager = nextManager
+    this.mode = mode
+    this.remoteConfig = null
+    this.isServiceReady = true
+    if (previousManager) {
+      try {
+        await previousManager.destroy()
+      } catch (error) {
+        logger.error('[OCR] 释放旧模型失败:', error)
+      }
     }
   }
 
@@ -145,9 +134,10 @@ export class OCRService {
       }
     }
 
+    const manager = this.ocrManager
     try {
-      const result = await this.ocrManager.recognize(imageData)
-      const text = this.ocrManager.extractText(result)
+      const result = await manager.recognize(imageData)
+      const text = manager.extractText(result)
 
       // 计算平均置信度
       const totalConfidence = result.src.reduce((sum, item) => sum + item.mean, 0)
@@ -183,7 +173,7 @@ export class OCRService {
    */
   public async detectTextRegions(imageData: string | Buffer): Promise<{
     success: boolean
-    regions: any[]
+    regions: Awaited<ReturnType<OCRManager['detect']>>
     error?: string
   }> {
     if (this.mode === 'remote') {
@@ -329,29 +319,15 @@ export class OCRService {
    * 重新初始化 OCR 服务
    */
   public async reinitialize(options: OCRServiceOptions): Promise<void> {
-    logger.info('重新初始化 OCR 服务...')
-
-    // 销毁现有实例
-    if (this.ocrManager) {
-      this.ocrManager.destroy()
-    }
-    this.isServiceReady = false
-    this.ocrManager = null
-
-    // 重新初始化
     await this.initialize(options)
   }
 
-  /**
-   * 停止 OCR 服务
-   */
-  public stop(): void {
-    if (this.isServiceReady && this.ocrManager) {
-      this.ocrManager.destroy()
-    }
+  public async stop(): Promise<void> {
     this.isServiceReady = false
+    const manager = this.ocrManager
     this.ocrManager = null
     this.remoteConfig = null
+    if (manager) await manager.destroy()
     logger.info('OCR 服务已停止')
   }
 
@@ -395,7 +371,8 @@ export class OCRService {
   }
 
   private async recognizeByRemote(imageData: string | Buffer): Promise<OCRRecognizeResult> {
-    if (!this.remoteConfig) {
+    const remoteConfig = this.remoteConfig
+    if (!remoteConfig) {
       return {
         success: false,
         text: '',
@@ -407,7 +384,7 @@ export class OCRService {
     try {
       const { buffer, mimeType, fileName } = this.resolveImageData(imageData)
       const responseData = await this.requestRemoteOCR(buffer, mimeType, fileName)
-      const extracted = this.readResultByPath(responseData, this.remoteConfig.resultPath)
+      const extracted = this.readResultByPath(responseData, remoteConfig.resultPath)
 
       if (typeof extracted === 'undefined' || extracted === null) {
         return {
@@ -415,7 +392,7 @@ export class OCRService {
           text: '',
           confidence: 0,
           details: responseData,
-          error: `未找到返回字段: ${this.remoteConfig.resultPath}`
+          error: `未找到返回字段: ${remoteConfig.resultPath}`
         }
       }
 

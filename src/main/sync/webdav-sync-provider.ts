@@ -226,7 +226,7 @@ export class WebDAVSyncProvider extends BaseSyncProvider {
 
     try {
       return await this.client.exists(remotePath)
-    } catch (error) {
+    } catch {
       return false
     }
   }
@@ -271,13 +271,13 @@ export class WebDAVSyncProvider extends BaseSyncProvider {
       // 根据配置执行不同的同步方向
       switch (this.config.syncDirection) {
         case 'upload':
-          await this.performUploadSync(result)
+          await this.performUploadSync()
           break
         case 'download':
-          await this.performDownloadSync(result)
+          await this.performDownloadSync()
           break
         case 'bidirectional':
-          await this.performBidirectionalSync(result)
+          await this.performBidirectionalSync()
           break
       }
 
@@ -298,7 +298,7 @@ export class WebDAVSyncProvider extends BaseSyncProvider {
   /**
    * 执行上传同步
    */
-  private async performUploadSync(_result: SyncResult): Promise<void> {
+  private async performUploadSync(): Promise<void> {
     // 这里需要根据具体需求实现数据库和配置文件的上传逻辑
     // 暂时先实现基础框架
     logger.info('[WebDAV同步] 执行上传同步')
@@ -310,7 +310,7 @@ export class WebDAVSyncProvider extends BaseSyncProvider {
   /**
    * 执行下载同步
    */
-  private async performDownloadSync(_result: SyncResult): Promise<void> {
+  private async performDownloadSync(): Promise<void> {
     // 这里需要根据具体需求实现数据库和配置文件的下载逻辑
     logger.info('[WebDAV同步] 执行下载同步')
 
@@ -320,7 +320,7 @@ export class WebDAVSyncProvider extends BaseSyncProvider {
   /**
    * 执行双向同步
    */
-  private async performBidirectionalSync(_result: SyncResult): Promise<void> {
+  private async performBidirectionalSync(): Promise<void> {
     // 这里需要根据具体需求实现双向同步逻辑
     logger.info('[WebDAV同步] 执行双向同步')
 

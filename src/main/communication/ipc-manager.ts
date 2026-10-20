@@ -28,6 +28,9 @@ import logger from '../utils/logger'
 import { writeHeapSnapshot } from 'v8'
 import { join } from 'path'
 import type { SystemAccessStatus } from '../../shared/system-access'
+import { DEFAULT_OCR_MODEL_ID, type OCRSettings } from '../../shared/ocr-models'
+import { getOCRModelStore } from '../ocr/model-service'
+import { OCR_SETTING_KEYS, parseOCRSettings, toClipboardOCRConfig } from '../ocr/settings'
 
 /**
  * IPC 管理器
@@ -36,8 +39,11 @@ import type { SystemAccessStatus } from '../../shared/system-access'
 class IpcManager {
   private static instance: IpcManager
   private isInitialized: boolean = false
+  private ocrSettingsQueue: Promise<unknown> = Promise.resolve()
 
-  private constructor() {}
+  private constructor() {
+    // 通过静态方法统一创建单例。
+  }
 
   public static getInstance(): IpcManager {
     if (!IpcManager.instance) {
@@ -105,6 +111,7 @@ class IpcManager {
     this.registerAnimationHandlers()
     this.registerScheduledSyncHandlers()
     this.registerSystemHandlers()
+    this.registerOCRHandlers()
 
     this.isInitialized = true
     logger.debug('[IPC管理器] 所有 IPC 事件处理器注册完成')
@@ -160,6 +167,11 @@ class IpcManager {
       'scheduled-sync:get-status',
       'scheduled-sync:update-config',
       'scheduled-sync:refresh',
+      // OCR 模型
+      'ocr:list-models',
+      'ocr:download-model',
+      'ocr:cancel-download',
+      'ocr:save-settings',
       // 系统
       'system-access-status',
       'system-access-retry',
@@ -362,7 +374,7 @@ class IpcManager {
 
     this.registerHandler(
       'clipboard-parse-ocr',
-      async (_, itemId: string) => clipboardManager.call('parseOcrFromItem', itemId),
+      async (_, itemId: string) => clipboardManager.parseOcrFromItem(itemId),
       '解析OCR'
     )
 
@@ -678,6 +690,76 @@ class IpcManager {
     )
   }
 
+  private registerOCRHandlers(): void {
+    this.registerHandler(
+      'ocr:list-models',
+      async () => ({ success: true, data: await getOCRModelStore().list() }),
+      '读取 OCR 模型'
+    )
+    this.registerHandler(
+      'ocr:download-model',
+      async (_, id: unknown) => {
+        await getOCRModelStore().download(id)
+        return { success: true }
+      },
+      '下载 OCR 模型'
+    )
+    this.registerHandler(
+      'ocr:cancel-download',
+      async (_, id: unknown) => {
+        getOCRModelStore().cancel(id)
+        return { success: true }
+      },
+      '取消模型下载'
+    )
+    this.registerHandler(
+      'ocr:save-settings',
+      async (_, value: unknown) => {
+        const settings = parseOCRSettings(value)
+        const save = this.ocrSettingsQueue.then(() => this.saveOCRSettings(settings))
+        this.ocrSettingsQueue = save.then(
+          () => undefined,
+          () => undefined
+        )
+        return save
+      },
+      '保存 OCR 配置'
+    )
+  }
+
+  private async saveOCRSettings(
+    settings: OCRSettings
+  ): Promise<{ success: true; data: OCRSettings }> {
+    const previous = await clipboardManager.getConfig()
+    await clipboardManager.updateConfig(toClipboardOCRConfig(settings))
+    const values = Object.fromEntries(
+      Object.entries(OCR_SETTING_KEYS).map(([field, key]) => [
+        key,
+        settings[field as keyof OCRSettings]
+      ])
+    )
+    try {
+      // 一次写入完整配置，避免各字段触发多轮模型初始化。
+      store.getStore().set(values)
+    } catch (error) {
+      try {
+        await clipboardManager.updateConfig(previous)
+      } catch (rollbackError) {
+        logger.error('[OCR] 恢复配置失败:', rollbackError)
+      }
+      throw error
+    }
+    for (const [key, value] of Object.entries(values)) {
+      NotificationService.notifyFrontend('store-value-changed', {
+        key,
+        value,
+        timestamp: Date.now()
+      })
+    }
+    trayManager.updateMenu()
+    return { success: true, data: settings }
+  }
+
   // ==================== 存储相关 ====================
 
   private registerStoreHandlers(): void {
@@ -778,6 +860,7 @@ class IpcManager {
       const ocrSettingKeys = new Set([
         STORE_KEY.SETTINGS_ENABLE_LOCAL_OCR,
         STORE_KEY.SETTINGS_OCR_MODE,
+        STORE_KEY.SETTINGS_OCR_LOCAL_MODEL,
         STORE_KEY.SETTINGS_OCR_REMOTE_URL,
         STORE_KEY.SETTINGS_OCR_REMOTE_EXTRA_PARAMS,
         STORE_KEY.SETTINGS_OCR_REMOTE_IMAGE_FIELD_NAME,
@@ -792,6 +875,7 @@ class IpcManager {
           await clipboardManager.updateConfig({
             enableLocalOCR: store.get(STORE_KEY.SETTINGS_ENABLE_LOCAL_OCR, false),
             ocrMode: store.get(STORE_KEY.SETTINGS_OCR_MODE, 'local'),
+            ocrLocalModel: store.get(STORE_KEY.SETTINGS_OCR_LOCAL_MODEL, DEFAULT_OCR_MODEL_ID),
             ocrRemoteConfig: {
               url: store.get(STORE_KEY.SETTINGS_OCR_REMOTE_URL, ''),
               extraParams: store.get(STORE_KEY.SETTINGS_OCR_REMOTE_EXTRA_PARAMS, '{}'),
@@ -1076,7 +1160,7 @@ export default IpcManager.getInstance()
 export { IpcManager }
 
 // 导出类型定义供渲染进程使用
-export interface ClipboardIpcResponse<T = any> {
+export interface ClipboardIpcResponse<T = unknown> {
   success: boolean
   data?: T
   message?: string

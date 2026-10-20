@@ -4,19 +4,16 @@
  * 使用 qrcode 生成二维码
  */
 
-import { Jimp } from "jimp";
+import { Jimp } from 'jimp'
 import QRCode from 'qrcode'
-import QrCode from 'qrcode-reader';
+import QrCode from 'qrcode-reader'
 import logger from '../utils/logger'
 
 /**
  * 二维码服务类
  */
 export class QRCodeService {
-  private qr: any
-
   constructor() {
-    this.qr = new QrCode()
     logger.debug('[二维码服务] 初始化完成')
   }
 
@@ -51,7 +48,6 @@ export class QRCodeService {
 
       logger.info('[二维码服务] 二维码生成成功', { textLength: text.length })
       return dataUrl
-
     } catch (error) {
       logger.error('[二维码服务] 生成二维码失败:', error)
       throw new Error(`生成二维码失败: ${error instanceof Error ? error.message : String(error)}`)
@@ -64,7 +60,10 @@ export class QRCodeService {
    * @param options QRCode选项
    * @returns Promise<Buffer> PNG图片Buffer
    */
-  async generateQRCodeBuffer(text: string, options?: QRCode.QRCodeToBufferOptions): Promise<Buffer> {
+  async generateQRCodeBuffer(
+    text: string,
+    options?: QRCode.QRCodeToBufferOptions
+  ): Promise<Buffer> {
     try {
       if (!text || text.trim() === '') {
         throw new Error('文本内容不能为空')
@@ -87,12 +86,16 @@ export class QRCodeService {
       // 生成二维码Buffer
       const buffer = await QRCode.toBuffer(text, finalOptions)
 
-      logger.info('[二维码服务] 二维码Buffer生成成功', { textLength: text.length, bufferSize: buffer.length })
+      logger.info('[二维码服务] 二维码Buffer生成成功', {
+        textLength: text.length,
+        bufferSize: buffer.length
+      })
       return buffer
-
     } catch (error) {
       logger.error('[二维码服务] 生成二维码Buffer失败:', error)
-      throw new Error(`生成二维码Buffer失败: ${error instanceof Error ? error.message : String(error)}`)
+      throw new Error(
+        `生成二维码Buffer失败: ${error instanceof Error ? error.message : String(error)}`
+      )
     }
   }
 
@@ -109,11 +112,15 @@ export class QRCodeService {
       // 转换为灰度图以提高识别率
       image.greyscale()
 
-      // 创建Promise来处理二维码解析的回调
+      // 每次解析使用独立实例，避免并发任务覆盖回调。
+      const reader: {
+        callback: (error: unknown, value?: { result?: string }) => void
+        decode(bitmap: typeof image.bitmap): void
+      } = new QrCode()
       const result = await new Promise<string | null>((resolve) => {
-        this.qr.callback = (err: any, value: any) => {
+        reader.callback = (err, value) => {
           if (err) {
-            logger.debug('[二维码服务] 解析失败:', err.message)
+            logger.debug('[二维码服务] 解析失败:', err)
             resolve(null)
           } else {
             logger.debug('[二维码服务] 解析成功:', value?.result)
@@ -123,7 +130,7 @@ export class QRCodeService {
 
         try {
           // 开始解码
-          this.qr.decode(image.bitmap)
+          reader.decode(image.bitmap)
         } catch (error) {
           logger.debug('[二维码服务] 解码过程出错:', error)
           resolve(null)

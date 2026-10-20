@@ -21,7 +21,7 @@ export class WindowConfigCalculator {
     return DEFAULT_OVERLAY_POSITION
   }
 
-  private static getCurrentDisplayWorkArea() {
+  private static getCurrentDisplayWorkArea(): Electron.Rectangle {
     const cursorPoint = screen.getCursorScreenPoint()
     const currentDisplay = screen.getDisplayNearestPoint(cursorPoint)
     return currentDisplay.workArea

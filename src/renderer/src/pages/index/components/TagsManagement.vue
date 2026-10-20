@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { ref, onMounted } from 'vue'
 import { tags } from '@renderer/api/renderer-api'
 import type { TagGroup } from '@renderer/api/types'
 
@@ -31,7 +32,7 @@ const presetColors = [
 ]
 
 // 加载所有标签
-const loadAllTags = async () => {
+const loadAllTags = async (): Promise<void> => {
   try {
     isLoadingTags.value = true
     allTags.value = await tags.getAllTags()
@@ -44,7 +45,7 @@ const loadAllTags = async () => {
 }
 
 // 重置标签表单
-const resetTagForm = () => {
+const resetTagForm = (): void => {
   tagForm.value = {
     name: '',
     color: '#3b82f6',
@@ -56,13 +57,13 @@ const resetTagForm = () => {
 }
 
 // 开始创建新标签
-const startCreateTag = () => {
+const startCreateTag = (): void => {
   resetTagForm()
   isCreatingTag.value = true
 }
 
 // 开始编辑标签
-const startEditTag = (tag: TagGroup) => {
+const startEditTag = (tag: TagGroup): void => {
   tagForm.value = {
     name: tag.name,
     color: tag.color,
@@ -73,7 +74,7 @@ const startEditTag = (tag: TagGroup) => {
 }
 
 // 保存标签（创建或更新）
-const saveTag = async () => {
+const saveTag = async (): Promise<void> => {
   if (!tagForm.value.name.trim()) {
     alert('请输入标签名称')
     return
@@ -106,7 +107,7 @@ const saveTag = async () => {
 }
 
 // 删除标签
-const deleteTag = async (tag: TagGroup) => {
+const deleteTag = async (tag: TagGroup): Promise<void> => {
   if (!confirm(`确定要删除标签"${tag.name}"吗？这将同时移除所有相关的标签绑定。`)) {
     return
   }
@@ -121,7 +122,7 @@ const deleteTag = async (tag: TagGroup) => {
 }
 
 // 取消编辑
-const cancelEdit = () => {
+const cancelEdit = (): void => {
   resetTagForm()
 }
 
@@ -147,8 +148,8 @@ onMounted(() => {
     <div class="tag-actions">
       <button
         class="create-tag-button"
-        @click="startCreateTag"
         :disabled="isCreatingTag || isEditingTag"
+        @click="startCreateTag"
       >
         <svg
           width="16"
@@ -176,8 +177,8 @@ onMounted(() => {
         <div class="form-group">
           <label class="form-label">标签名称</label>
           <input
-            type="text"
             v-model="tagForm.name"
+            type="text"
             class="form-input"
             placeholder="请输入标签名称"
             maxlength="20"
@@ -198,7 +199,7 @@ onMounted(() => {
                 @click="tagForm.color = color"
               ></div>
             </div>
-            <input type="color" v-model="tagForm.color" class="color-input" />
+            <input v-model="tagForm.color" type="color" class="color-input" />
           </div>
         </div>
 

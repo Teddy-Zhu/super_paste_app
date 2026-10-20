@@ -24,3 +24,4 @@ minimumReleaseAgeExclude:
   - '@teddyzhu/clipboard-win32-arm64-msvc@0.0.12'
   - '@teddyzhu/clipboard-win32-x64-msvc@0.0.12'
   - '@teddyzhu/clipboard@0.0.12'
+  - '@teddyzhu/auto-launch@6.0.1'
