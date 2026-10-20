@@ -2,9 +2,11 @@ import { OCRManager, OCRManagerOptions, OCRConfig, OCROutput } from '../ocr/ocr-
 import logger from '../utils/logger'
 import fs from 'fs'
 import path from 'path'
-import { DEFAULT_OCR_MODEL_ID } from '../../shared/ocr-models'
+import { DEFAULT_OCR_MODEL_ID, type OCRSettings } from '../../shared/ocr-models'
+import { isAIOCRProvider, type AIOCRConfig, type AIOCRUsageEntry } from '../../shared/ai-ocr'
+import { AIOCRClient } from '../ocr/ai-ocr'
 
-export type OCRMode = 'local' | 'remote'
+export type OCRMode = OCRSettings['ocrMode']
 export type OCRRemoteRequestFormat = 'json' | 'form'
 
 export interface OCRRemoteConfig {
@@ -30,6 +32,8 @@ export interface OCRServiceOptions extends Partial<OCRManagerOptions> {
   mode?: OCRMode
   ocrConfig?: OCRConfig
   remoteConfig?: OCRRemoteConfig
+  aiConfig?: AIOCRConfig
+  onAIUsage?: (entry: AIOCRUsageEntry) => void
 }
 
 export interface OCRRecognizeResult {
@@ -50,6 +54,7 @@ export class OCRService {
   private ocrManager: OCRManager | null = null
   private mode: OCRMode = 'local'
   private remoteConfig: ParsedRemoteConfig | null = null
+  private aiClient: AIOCRClient | null = null
 
   private constructor() {
     // 通过静态方法统一创建单例。
@@ -71,8 +76,15 @@ export class OCRService {
    */
   public async initialize(options: OCRServiceOptions): Promise<void> {
     const mode = options.mode || 'local'
-    if (mode === 'remote') {
-      this.setupRemoteConfig(options.remoteConfig)
+    if (mode === 'remote' || isAIOCRProvider(mode)) {
+      if (mode === 'remote') {
+        this.setupRemoteConfig(options.remoteConfig)
+        this.aiClient = null
+      } else {
+        if (!options.aiConfig) throw new Error('AI OCR 配置为空')
+        this.aiClient = new AIOCRClient(mode, options.aiConfig, { onUsage: options.onAIUsage })
+        this.remoteConfig = null
+      }
       const previousManager = this.ocrManager
       this.ocrManager = null
       this.mode = mode
@@ -96,6 +108,7 @@ export class OCRService {
     this.ocrManager = nextManager
     this.mode = mode
     this.remoteConfig = null
+    this.aiClient = null
     this.isServiceReady = true
     if (previousManager) {
       try {
@@ -123,6 +136,20 @@ export class OCRService {
 
     if (this.mode === 'remote') {
       return this.recognizeByRemote(imageData)
+    }
+
+    if (isAIOCRProvider(this.mode)) {
+      const client = this.aiClient
+      if (!client) return { success: false, text: '', confidence: 0, error: 'AI OCR 未初始化' }
+      try {
+        const { buffer } = this.resolveImageData(imageData)
+        const text = await client.recognize(buffer)
+        return { success: true, text, confidence: 0 }
+      } catch (error) {
+        const message = client.formatError(error)
+        logger.error('[AI OCR] 识别失败:', message)
+        return { success: false, text: '', confidence: 0, error: message }
+      }
     }
 
     if (!this.ocrManager) {
@@ -176,11 +203,11 @@ export class OCRService {
     regions: Awaited<ReturnType<OCRManager['detect']>>
     error?: string
   }> {
-    if (this.mode === 'remote') {
+    if (this.mode !== 'local') {
       return {
         success: false,
         regions: [],
-        error: '远程 OCR 模式暂不支持文字区域检测'
+        error: '远程 OCR 和 AI OCR 暂不支持文字区域检测'
       }
     }
 
@@ -327,6 +354,7 @@ export class OCRService {
     const manager = this.ocrManager
     this.ocrManager = null
     this.remoteConfig = null
+    this.aiClient = null
     if (manager) await manager.destroy()
     logger.info('OCR 服务已停止')
   }

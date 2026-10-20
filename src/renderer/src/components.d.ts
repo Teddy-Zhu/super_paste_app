@@ -16,5 +16,6 @@ declare module 'vue' {
     ImageDisplay: typeof import('./components/ImageDisplay.vue')['default']
     RouterLink: typeof import('vue-router')['RouterLink']
     RouterView: typeof import('vue-router')['RouterView']
+    StatisticsLineChart: typeof import('./components/StatisticsLineChart.vue')['default']
   }
 }

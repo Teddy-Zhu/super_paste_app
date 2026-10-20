@@ -1,12 +1,21 @@
-import type { OCRSettings, OCRModelStatus, OCRModelId } from '../../../shared/ocr-models'
+import type { StoreWriteResult, StoreValueChange, StoreWriteMetadata } from '@shared/store-sync'
+import type { OCRSettings, OCRModelStatus, OCRModelId } from '@shared/ocr-models'
+import type { CopyStatistics, CopyStatisticsQuery } from '@shared/clipboard-statistics'
+import type {
+  AIOCRAPIRequest,
+  AIOCRModelOption,
+  AIOCRUsageQuery,
+  AIOCRUsageStats,
+  OCRTaskStatus
+} from '@shared/ai-ocr'
 /**
  * IPC 通信类型定义
  * 为 IPC 频道和消息提供类型安全
  */
 
 import type { IpcRendererEvent } from 'electron'
-import type { ScheduledSyncStatus } from '../../../main/sync/types'
-export type { IpcRendererListener } from '../../../preload/index.d'
+import type { ScheduledSyncStatus } from '@main/sync/types'
+export type { IpcRendererListener } from '@preload/index.d'
 
 // 基础类型
 export type SimpleListener<Args extends unknown[] = unknown[]> = (...args: Args) => void
@@ -15,10 +24,20 @@ export type SimpleListener<Args extends unknown[] = unknown[]> = (...args: Args)
 export type OverlayPosition = 'top' | 'bottom' | 'left' | 'right'
 
 export interface IpcChannels {
+  'statistics:get-copy': CopyStatisticsQuery | undefined
+  'statistics:clear-copy': void
+  'statistics:copy-updated': void
   'ocr:list-models': void
   'ocr:download-model': OCRModelId
   'ocr:cancel-download': OCRModelId
-  'ocr:save-settings': OCRSettings
+  'ocr:delete-model': OCRModelId
+  'ocr:redownload-model': OCRModelId
+  'ocr:ai-list-models': AIOCRAPIRequest
+  'ocr:ai-test-connection': AIOCRAPIRequest
+  'ocr:get-usage': AIOCRUsageQuery | undefined
+  'ocr:clear-usage': void
+  'ocr:usage-updated': void
+  'ocr:task-status': OCRTaskStatus
   'ocr:model-status': OCRModelStatus
 
   // 窗口相关
@@ -33,9 +52,8 @@ export interface IpcChannels {
   'trigger-close-window': void
 
   // 存储相关
-  'store-get': { key: string; defaultValue?: unknown }
-  'store-set': { key: string; value: unknown }
-  'store-value-changed': { key: string; value: unknown; timestamp: number }
+  'store:patch': { storeId: string; patch: Record<string, unknown>; metadata?: StoreWriteMetadata }
+  'store-value-changed': StoreValueChange
 
   // 剪贴板相关
   'clipboard-get-history': ClipboardHistoryQueryOptions | { limit?: number } | void
@@ -73,19 +91,28 @@ export interface IpcChannels {
 
 // IPC 响应类型
 export interface IpcResponses {
+  'statistics:get-copy': { success: boolean; data?: CopyStatistics; error?: string }
+  'statistics:clear-copy': { success: boolean; error?: string }
   'ocr:list-models': { success: boolean; data?: OCRModelStatus[]; error?: string }
   'ocr:download-model': { success: boolean; error?: string }
   'ocr:cancel-download': { success: boolean; error?: string }
-  'ocr:save-settings': { success: boolean; data?: OCRSettings; error?: string }
+  'ocr:delete-model': { success: boolean; error?: string }
+  'ocr:redownload-model': { success: boolean; error?: string }
+  'ocr:ai-list-models': { success: boolean; data?: AIOCRModelOption[]; error?: string }
+  'ocr:ai-test-connection': {
+    success: boolean
+    data?: { latencyMs: number; model: string }
+    error?: string
+  }
+  'ocr:get-usage': { success: boolean; data?: AIOCRUsageStats; error?: string }
+  'ocr:clear-usage': { success: boolean; data?: AIOCRUsageStats; error?: string }
 
   'scheduled-sync:test-connection': boolean | { success: false; error: string }
   'scheduled-sync:manual-sync': { success: boolean; message?: string; error?: string }
   'scheduled-sync:manual-sync-with-config': { success: boolean; message?: string; error?: string }
   'scheduled-sync:get-status': { success: boolean; data?: ScheduledSyncStatus; error?: string }
-  'scheduled-sync:refresh': boolean | { success: false; error: string }
 
-  'store-get': { success: boolean; data?: unknown; error?: string }
-  'store-set': { success: boolean; error?: string }
+  'store:patch': StoreWriteResult
 
   // 剪贴板相关响应
   'clipboard-get-history': { success: boolean; data?: ClipboardItem[]; error?: string }
@@ -167,12 +194,6 @@ export interface TypedIpcRenderer {
     listener: (event: IpcRendererEvent, ...args: unknown[]) => void
   ): void
   removeAllListeners(channel: string): void
-}
-
-// 存储操作类型
-export interface StoreOperations {
-  get<T = unknown>(key: string, defaultValue?: T): Promise<T>
-  set<T = unknown>(key: string, value: T): Promise<void>
 }
 
 // 剪贴板内容数据类型（前端版本 - 图片数据为 Uint8Array）
@@ -257,7 +278,8 @@ export interface ClipboardManagerConfig {
   maxHistorySize: number
   enableAutoSave: boolean
   enableLocalOCR: boolean
-  ocrMode: 'local' | 'remote'
+  ocrMode: OCRSettings['ocrMode']
+  ocrAIConfigs: OCRSettings['ocrAIConfigs']
   ocrLocalModel: OCRModelId
   ocrRemoteConfig: {
     url: string
@@ -338,7 +360,7 @@ export interface AppControlOperations {
 }
 
 // 完整的 API 接口
-export interface RendererAPI extends StoreOperations {
+export interface RendererAPI {
   // 原始 IPC 方法
   ipc: TypedIpcRenderer
 

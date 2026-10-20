@@ -28,3 +28,5 @@ export const OVERLAY_LABELS = {
   noResults: '未找到匹配的记录',
   noResultsHint: '尝试其他关键词或切换分类'
 } as const
+
+export const STORE_SYNC_TEXT = { failed: '配置保存失败：' } as const

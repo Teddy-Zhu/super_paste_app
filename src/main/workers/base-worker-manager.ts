@@ -116,7 +116,11 @@ export abstract class BaseWorkerManager extends EventEmitter implements WorkerMa
   /**
    * 调用 Worker 方法
    */
-  public async call<T = unknown>(method: string, params?: unknown): Promise<T> {
+  public async call<T = unknown>(
+    method: string,
+    params?: unknown,
+    timeoutMs = this.requestTimeout
+  ): Promise<T> {
     if (!this.worker || !this.isInitialized) {
       throw new Error(`Worker ${this.config.name} 未初始化`)
     }
@@ -136,7 +140,7 @@ export abstract class BaseWorkerManager extends EventEmitter implements WorkerMa
       const timeout = setTimeout(() => {
         this.pendingRequests.delete(requestId)
         reject(new Error(`Worker 方法调用超时: ${method}`))
-      }, this.requestTimeout)
+      }, timeoutMs)
 
       // 保存请求信息
       this.pendingRequests.set(requestId, {

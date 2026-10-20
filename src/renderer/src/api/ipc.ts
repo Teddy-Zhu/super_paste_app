@@ -3,7 +3,7 @@
  * 只暴露项目中实际使用的 IPC 方法，提高安全性和性能
  */
 
-import type { CustomElectronAPI, IpcRendererListener } from '../../../preload/index.d'
+import type { CustomElectronAPI, IpcRendererListener } from '@preload/index.d'
 import type { IpcResponses } from './types'
 type SimpleListener<Args extends unknown[]> = (...args: Args) => void
 

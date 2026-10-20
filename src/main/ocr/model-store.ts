@@ -100,6 +100,7 @@ export class OCRModelStore {
     { controller: AbortController; promise: Promise<InstalledOCRModel> }
   >()
   private statuses = new Map<OCRModelId, OCRModelStatus>()
+  private maintenance = new Set<OCRModelId>()
 
   constructor(private readonly options: ModelStoreOptions) {}
 
@@ -120,14 +121,60 @@ export class OCRModelStore {
 
   public download(id: unknown): Promise<InstalledOCRModel> {
     const model = getOCRModel(id)
+    if (this.maintenance.has(model.id)) return Promise.reject(new Error('模型正在维护，请稍后重试'))
+    return this.startDownload(model)
+  }
+
+  private startDownload(model: OCRModel, force = false): Promise<InstalledOCRModel> {
     const task = this.tasks.get(model.id)
     if (task) return task.promise
     const controller = new AbortController()
-    const promise = this.install(model, controller.signal).finally(() =>
+    const promise = this.install(model, controller.signal, force).finally(() =>
       this.tasks.delete(model.id)
     )
     this.tasks.set(model.id, { controller, promise })
     return promise
+  }
+
+  public async remove(id: unknown): Promise<void> {
+    await this.maintain(id, async (model) => {
+      await fs.rm(path.join(this.options.root, model.id), { recursive: true, force: true })
+      this.publish({
+        id: model.id,
+        state: 'not-downloaded',
+        receivedBytes: 0,
+        totalBytes: model.size
+      })
+    })
+  }
+
+  public async redownload(id: unknown): Promise<void> {
+    await this.maintain(id, async (model) => {
+      await this.startDownload(model, true)
+    })
+  }
+
+  private async maintain(
+    id: unknown,
+    operation: (model: OCRModel) => Promise<void>
+  ): Promise<void> {
+    const model = getOCRModel(id)
+    if (this.maintenance.has(model.id)) throw new Error('模型正在维护，请稍后重试')
+    this.maintenance.add(model.id)
+    try {
+      const task = this.tasks.get(model.id)
+      if (task) {
+        task.controller.abort(new Error('模型维护中'))
+        try {
+          await task.promise
+        } catch (error) {
+          if (!task.controller.signal.aborted) throw error
+        }
+      }
+      await operation(model)
+    } finally {
+      this.maintenance.delete(model.id)
+    }
   }
 
   public cancel(id: unknown): void {
@@ -144,7 +191,11 @@ export class OCRModelStore {
     this.options.onStatus?.({ ...status })
   }
 
-  private async install(model: OCRModel, cancelSignal: AbortSignal): Promise<InstalledOCRModel> {
+  private async install(
+    model: OCRModel,
+    cancelSignal: AbortSignal,
+    force = false
+  ): Promise<InstalledOCRModel> {
     let staging: string | undefined
     const signal = AbortSignal.any([cancelSignal, AbortSignal.timeout(15 * 60_000)])
     const status: OCRModelStatus = {
@@ -158,7 +209,7 @@ export class OCRModelStore {
     try {
       const installed = await getInstalledOCRModel(this.options.root, model.id, true)
       signal.throwIfAborted()
-      if (installed) {
+      if (installed && !force) {
         this.publish({ ...status, state: 'ready', stage: undefined, receivedBytes: model.size })
         return installed
       }
@@ -232,9 +283,22 @@ export class OCRModelStore {
       await fs.unlink(archive)
       signal.throwIfAborted()
       const directory = path.join(this.options.root, model.id)
-      await fs.rm(directory, { recursive: true, force: true })
-      await fs.rename(staging, directory)
+      const backup = staging + '.previous'
+      let hasPrevious = false
+      try {
+        await fs.rename(directory, backup)
+        hasPrevious = true
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+      }
+      try {
+        await fs.rename(staging, directory)
+      } catch (error) {
+        if (hasPrevious) await fs.rename(backup, directory)
+        throw error
+      }
       staging = undefined
+      if (hasPrevious) await fs.rm(backup, { recursive: true, force: true })
       this.publish({ ...status, state: 'ready', stage: undefined })
       return {
         model,

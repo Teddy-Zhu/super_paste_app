@@ -1,4 +1,13 @@
-import { DEFAULT_OCR_MODEL_ID, type OCRModelId } from '../../../../shared/ocr-models'
+import { recordAIOCRUsage } from '../../../ocr/usage-service'
+import { recordCopyStatistics } from '../../../statistics/copy-statistics-service'
+import type { CopyStatisticsEvent } from '../../../../shared/clipboard-statistics'
+import { DEFAULT_OCR_MODEL_ID, getOCRModel, type OCRModelId } from '../../../../shared/ocr-models'
+import {
+  AI_OCR_REQUEST_TIMEOUT_MS,
+  createDefaultAIOCRConfigs,
+  type AIOCRUsageEntry,
+  type OCRTaskStatus
+} from '../../../../shared/ai-ocr'
 import { getOCRModelStore } from '../../../ocr/model-service'
 import { getInstalledOCRModel } from '../../../ocr/model-store'
 import path from 'node:path'
@@ -12,6 +21,7 @@ import { app } from 'electron'
 
 import logger from '../../../utils/logger'
 import clipboardManagerWorkerPath from '../worker/clipboard-manager.worker?modulePath'
+import ocrWorkerPath from '../../../ocr/ocr.worker?modulePath'
 
 /**
  * 剪贴板管理器（主线程接口）
@@ -20,11 +30,15 @@ import clipboardManagerWorkerPath from '../worker/clipboard-manager.worker?modul
 class ClipboardManager extends BaseWorkerManager {
   private static instance: ClipboardManager
   private configUpdates: Promise<void> = Promise.resolve()
+  private ocrPreparation: Promise<void> | null = null
+  private ocrPreparationRequested = false
+  private modelMaintenance = new Set<OCRModelId>()
 
   private constructor() {
     const config: WorkerConfig = {
       name: 'ClipboardManager',
-      workerPath: clipboardManagerWorkerPath
+      workerPath: clipboardManagerWorkerPath,
+      options: { workerData: { ocrWorkerPath } }
     }
     super(config)
 
@@ -36,6 +50,13 @@ class ClipboardManager extends BaseWorkerManager {
    * 设置事件监听器
    */
   private setupEventListeners(): void {
+    this.on('copy-statistics', (event: CopyStatisticsEvent) => {
+      try {
+        recordCopyStatistics(event)
+      } catch (error) {
+        logger.error('[复制统计] 累计失败:', error)
+      }
+    })
     // 监听剪贴板变化事件
     this.on('clipboard-changed', (data: { timestamp: number }) => {
       // 通知前端剪贴板历史更新
@@ -56,6 +77,20 @@ class ClipboardManager extends BaseWorkerManager {
         NotificationService.notifyRecordOCRUpdate(data)
       }
     )
+
+    this.on('ocr-requested', () => {
+      void this.prepareQueuedOCR().catch((error) => logger.error('[OCR] 准备后台识别失败:', error))
+    })
+    this.on('ocr:task-status', (status: OCRTaskStatus) => {
+      NotificationService.notifyFrontend('ocr:task-status', status)
+    })
+    this.on('ai-ocr-usage', (entry: AIOCRUsageEntry) => {
+      try {
+        recordAIOCRUsage(entry)
+      } catch (error) {
+        logger.error('[OCR] 保存 AI 用量失败:', error)
+      }
+    })
 
     // 监听清理检查请求事件
     // 注意：清理器已优化为直接使用 Worker，不再需要事件转发
@@ -125,12 +160,13 @@ class ClipboardManager extends BaseWorkerManager {
 
   private getOCRConfigFromStore(): Pick<
     ClipboardManagerConfig,
-    'enableLocalOCR' | 'ocrMode' | 'ocrLocalModel' | 'ocrRemoteConfig'
+    'enableLocalOCR' | 'ocrMode' | 'ocrLocalModel' | 'ocrRemoteConfig' | 'ocrAIConfigs'
   > {
     return {
       enableLocalOCR: store.get(STORE_KEY.SETTINGS_ENABLE_LOCAL_OCR, false),
       ocrMode: store.get(STORE_KEY.SETTINGS_OCR_MODE, 'local'),
       ocrLocalModel: store.get(STORE_KEY.SETTINGS_OCR_LOCAL_MODEL, DEFAULT_OCR_MODEL_ID),
+      ocrAIConfigs: store.get(STORE_KEY.SETTINGS_OCR_AI_CONFIGS, createDefaultAIOCRConfigs()),
       ocrRemoteConfig: {
         url: store.get(STORE_KEY.SETTINGS_OCR_REMOTE_URL, ''),
         extraParams: store.get(STORE_KEY.SETTINGS_OCR_REMOTE_EXTRA_PARAMS, '{}'),
@@ -245,23 +281,73 @@ class ClipboardManager extends BaseWorkerManager {
   }
 
   private async prepareAutoOCRModel(): Promise<void> {
-    const config = await this.getConfig()
-    if (!config.enableLocalOCR || config.ocrMode !== 'local') return
-    if (!(await this.prepareOCRModel(config.ocrLocalModel))) return
-    const current = await this.getConfig()
-    if (
-      current.enableLocalOCR &&
-      current.ocrMode === 'local' &&
-      current.ocrLocalModel === config.ocrLocalModel
-    ) {
-      await this.updateConfig({})
-    }
+    if ((await this.getConfig()).enableLocalOCR) await this.prepareQueuedOCR()
   }
 
-  public async parseOcrFromItem(itemId: string): Promise<{ success: boolean; message?: string }> {
-    const config = await this.getConfig()
-    if (config.ocrMode === 'local') await this.prepareOCRModel(config.ocrLocalModel)
+  private prepareQueuedOCR(): Promise<void> {
+    this.ocrPreparationRequested = true
+    if (this.ocrPreparation) return this.ocrPreparation
+    this.ocrPreparation = (async () => {
+      try {
+        while (true) {
+          this.ocrPreparationRequested = false
+          const config = await this.getConfig()
+          if (!config.enableLocalOCR && !(await this.call<boolean>('hasOCRJobs'))) return
+          if (config.ocrMode === 'local') {
+            if (this.modelMaintenance.has(config.ocrLocalModel)) return
+            await this.prepareOCRModel(config.ocrLocalModel)
+          }
+          const current = await this.getConfig()
+          if (current.ocrMode !== config.ocrMode || current.ocrLocalModel !== config.ocrLocalModel)
+            continue
+          await this.call('resumeOCR', undefined, AI_OCR_REQUEST_TIMEOUT_MS + 5000)
+          if (this.ocrPreparationRequested) continue
+          const latest = await this.getConfig()
+          if (latest.ocrMode !== config.ocrMode || latest.ocrLocalModel !== config.ocrLocalModel)
+            continue
+          return
+        }
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error)
+        logger.error('[OCR] 准备后台识别失败:', message)
+        const current = await this.getConfig()
+        if (current.ocrMode !== 'local' || !this.modelMaintenance.has(current.ocrLocalModel))
+          await this.call('failPendingOCR', message)
+      } finally {
+        this.ocrPreparation = null
+      }
+    })()
+    return this.ocrPreparation
+  }
+
+  public parseOcrFromItem(itemId: string): Promise<{ success: boolean; message?: string }> {
     return this.call('parseOcrFromItem', itemId)
+  }
+
+  public async maintainOCRModel(id: unknown, action: 'delete' | 'redownload'): Promise<void> {
+    const model = getOCRModel(id)
+    if (this.modelMaintenance.has(model.id)) throw new Error('模型正在维护，请稍后重试')
+    this.modelMaintenance.add(model.id)
+    try {
+      await this.call('suspendOCRModel', model.id, AI_OCR_REQUEST_TIMEOUT_MS + 5000)
+      if (action === 'delete') {
+        const config = await this.getConfig()
+        if (config.ocrMode === 'local' && config.ocrLocalModel === model.id) {
+          await this.call('failPendingOCR', '本地模型已删除，请重新提交 OCR')
+          if (config.enableLocalOCR) {
+            await this.updateConfig({ enableLocalOCR: false })
+            store.set(STORE_KEY.SETTINGS_ENABLE_LOCAL_OCR, false, {
+              source: { kind: 'main', id: 'model-maintenance' }
+            })
+          }
+        }
+        await getOCRModelStore().remove(model.id)
+      } else await getOCRModelStore().redownload(model.id)
+    } finally {
+      this.modelMaintenance.delete(model.id)
+      await this.call('releaseOCRModel', model.id)
+      void this.prepareQueuedOCR().catch((error) => logger.error('[OCR] 恢复后台识别失败:', error))
+    }
   }
 
   /**
@@ -302,15 +388,8 @@ class ClipboardManager extends BaseWorkerManager {
    */
   public updateConfig(newConfig: Partial<ClipboardManagerConfig>): Promise<void> {
     const update = this.configUpdates.then(async () => {
-      const config = { ...(await this.getConfig()), ...newConfig }
-      if (config.enableLocalOCR && config.ocrMode === 'local') {
-        const verify =
-          newConfig.enableLocalOCR !== undefined ||
-          newConfig.ocrMode !== undefined ||
-          newConfig.ocrLocalModel !== undefined
-        await this.prepareOCRModel(config.ocrLocalModel, verify)
-      }
       await this.call<void>('updateConfig', newConfig)
+      void this.prepareQueuedOCR().catch((error) => logger.error('[OCR] 更新后台识别失败:', error))
     })
     this.configUpdates = update.then(
       () => undefined,

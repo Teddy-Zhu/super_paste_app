@@ -13,6 +13,7 @@ export const STORE_KEY = {
   SETTINGS_OCR_REMOTE_IMAGE_FIELD_NAME: 'settings.ocrRemoteImageFieldName',
   SETTINGS_OCR_REMOTE_REQUEST_FORMAT: 'settings.ocrRemoteRequestFormat',
   SETTINGS_OCR_REMOTE_RESULT_PATH: 'settings.ocrRemoteResultPath',
+  SETTINGS_OCR_AI_CONFIGS: 'settings.ocrAIConfigs',
 
   SYNC_CONFIG: 'sync',
   SYNC_ENABLED: 'sync.enabled',

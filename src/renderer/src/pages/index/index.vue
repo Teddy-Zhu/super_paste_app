@@ -7,12 +7,16 @@ import IconBug from '~icons/mdi/bug'
 import IconSync from '~icons/mdi/sync'
 import IconOCR from '~icons/mdi/text-recognition'
 import IconClipboard from '~icons/mdi/content-paste'
-import { SETTINGS_LABELS } from '@renderer/constants/desktop-ui'
+import IconStatistics from '~icons/mdi/chart-line'
+import { SETTINGS_LABELS, STORE_SYNC_TEXT } from '@renderer/constants/desktop-ui'
+import { STATISTICS_TEXT } from '@renderer/constants/statistics'
 import { useSettingsStore } from '@renderer/stores/common'
+import { useSyncStore } from '@/stores/sync'
 
 // 导入组件
 import GeneralSettings from './components/GeneralSettings.vue'
 import OCRSettings from './components/OCRSettings.vue'
+import StatisticsSection from './components/StatisticsSection.vue'
 import TagsManagement from './components/TagsManagement.vue'
 import ShortcutSettings from './components/ShortcutSettings.vue'
 import DebugSettings from './components/DebugSettings.vue'
@@ -24,7 +28,15 @@ import { onSimple } from '@renderer/api/ipc'
 import { app } from '@renderer/api/renderer-api'
 import { ref, computed, watch, onMounted, onUnmounted, type Component } from 'vue'
 
-type SectionId = 'general' | 'sync' | 'ocr' | 'tags' | 'shortcuts' | 'debug' | 'about'
+type SectionId =
+  | 'general'
+  | 'sync'
+  | 'ocr'
+  | 'statistics'
+  | 'tags'
+  | 'shortcuts'
+  | 'debug'
+  | 'about'
 
 interface SectionConfig {
   id: SectionId
@@ -39,6 +51,8 @@ interface SectionRendererConfig {
 
 const activeSection = ref<SectionId>('general')
 const settingsStore = useSettingsStore()
+const syncStore = useSyncStore()
+const syncError = computed(() => settingsStore.$syncStatus.error || syncStore.$syncStatus.error)
 const isWindowFocused = ref(document.hasFocus())
 const restartDialog = ref<HTMLDialogElement>()
 
@@ -72,6 +86,11 @@ const settingSections: SectionConfig[] = [
     icon: IconTag
   },
   {
+    id: 'statistics',
+    name: STATISTICS_TEXT.title,
+    icon: IconStatistics
+  },
+  {
     id: 'shortcuts',
     name: '快捷键',
     icon: IconKeyboard
@@ -90,22 +109,22 @@ const settingSections: SectionConfig[] = [
 
 const sectionRendererMap: Record<SectionId, SectionRendererConfig> = {
   general: {
-    component: GeneralSettings,
-    getProps: () => ({ settingsStore })
+    component: GeneralSettings
   },
   sync: {
     component: SyncSettings
   },
   ocr: {
-    component: OCRSettings,
-    getProps: () => ({ settingsStore })
+    component: OCRSettings
   },
   tags: {
     component: TagsManagement
   },
+  statistics: {
+    component: StatisticsSection
+  },
   shortcuts: {
-    component: ShortcutSettings,
-    getProps: () => ({ settingsStore })
+    component: ShortcutSettings
   },
   debug: {
     component: DebugSettings,
@@ -292,6 +311,9 @@ onUnmounted(() => {
 
       <!-- 右侧内容区域 -->
       <main class="main-content">
+        <p v-if="syncError" class="store-sync-error" role="alert">
+          {{ STORE_SYNC_TEXT.failed }}{{ syncError }}
+        </p>
         <Transition name="settings-page" mode="out-in">
           <component
             :is="currentSectionComponent"
@@ -345,6 +367,14 @@ onUnmounted(() => {
 </template>
 
 <style scoped>
+.store-sync-error {
+  padding: 12px 16px;
+  margin: 0 0 16px;
+  border: 1px solid var(--color-danger, #dc2626);
+  border-radius: 8px;
+  color: var(--color-danger, #dc2626);
+}
+
 .settings-shell {
   height: 100vh;
   width: 100vw;

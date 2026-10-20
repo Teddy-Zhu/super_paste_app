@@ -1,9 +1,9 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useSyncStore } from '@renderer/stores/sync'
 import { SETTINGS_LABELS } from '@renderer/constants/desktop-ui'
 import { invoke, onSimple } from '@renderer/api/ipc'
-import type { ScheduledSyncStatus, SyncResult } from '../../../../../main/sync/types'
+import type { ScheduledSyncStatus, SyncResult } from '@main/sync/types'
 
 // 使用同步 store
 const syncStore = useSyncStore()
@@ -272,19 +272,16 @@ const saveConfig = async (): Promise<void> => {
     }
 
     // 保存到 store
-    syncStore.enabled = localConfig.value.enabled
-    syncStore.provider = localConfig.value.provider
-    syncStore.interval = localConfig.value.interval * 60000 // 转换为毫秒
-    syncStore.direction = localConfig.value.direction
-    syncStore.configOnly = localConfig.value.configOnly
-    syncStore.params.webdav = { ...localConfig.value.params.webdav }
-
-    // 等待1秒后刷新计划同步任务
-    await new Promise((resolve) => setTimeout(resolve, 1000))
-    const refreshed = await invoke('scheduled-sync:refresh')
-    if (refreshed !== true) throw new Error('刷新同步任务失败')
-
-    hasUnsavedChanges.value = false
+    syncStore.$patch({
+      enabled: localConfig.value.enabled,
+      provider: localConfig.value.provider,
+      interval: localConfig.value.interval * 60000,
+      direction: localConfig.value.direction,
+      configOnly: localConfig.value.configOnly,
+      params: { webdav: { ...localConfig.value.params.webdav } }
+    })
+    await syncStore.$whenSynced()
+    initializeLocalConfig()
     showSaveMessage('配置保存成功')
 
     // 刷新同步状态
@@ -419,6 +416,14 @@ const handleSyncStatusUpdate = (data: {
   // 刷新同步状态
   getSyncStatus()
 }
+
+watch(
+  () => syncStore.$state,
+  () => {
+    if (!isSaving.value && !hasUnsavedChanges.value) initializeLocalConfig()
+  },
+  { deep: true }
+)
 
 onMounted(async () => {
   // 初始化本地配置

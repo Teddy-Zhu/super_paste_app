@@ -5,10 +5,7 @@ import {
   AppInfo,
   ClipboardHistoryRecord
 } from '../../types/clipboard-types'
-import { ocrService } from '../../../../services/ocr-service'
 import logger from '../../../../utils/worker-logger'
-
-type OCRUpdateCallback = (payload: { contentId: string; ocrText: string }) => void
 
 export class ClipboardRepository {
   private database: ClipboardDatabase
@@ -17,8 +14,6 @@ export class ClipboardRepository {
   private maxCacheSize: number = 10000
   private lastItemId: string = ''
   private lastItemHash: string = ''
-  private pendingOCR = new Map<string, OCRUpdateCallback | undefined>()
-  private processingPendingOCR = false
 
   constructor() {
     this.database = ClipboardDatabase.getInstance()
@@ -81,7 +76,7 @@ export class ClipboardRepository {
       appInfo?: AppInfo
       refreshSourceApp?: boolean
       enableLocalOCR?: boolean
-      onOCRUpdated?: OCRUpdateCallback
+      onOCRRequested?: (contentId: string) => void
     }
   ): Promise<{ saved: boolean; id: string; isNew: boolean; sourceUpdated?: boolean }> {
     if (!content || ClipboardDataConverter.isEmptyContent(content)) {
@@ -153,7 +148,7 @@ export class ClipboardRepository {
 
     // Async OCR
     if (options?.enableLocalOCR && content.image) {
-      this.performAsyncOCR(newItemId, content.image, options.onOCRUpdated)
+      options.onOCRRequested?.(newItemId)
     }
 
     return { saved: true, id: newItemId, isNew: true }
@@ -241,55 +236,6 @@ export class ClipboardRepository {
       this.idToHashIndex.delete(record.id)
     }
     this.historyCache.delete(hash)
-  }
-
-  public clearPendingOCR(): void {
-    this.pendingOCR.clear()
-  }
-
-  public async processPendingOCR(shouldContinue: () => boolean): Promise<void> {
-    if (this.processingPendingOCR) return
-    this.processingPendingOCR = true
-    try {
-      while (this.pendingOCR.size && ocrService.ready && shouldContinue()) {
-        const [contentId, onUpdated] = this.pendingOCR.entries().next().value!
-        this.pendingOCR.delete(contentId)
-        const record = this.getById(contentId)
-        if (!record) continue
-        if (record.content_image)
-          await this.performAsyncOCR(contentId, record.content_image, onUpdated)
-      }
-    } finally {
-      this.processingPendingOCR = false
-    }
-  }
-
-  // Moved from worker
-  private async performAsyncOCR(
-    contentId: string,
-    imageBuffer: Buffer,
-    onOCRUpdated?: OCRUpdateCallback
-  ): Promise<void> {
-    try {
-      if (!ocrService.ready) {
-        // 下载模型期间只保留记录 ID，识别时再读取图片，避免积压图片内存。
-        if (this.pendingOCR.size >= this.maxCacheSize) {
-          const oldest = this.pendingOCR.keys().next().value
-          if (oldest) this.pendingOCR.delete(oldest)
-        }
-        this.pendingOCR.set(contentId, onOCRUpdated)
-        return
-      }
-      const ocrResult = await ocrService.recognizeText(imageBuffer)
-      if (ocrResult.success && ocrResult.text && ocrResult.text.trim()) {
-        this.database.updateOCR(contentId, ocrResult.text)
-        onOCRUpdated?.({ contentId, ocrText: ocrResult.text })
-      } else if (!ocrResult.success) {
-        logger.error('[ClipboardRepository] OCR failed:', ocrResult.error)
-      }
-    } catch (error) {
-      logger.error('[ClipboardRepository] OCR failed:', error)
-    }
   }
 
   // Helper to re-expose database methods needed

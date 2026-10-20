@@ -1,6 +1,8 @@
 import Store from 'electron-store'
 import { BrowserWindow } from 'electron'
 import logger from '../utils/logger'
+import { isDeepStrictEqual } from 'node:util'
+import type { StoreMutationContext, StoreSnapshot, StoreValueChange } from '../../shared/store-sync'
 
 export { Store }
 
@@ -11,6 +13,8 @@ export { Store }
 class EncryptedStore {
   private static instance: EncryptedStore
   private store: Store<Record<string, unknown>>
+  private version = 0
+  private readonly fieldVersions = new Map<string, number>()
 
   private constructor() {
     // 使用 electron-store 内置加密功能
@@ -53,66 +57,65 @@ class EncryptedStore {
     }
   }
 
-  public raw_set<T = unknown>(key: string, value: T): void {
-    try {
-      this.store.set(key, value)
-    } catch (error) {
-      logger.error(`写入数据失败 [${key}]:`, error)
-      throw error
-    }
+  public getFieldVersion(key: string): number {
+    return this.fieldVersions.get(key.split('.').slice(0, 2).join('.')) ?? 0
   }
 
-  /**
-   * 写入数据
-   * @param key 键名
-   * @param value 要存储的值
-   */
-  public set<T = unknown>(key: string, value: T): void {
-    try {
-      this.store.set(key, value)
-
-      // 发送 store-value-changed 事件到所有渲染进程
-      this.broadcastStoreChange(key, value)
-    } catch (error) {
-      logger.error(`写入数据失败 [${key}]:`, error)
-      throw error
-    }
+  public getSnapshot(key: string): StoreSnapshot {
+    return { value: this.store.get(key) as StoreSnapshot['value'], version: this.version }
   }
 
-  /**
-   * 向所有渲染进程广播存储值变更事件
-   * @param key 变更的键名
-   * @param value 新的值
-   */
-  private broadcastStoreChange<T = unknown>(key: string, value: T): void {
-    try {
-      // 获取所有窗口并发送事件
-      const allWindows = BrowserWindow.getAllWindows()
-      allWindows.forEach((window) => {
-        if (window && !window.isDestroyed()) {
-          window.webContents.send('store-value-changed', {
-            key,
-            value,
-            timestamp: Date.now()
-          })
+  public set<T = unknown>(key: string, value: T, context?: StoreMutationContext): void {
+    this.setMultiple({ [key]: value }, context)
+  }
+
+  // 同步以 Pinia 顶层字段为单位，嵌套写入和整组替换使用同一条广播链路。
+  private publishRootChanges(
+    before: Record<string, unknown>,
+    context: StoreMutationContext = { source: { kind: 'main', id: 'config' } }
+  ): void {
+    for (const [root, previous] of Object.entries(before)) {
+      const current = this.store.get(root)
+      const isObject = (value: unknown): value is Record<string, unknown> =>
+        value !== null && typeof value === 'object' && !Array.isArray(value)
+      const fields = new Set([
+        ...(isObject(previous) ? Object.keys(previous) : []),
+        ...(isObject(current) ? Object.keys(current) : [])
+      ])
+      const changes = fields.size
+        ? [...fields].map((field) => ({
+            key: `${root}.${field}`,
+            previous: isObject(previous) ? previous[field] : undefined,
+            value: isObject(current) ? current[field] : undefined
+          }))
+        : [{ key: root, previous, value: current }]
+      for (const change of changes) {
+        if (isDeepStrictEqual(change.previous, change.value)) continue
+        const event: StoreValueChange = {
+          key: change.key,
+          value: change.value,
+          ...context,
+          version: ++this.version,
+          timestamp: Date.now()
         }
-      })
-    } catch (error) {
-      logger.error('广播存储变更事件失败:', error)
+        this.fieldVersions.set(change.key, event.version)
+        for (const window of BrowserWindow.getAllWindows()) {
+          if (window.isDestroyed() || window.webContents.isDestroyed()) continue
+          try {
+            window.webContents.send('store-value-changed', event)
+          } catch (error) {
+            logger.error('广播存储变更事件失败:', error)
+          }
+        }
+      }
     }
   }
 
-  /**
-   * 删除数据
-   * @param key 键名
-   */
-  public delete(key: string): void {
-    try {
-      this.store.delete(key)
-    } catch (error) {
-      logger.error(`删除数据失败 [${key}]:`, error)
-      throw error
-    }
+  public delete(key: string, context?: StoreMutationContext): void {
+    const root = key.split('.')[0]
+    const before = { [root]: this.store.get(root) }
+    this.store.delete(key)
+    this.publishRootChanges(before, context)
   }
 
   /**
@@ -134,7 +137,9 @@ class EncryptedStore {
    */
   public clear(): void {
     try {
+      const before = this.store.store
       this.store.clear()
+      this.publishRootChanges(before)
     } catch (error) {
       logger.error('清空数据失败:', error)
       throw error
@@ -184,17 +189,20 @@ class EncryptedStore {
    * 批量设置数据
    * @param data 要设置的数据对象
    */
-  public setMultiple(data: Record<string, unknown>): void {
-    try {
-      for (const [key, value] of Object.entries(data)) {
-        this.store.set(key, value)
-        // 为每个设置的键值对发送变更事件
-        this.broadcastStoreChange(key, value)
-      }
-    } catch (error) {
-      logger.error('批量设置数据失败:', error)
-      throw error
-    }
+  public setMultiple(data: Record<string, unknown>, context?: StoreMutationContext): void {
+    const changes = Object.fromEntries(
+      Object.entries(data).filter(([key, value]) => !isDeepStrictEqual(this.store.get(key), value))
+    )
+    if (!Object.keys(changes).length) return
+    const before = Object.fromEntries(
+      [...new Set(Object.keys(changes).map((key) => key.split('.')[0]))].map((root) => [
+        root,
+        this.store.get(root)
+      ])
+    )
+    // electron-store 的对象写入只序列化和落盘一次，成功后才发布变更。
+    this.store.set(changes as Parameters<typeof this.store.set>[0])
+    this.publishRootChanges(before, context)
   }
 
   /**
@@ -221,21 +229,8 @@ class EncryptedStore {
    * 重置存储（清空所有数据）
    */
   public reset(): void {
-    try {
-      this.store.clear()
-    } catch (error) {
-      logger.error('重置存储失败:', error)
-      throw error
-    }
-  }
-
-  /**
-   * 获取原始 store 实例（用于高级操作）
-   */
-  public getStore(): Store<Record<string, unknown>> {
-    return this.store
+    this.clear()
   }
 }
 
-// 导出单例实例
 export default EncryptedStore.getInstance()

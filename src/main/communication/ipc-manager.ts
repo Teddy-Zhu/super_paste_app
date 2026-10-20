@@ -18,7 +18,7 @@ import autoStartManager from '../system/auto-start-manager'
 import store from '../config/store'
 import { STORE_KEY } from '../config/common'
 import { debounceExecution } from '../utils/common'
-import { MAX_HISTORY_SIZE_DEBOUNCE_DELAY, MAX_KEEP_TIME_DEBOUNCE_DELAY } from '../config/constants'
+import { MAX_HISTORY_SIZE_DEBOUNCE_DELAY } from '../config/constants'
 import { scheduledSyncManager } from '../sync/scheduled-sync-manager'
 import type { ScheduledSyncConfig } from '../sync/types'
 import { SyncStatus } from '../sync/types'
@@ -28,8 +28,14 @@ import logger from '../utils/logger'
 import { writeHeapSnapshot } from 'v8'
 import { join } from 'path'
 import type { SystemAccessStatus } from '../../shared/system-access'
-import { DEFAULT_OCR_MODEL_ID, type OCRSettings } from '../../shared/ocr-models'
+import { isDeepStrictEqual } from 'node:util'
+import { createDefaultSettings, createDefaultSyncPreferences } from '../../shared/preferences'
+import { parseAIOCRAPIRequest, type AIOCRUsageQuery } from '../../shared/ai-ocr'
+import { AIOCRClient } from '../ocr/ai-ocr'
+import { getAIOCRUsageStore, recordAIOCRUsage } from '../ocr/usage-service'
+import { getCopyStatisticsStore } from '../statistics/copy-statistics-service'
 import { getOCRModelStore } from '../ocr/model-service'
+import type { StoreMutationContext, StoreWriteMetadata } from '../../shared/store-sync'
 import { OCR_SETTING_KEYS, parseOCRSettings, toClipboardOCRConfig } from '../ocr/settings'
 
 /**
@@ -39,7 +45,7 @@ import { OCR_SETTING_KEYS, parseOCRSettings, toClipboardOCRConfig } from '../ocr
 class IpcManager {
   private static instance: IpcManager
   private isInitialized: boolean = false
-  private ocrSettingsQueue: Promise<unknown> = Promise.resolve()
+  private configUpdateQueue: Promise<unknown> = Promise.resolve()
 
   private constructor() {
     // 通过静态方法统一创建单例。
@@ -50,6 +56,34 @@ class IpcManager {
       IpcManager.instance = new IpcManager()
     }
     return IpcManager.instance
+  }
+
+  private enqueueConfigUpdate<T>(update: () => Promise<T>): Promise<T> {
+    const result = this.configUpdateQueue.then(update)
+    this.configUpdateQueue = result.catch(() => undefined)
+    return result
+  }
+
+  private rendererContext(
+    event: IpcMainInvokeEvent,
+    metadata?: StoreWriteMetadata
+  ): StoreMutationContext {
+    if (
+      metadata &&
+      (typeof metadata.clientId !== 'string' ||
+        metadata.clientId.length > 128 ||
+        typeof metadata.mutationId !== 'string' ||
+        metadata.mutationId.length > 256)
+    )
+      throw new Error('配置变更来源无效')
+    return {
+      source: {
+        kind: 'renderer',
+        id: metadata?.clientId ?? `window:${event.sender.id}`,
+        windowId: event.sender.id
+      },
+      mutationId: metadata?.mutationId
+    }
   }
 
   // ==================== 工具方法 ====================
@@ -112,6 +146,7 @@ class IpcManager {
     this.registerScheduledSyncHandlers()
     this.registerSystemHandlers()
     this.registerOCRHandlers()
+    this.registerStatisticsHandlers()
 
     this.isInitialized = true
     logger.debug('[IPC管理器] 所有 IPC 事件处理器注册完成')
@@ -155,8 +190,7 @@ class IpcManager {
       'auto-start-set-status',
       'auto-start-toggle',
       // 存储
-      'store-get',
-      'store-set',
+      'store:patch',
       // 定时同步
       'scheduled-sync:initialize',
       'scheduled-sync:start',
@@ -165,13 +199,18 @@ class IpcManager {
       'scheduled-sync:manual-sync-with-config',
       'scheduled-sync:test-connection',
       'scheduled-sync:get-status',
-      'scheduled-sync:update-config',
-      'scheduled-sync:refresh',
       // OCR 模型
       'ocr:list-models',
       'ocr:download-model',
       'ocr:cancel-download',
-      'ocr:save-settings',
+      'ocr:delete-model',
+      'ocr:redownload-model',
+      'ocr:ai-list-models',
+      'ocr:ai-test-connection',
+      'ocr:get-usage',
+      'ocr:clear-usage',
+      'statistics:get-copy',
+      'statistics:clear-copy',
       // 系统
       'system-access-status',
       'system-access-retry',
@@ -190,7 +229,8 @@ class IpcManager {
       'open-overlay-finished',
       'overlay-open-prepared',
       'overlay-close-started',
-      'overlay-trace'
+      'overlay-trace',
+      'store:get-snapshot'
     ]) {
       ipcMain.removeAllListeners(channel)
     }
@@ -690,7 +730,80 @@ class IpcManager {
     )
   }
 
+  private registerStatisticsHandlers(): void {
+    this.registerHandler(
+      'statistics:get-copy',
+      async (_, query: unknown) => ({
+        success: true,
+        data: getCopyStatisticsStore().getStats(query)
+      }),
+      '读取复制统计'
+    )
+    this.registerHandler(
+      'statistics:clear-copy',
+      async () => {
+        getCopyStatisticsStore().clear()
+        NotificationService.notifyFrontend('statistics:copy-updated', undefined)
+        return { success: true }
+      },
+      '清空复制统计'
+    )
+  }
+
   private registerOCRHandlers(): void {
+    for (const action of ['delete', 'redownload'] as const) {
+      this.registerHandler(
+        `ocr:${action}-model`,
+        async (_, id: unknown) => {
+          await clipboardManager.maintainOCRModel(id, action)
+          return { success: true }
+        },
+        '维护 OCR 模型'
+      )
+    }
+    for (const action of ['list-models', 'test-connection'] as const) {
+      this.registerHandler(
+        `ocr:ai-${action}`,
+        async (_, value: unknown) => {
+          const { provider, config } = parseAIOCRAPIRequest(value, action !== 'list-models')
+          const client = new AIOCRClient(provider, config, {
+            requireModel: action !== 'list-models',
+            onUsage: recordAIOCRUsage
+          })
+          try {
+            return {
+              success: true,
+              data:
+                action === 'list-models' ? await client.listModels() : await client.testConnection()
+            }
+          } catch (error) {
+            return { success: false, error: client.formatError(error) }
+          }
+        },
+        '访问 AI OCR 接口'
+      )
+    }
+    this.registerHandler(
+      'ocr:get-usage',
+      async (_, query: unknown) => {
+        if (query !== undefined && (!query || typeof query !== 'object' || Array.isArray(query)))
+          throw new Error('用量查询参数无效')
+        return {
+          success: true,
+          data: getAIOCRUsageStore().getStats(query as AIOCRUsageQuery | undefined)
+        }
+      },
+      '读取 AI OCR 用量'
+    )
+    this.registerHandler(
+      'ocr:clear-usage',
+      async () => {
+        const data = getAIOCRUsageStore().clear()
+        NotificationService.notifyFrontend('ocr:usage-updated', undefined)
+        return { success: true, data }
+      },
+      '清空 AI OCR 用量'
+    )
     this.registerHandler(
       'ocr:list-models',
       async () => ({ success: true, data: await getOCRModelStore().list() }),
@@ -712,191 +825,148 @@ class IpcManager {
       },
       '取消模型下载'
     )
-    this.registerHandler(
-      'ocr:save-settings',
-      async (_, value: unknown) => {
-        const settings = parseOCRSettings(value)
-        const save = this.ocrSettingsQueue.then(() => this.saveOCRSettings(settings))
-        this.ocrSettingsQueue = save.then(
-          () => undefined,
-          () => undefined
-        )
-        return save
-      },
-      '保存 OCR 配置'
-    )
-  }
-
-  private async saveOCRSettings(
-    settings: OCRSettings
-  ): Promise<{ success: true; data: OCRSettings }> {
-    const previous = await clipboardManager.getConfig()
-    await clipboardManager.updateConfig(toClipboardOCRConfig(settings))
-    const values = Object.fromEntries(
-      Object.entries(OCR_SETTING_KEYS).map(([field, key]) => [
-        key,
-        settings[field as keyof OCRSettings]
-      ])
-    )
-    try {
-      // 一次写入完整配置，避免各字段触发多轮模型初始化。
-      store.getStore().set(values)
-    } catch (error) {
-      try {
-        await clipboardManager.updateConfig(previous)
-      } catch (rollbackError) {
-        logger.error('[OCR] 恢复配置失败:', rollbackError)
-      }
-      throw error
-    }
-    for (const [key, value] of Object.entries(values)) {
-      NotificationService.notifyFrontend('store-value-changed', {
-        key,
-        value,
-        timestamp: Date.now()
-      })
-    }
-    trayManager.updateMenu()
-    return { success: true, data: settings }
   }
 
   // ==================== 存储相关 ====================
 
   private registerStoreHandlers(): void {
-    // 获取存储值（异步）
-    this.registerHandler(
-      'store-get',
-      async (_, key: string, defaultValue?: unknown) => {
-        return { success: true, data: store.get(key, defaultValue) }
-      },
-      '获取存储值'
-    )
-
-    // 同步获取存储值
-    ipcMain.on('store-get-on', (event, key) => {
+    ipcMain.on('store:get-snapshot', (event, key: string) => {
       try {
-        const val = store?.get(key)
-        event.returnValue = val
+        if (key !== 'settings' && key !== 'sync') throw new Error('配置分组无效')
+        event.returnValue = { success: true, data: store.getSnapshot(key) }
       } catch (error) {
-        logger.error(`[主进程] 同步获取存储值失败 [${key}]:`, error)
-        event.returnValue = undefined
+        event.returnValue = { success: false, error: String(error) }
       }
     })
 
-    // 设置存储值
     this.registerHandler(
-      'store-set',
-      async (_, key: string, value: unknown) => {
-        if (key === STORE_KEY.SETTINGS_GLOBAL_SHORTCUT) {
-          if (typeof value !== 'string') throw new Error('快捷键必须是字符串')
-          if (
-            !globalShortcutManager.registerGlobalShortcut(value, () =>
-              overlayWindowManager.toggleWindow(true, 'global-shortcut')
+      'store:patch',
+      async (event, storeId: string, patch: unknown, metadata?: StoreWriteMetadata) => {
+        if (storeId !== 'settings' && storeId !== 'sync') throw new Error('配置分组无效')
+        const defaults: Record<string, unknown> =
+          storeId === 'settings' ? createDefaultSettings() : createDefaultSyncPreferences()
+        const matches = (value: unknown, schema: unknown): boolean => {
+          if (typeof schema !== 'object')
+            return (
+              typeof value === typeof schema &&
+              (typeof value !== 'number' || Number.isFinite(value))
             )
-          ) {
-            throw new Error(globalShortcutManager.getStatus().error || '快捷键注册失败')
-          }
+          if (!value || typeof value !== 'object' || Array.isArray(value)) return false
+          const fields = schema as Record<string, unknown>
+          const input = value as Record<string, unknown>
+          return (
+            Object.keys(input).every((key) => Object.hasOwn(fields, key)) &&
+            Object.entries(fields).every(
+              ([key, field]) => Object.hasOwn(input, key) && matches(input[key], field)
+            )
+          )
         }
-        store.raw_set(key, value)
-
-        await this.handleSpecialConfigUpdates(key, value)
-
-        return { success: true }
+        if (!patch || typeof patch !== 'object' || Array.isArray(patch))
+          throw new Error('配置变更无效')
+        for (const key of Object.keys(patch)) {
+          if (!Object.hasOwn(defaults, key)) throw new Error(`配置字段无效: ${key}`)
+        }
+        const context = this.rendererContext(event, metadata)
+        return this.enqueueConfigUpdate(async () => {
+          const previous = store.getSnapshot(storeId).value ?? {}
+          const changes = { ...patch } as Record<string, unknown>
+          if (
+            storeId === 'settings' &&
+            Object.keys(changes).some((key) => Object.hasOwn(OCR_SETTING_KEYS, key))
+          ) {
+            // OCR 配置必须完整校验并一次应用，不能逐字段触发模型初始化。
+            Object.assign(changes, parseOCRSettings({ ...defaults, ...previous, ...changes }))
+          }
+          for (const [key, value] of Object.entries(changes)) {
+            if (!matches(value, defaults[key])) throw new Error(`配置字段无效: ${key}`)
+          }
+          for (const key of Object.keys(changes)) {
+            if (isDeepStrictEqual(changes[key], previous[key])) delete changes[key]
+          }
+          const keys = Object.keys(changes)
+          if (!keys.length) return { success: true, snapshot: store.getSnapshot(storeId) }
+          const previousShortcut = globalShortcutManager.getStatus().accelerator
+          store.setMultiple(
+            Object.fromEntries(keys.map((key) => [`${storeId}.${key}`, changes[key]])),
+            context
+          )
+          const versions = new Map(
+            keys.map((key) => [key, store.getFieldVersion(`${storeId}.${key}`)])
+          )
+          try {
+            await this.handleSpecialConfigUpdates(storeId, keys)
+          } catch (error) {
+            // 保留应用配置期间由托盘等入口写入的更新，只恢复本次仍持有的字段。
+            const restored = { ...store.getSnapshot(storeId).value }
+            for (const key of keys) {
+              if (store.getFieldVersion(`${storeId}.${key}`) !== versions.get(key)) continue
+              if (Object.hasOwn(previous, key)) restored[key] = previous[key]
+              else delete restored[key]
+            }
+            store.set(storeId, restored, { source: { kind: 'main', id: 'rollback' } })
+            try {
+              await this.handleSpecialConfigUpdates(storeId, keys, previousShortcut)
+            } catch (rollbackError) {
+              logger.error('[配置同步] 恢复配置应用状态失败:', rollbackError)
+            }
+            throw error
+          }
+          return { success: true, snapshot: store.getSnapshot(storeId) }
+        })
       },
-      '设置存储值'
+      '同步配置变更'
     )
   }
 
-  /**
-   * 处理特殊配置更新（全局快捷键、历史大小、OCR、自启动等）
-   */
-  private async handleSpecialConfigUpdates(key: string, value: unknown): Promise<void> {
-    try {
-      if (key === STORE_KEY.SETTINGS_MAX_HISTORY_SIZE) {
-        debounceExecution(
-          'update-max-history-size',
-          async () => {
-            logger.debug('[主进程] 最大历史记录数量配置已更新，更新剪贴板管理器配置')
-            try {
-              const maxHistorySize = store.get(STORE_KEY.SETTINGS_MAX_HISTORY_SIZE, 100)
-              await clipboardManager.updateConfig({ maxHistorySize })
-            } catch (error) {
-              logger.error('[主进程] 更新剪贴板管理器maxHistorySize失败:', error)
-            }
-          },
-          MAX_HISTORY_SIZE_DEBOUNCE_DELAY
+  private async handleSpecialConfigUpdates(
+    storeId: 'settings' | 'sync',
+    keys: string[],
+    previousShortcut = ''
+  ): Promise<void> {
+    if (storeId === 'sync') {
+      if (!(await scheduledSyncManager.updateConfig(SyncConfigUtils.loadBaseSyncConfig())))
+        throw new Error('应用同步配置失败')
+      return
+    }
+    const fields = new Set(keys)
+    const settings = { ...createDefaultSettings(), ...store.getSnapshot('settings').value }
+    if (fields.has('globalShortcut')) {
+      const shortcut = store.get<string>(STORE_KEY.SETTINGS_GLOBAL_SHORTCUT, previousShortcut)
+      if (
+        !globalShortcutManager.registerGlobalShortcut(shortcut, () =>
+          overlayWindowManager.toggleWindow(true, 'global-shortcut')
         )
-      }
-
-      if (key === STORE_KEY.SETTINGS_MAX_KEEP_TIME) {
-        debounceExecution(
-          'update-max-keep-time',
-          async () => {
-            logger.debug('[主进程] 最大保存时间配置已更新，清理器将在下次应用启动时使用新配置')
-            // TODO: 如果需要动态更新清理器配置，需要在 index.ts 中暴露清理器实例的引用
-          },
-          MAX_KEEP_TIME_DEBOUNCE_DELAY
-        )
-      }
-
-      if (key === STORE_KEY.SETTINGS_AUTO_START) {
-        const autoStart = value as boolean
-        const success = await autoStartManager.setEnabled(autoStart)
-
-        if (!success) {
-          logger.error('[主进程] 设置自动启动失败')
-        } else {
-          logger.debug(`[主进程] 自动启动状态已更新: ${autoStart}`)
-        }
-
-        trayManager.updateMenu()
-      }
-
-      if (key === STORE_KEY.SETTINGS_OVERLAY_POSITION) {
-        logger.debug('[主进程] Overlay 位置配置已更新，刷新窗口边界')
-        overlayWindowManager.updateWindowPositionBySettings()
-      }
-
-      const ocrSettingKeys = new Set([
-        STORE_KEY.SETTINGS_ENABLE_LOCAL_OCR,
-        STORE_KEY.SETTINGS_OCR_MODE,
-        STORE_KEY.SETTINGS_OCR_LOCAL_MODEL,
-        STORE_KEY.SETTINGS_OCR_REMOTE_URL,
-        STORE_KEY.SETTINGS_OCR_REMOTE_EXTRA_PARAMS,
-        STORE_KEY.SETTINGS_OCR_REMOTE_IMAGE_FIELD_NAME,
-        STORE_KEY.SETTINGS_OCR_REMOTE_REQUEST_FORMAT,
-        STORE_KEY.SETTINGS_OCR_REMOTE_RESULT_PATH
-      ])
-
-      if (ocrSettingKeys.has(key)) {
-        logger.debug(`[主进程] OCR配置已更新: ${key}`)
-
-        try {
-          await clipboardManager.updateConfig({
-            enableLocalOCR: store.get(STORE_KEY.SETTINGS_ENABLE_LOCAL_OCR, false),
-            ocrMode: store.get(STORE_KEY.SETTINGS_OCR_MODE, 'local'),
-            ocrLocalModel: store.get(STORE_KEY.SETTINGS_OCR_LOCAL_MODEL, DEFAULT_OCR_MODEL_ID),
-            ocrRemoteConfig: {
-              url: store.get(STORE_KEY.SETTINGS_OCR_REMOTE_URL, ''),
-              extraParams: store.get(STORE_KEY.SETTINGS_OCR_REMOTE_EXTRA_PARAMS, '{}'),
-              imageFieldName: store.get(STORE_KEY.SETTINGS_OCR_REMOTE_IMAGE_FIELD_NAME, 'image'),
-              requestFormat: store.get(STORE_KEY.SETTINGS_OCR_REMOTE_REQUEST_FORMAT, 'json'),
-              resultPath: store.get(STORE_KEY.SETTINGS_OCR_REMOTE_RESULT_PATH, 'data.result')
-            }
-          })
-          logger.debug('[主进程] 剪贴板管理器 OCR 配置已更新')
-        } catch (error) {
-          logger.error('[主进程] 更新剪贴板管理器 OCR 配置失败:', error)
-        }
-
-        if (key === STORE_KEY.SETTINGS_ENABLE_LOCAL_OCR) {
-          trayManager.updateMenu()
-        }
-      }
-
-      logger.debug(`[主进程] 处理特殊配置更新完成 [${key}]`)
-    } catch (error) {
-      logger.error(`[主进程] 处理特殊配置更新失败 [${key}]:`, error)
+      )
+        throw new Error(globalShortcutManager.getStatus().error || '快捷键注册失败')
+    }
+    if (fields.has('autoStart')) {
+      if (!(await autoStartManager.setEnabled(settings.autoStart)))
+        throw new Error('设置自动启动失败')
+      trayManager.updateMenu()
+    }
+    if (fields.has('maxHistorySize')) {
+      debounceExecution(
+        'update-max-history-size',
+        async () => {
+          try {
+            await clipboardManager.updateConfig({
+              maxHistorySize: store.get(STORE_KEY.SETTINGS_MAX_HISTORY_SIZE, 100)
+            })
+          } catch (error) {
+            logger.error('[主进程] 更新剪贴板管理器maxHistorySize失败:', error)
+          }
+        },
+        MAX_HISTORY_SIZE_DEBOUNCE_DELAY
+      )
+    }
+    if (fields.has('overlayPosition')) overlayWindowManager.updateWindowPositionBySettings()
+    if (Object.keys(OCR_SETTING_KEYS).some((key) => fields.has(key))) {
+      const current = parseOCRSettings({
+        ...createDefaultSettings(),
+        ...store.getSnapshot('settings').value
+      })
+      await clipboardManager.updateConfig(toClipboardOCRConfig(current))
+      trayManager.updateMenu()
     }
   }
 
@@ -1056,48 +1126,6 @@ class IpcManager {
         return { success: true, data: status }
       },
       '获取同步状态'
-    )
-
-    this.registerHandler(
-      'scheduled-sync:update-config',
-      async (_, config: Omit<ScheduledSyncConfig, 'userDataPath'>) => {
-        const syncConfig: ScheduledSyncConfig = {
-          ...config,
-          userDataPath: app.getPath('userData')
-        }
-        return await scheduledSyncManager.updateConfig(syncConfig)
-      },
-      '更新定时同步配置'
-    )
-
-    this.registerHandler(
-      'scheduled-sync:refresh',
-      async () => {
-        logger.info('[主进程] 开始刷新计划同步任务')
-
-        const syncConfig = SyncConfigUtils.loadBaseSyncConfig()
-
-        logger.debug('[主进程] 已加载基础同步配置:', {
-          enabled: syncConfig.enabled,
-          provider: syncConfig.providerType,
-          interval: syncConfig.syncInterval
-        })
-
-        const result = await scheduledSyncManager.updateConfig(syncConfig)
-
-        if (result) {
-          if (syncConfig.enabled) {
-            logger.info('[主进程] 计划同步任务刷新成功，同步已启用')
-          } else {
-            logger.info('[主进程] 计划同步任务刷新成功，Worker 基础功能可用')
-          }
-        } else {
-          logger.warn('[主进程] 计划同步任务刷新失败')
-        }
-
-        return result
-      },
-      '刷新计划同步任务'
     )
   }
 

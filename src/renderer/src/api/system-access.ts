@@ -1,7 +1,7 @@
 import { invoke } from './ipc'
 
-import type { SystemAccessStatus } from '../../../shared/system-access'
-export type { SystemAccessStatus } from '../../../shared/system-access'
+import type { SystemAccessStatus } from '@shared/system-access'
+export type { SystemAccessStatus } from '@shared/system-access'
 
 export async function getSystemAccessStatus(retry = false): Promise<SystemAccessStatus> {
   const result = await invoke<{ success: boolean; data?: SystemAccessStatus; error?: string }>(

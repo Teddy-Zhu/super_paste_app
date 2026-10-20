@@ -75,7 +75,9 @@ export class TrayManager {
         checked: autoStart,
         click: async () => {
           const newValue = !autoStart
-          store.set(STORE_KEY.SETTINGS_AUTO_START, newValue)
+          store.set(STORE_KEY.SETTINGS_AUTO_START, newValue, {
+            source: { kind: 'main', id: 'tray' }
+          })
 
           // 实际执行自动启动设置
           const success = await autoStartManager.setEnabled(newValue)
@@ -102,7 +104,9 @@ export class TrayManager {
           // 实际更新剪贴板管理器的 OCR 配置
           try {
             await clipboardManager.updateConfig({ enableLocalOCR: newValue })
-            store.set(STORE_KEY.SETTINGS_ENABLE_LOCAL_OCR, newValue)
+            store.set(STORE_KEY.SETTINGS_ENABLE_LOCAL_OCR, newValue, {
+              source: { kind: 'main', id: 'tray' }
+            })
             logger.debug(`[主进程] 从托盘更新自动 OCR 状态: ${newValue}`)
           } catch (error) {
             logger.error('[主进程] 从托盘更新自动 OCR 配置失败:', error)

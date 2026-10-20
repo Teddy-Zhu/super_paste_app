@@ -21,6 +21,8 @@ import {
 import ClipboardPreviewContent from './ClipboardPreviewContent.vue'
 import ClipboardPreviewDialog from './ClipboardPreviewDialog.vue'
 import ClipboardSourceApp from './ClipboardSourceApp.vue'
+import type { OCRTaskStatus } from '@shared/ai-ocr'
+import { OCR_MANAGE_TEXT } from '@renderer/constants/ocr'
 
 interface Props {
   item: ClipboardItem
@@ -30,9 +32,19 @@ interface Props {
   allTags?: TagGroup[]
   activeTagId?: string
   apps?: Record<string, AppInfo>
+  ocrStatus?: OCRTaskStatus
 }
 
 const props = defineProps<Props>()
+const ocrBusy = computed(
+  () => props.ocrStatus?.state === 'queued' || props.ocrStatus?.state === 'running'
+)
+const ocrStatusText = computed(() => {
+  if (props.ocrStatus?.state === 'queued') return OCR_MANAGE_TEXT.queued
+  if (props.ocrStatus?.state === 'running') return OCR_MANAGE_TEXT.running
+  if (props.ocrStatus?.state === 'error') return OCR_MANAGE_TEXT.error
+  return ''
+})
 const cardRef = ref<HTMLElement>()
 const previewVisible = useDeferredPreview(cardRef)
 
@@ -117,14 +129,12 @@ const handleContextMenu = (event: MouseEvent): void => {
     })
   }
 
-  if (
-    preview.value?.kind === 'image' &&
-    (!props.item.content.ocr || !props.item.content.ocr.trim())
-  ) {
+  if (preview.value?.kind === 'image') {
     menuItems.push({
-      label: PREVIEW_ACTIONS.parseOcr,
+      label: props.item.content.ocr?.trim() ? PREVIEW_ACTIONS.reparseOcr : PREVIEW_ACTIONS.parseOcr,
       icon: IconTextBox,
-      action: handleParseOcr
+      action: handleParseOcr,
+      disabled: ocrBusy.value
     })
   }
 
@@ -294,6 +304,9 @@ const shortcutLabel = computed(() => {
     <div class="card-header">
       <div class="header-left">
         <span class="type-label">{{ presentation.label }}</span>
+        <span v-if="ocrStatusText" class="time-label" :title="ocrStatus?.error" role="status">{{
+          ocrStatusText
+        }}</span>
         <time class="time-label" :title="new Date(item.timestamp).toLocaleString('zh-CN')">{{
           formatTime(item.timestamp)
         }}</time>

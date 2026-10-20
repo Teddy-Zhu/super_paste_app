@@ -1,5 +1,8 @@
-import { DEFAULT_OCR_MODEL_ID } from '../../../../shared/ocr-models'
-import { parentPort } from 'node:worker_threads'
+import { DEFAULT_OCR_MODEL_ID, getOCRModel } from '../../../../shared/ocr-models'
+import { createHash } from 'node:crypto'
+import { OCRTaskQueue, type OCRJob } from '../../../ocr/task-queue'
+import { createDefaultAIOCRConfigs, isAIOCRProvider } from '../../../../shared/ai-ocr'
+import { parentPort, workerData } from 'node:worker_threads'
 import { BaseWorker } from '../../../workers/base-worker'
 import { ClipboardData } from '@teddyzhu/clipboard'
 import type {
@@ -13,7 +16,7 @@ import { ClipboardDataConverter } from '../types/clipboard-types'
 import logger from '../../../utils/worker-logger'
 import { qrCodeService } from '../../../services/qrcode-service'
 import path from 'path'
-import { ocrService } from '../../../services/ocr-service'
+import { OCRWorkerClient } from '../../../ocr/worker-client'
 import type { OCRServiceOptions } from '../../../services/ocr-service'
 import type { ActiveWindowInfo } from '../../../services/active-window-provider'
 // Modules
@@ -21,6 +24,8 @@ import { ClipboardPoller } from './modules/clipboard-poller'
 import { ContentProcessor } from './modules/content-processor'
 import { ClipboardRepository } from './modules/clipboard-repository'
 import { ClipboardSourceTracker } from './modules/clipboard-source-tracker'
+
+const ocrService = new OCRWorkerClient(workerData.ocrWorkerPath)
 
 class ClipboardManagerWorker extends BaseWorker {
   private config: ClipboardManagerConfig
@@ -39,6 +44,8 @@ class ClipboardManagerWorker extends BaseWorker {
   private ocrInitializationError = ''
   private ocrInitializing: Promise<boolean> | null = null
   private ocrConfigHash: string = ''
+  private ocrQueue: OCRTaskQueue
+  private suspendedModels = new Set<string>()
 
   constructor() {
     super()
@@ -48,6 +55,7 @@ class ClipboardManagerWorker extends BaseWorker {
       enableLocalOCR: false,
       ocrMode: 'local',
       ocrLocalModel: DEFAULT_OCR_MODEL_ID,
+      ocrAIConfigs: createDefaultAIOCRConfigs(),
       ocrRemoteConfig: {
         url: '',
         extraParams: '{}',
@@ -60,6 +68,13 @@ class ClipboardManagerWorker extends BaseWorker {
     this.poller = new ClipboardPoller()
     this.processor = new ContentProcessor()
     this.repository = new ClipboardRepository()
+    this.ocrQueue = new OCRTaskQueue(
+      (job) => this.runOCRJob(job),
+      (status) => {
+        if (status.state === 'error') logger.error('[OCR] 后台任务失败:', status.error)
+        this.sendEvent('ocr:task-status', status)
+      }
+    )
   }
 
   protected getWorkerName(): string {
@@ -106,9 +121,6 @@ class ClipboardManagerWorker extends BaseWorker {
 
     // 设置 OCR 相关参数
     if (userDataPath) this.ocrResourcePath = path.join(userDataPath, 'ocr-models')
-    if (this.config.enableLocalOCR) {
-      await this.ensureOCRServiceInitialized()
-    }
 
     // 初始化时进行一次全量检查
     try {
@@ -144,6 +156,14 @@ class ClipboardManagerWorker extends BaseWorker {
       }
     }
 
+    if (isAIOCRProvider(this.config.ocrMode)) {
+      return {
+        mode: this.config.ocrMode,
+        aiConfig: this.config.ocrAIConfigs[this.config.ocrMode],
+        onAIUsage: (entry) => this.sendEvent('ai-ocr-usage', entry)
+      }
+    }
+
     return {
       mode: 'remote',
       remoteConfig: {
@@ -161,7 +181,8 @@ class ClipboardManagerWorker extends BaseWorker {
       mode: this.config.ocrMode,
       resourcePath: this.ocrResourcePath,
       modelId: this.config.ocrLocalModel,
-      remoteConfig: this.config.ocrRemoteConfig
+      remoteConfig: this.config.ocrRemoteConfig,
+      aiConfigs: this.config.ocrAIConfigs
     })
   }
 
@@ -190,9 +211,6 @@ class ClipboardManagerWorker extends BaseWorker {
         }
         this.ocrInitializationError = ''
         this.ocrConfigHash = nextHash
-        this.repository
-          .processPendingOCR(() => this.config.enableLocalOCR)
-          .catch((error) => logger.error('[OCR] 处理待识别图片失败:', error))
         logger.info('[剪贴板管理器 Worker] OCR 服务初始化完成')
         return true
       } catch (error) {
@@ -219,6 +237,7 @@ class ClipboardManagerWorker extends BaseWorker {
     try {
       if (this.isInErrorBackoff()) return
 
+      const copiedAt = Date.now()
       const converted = this.processor.convertClipboardData(data)
 
       // Quick check
@@ -242,6 +261,21 @@ class ClipboardManagerWorker extends BaseWorker {
 
       // Full process
       const content = await this.processor.buildClipboardContent(converted)
+      const statisticsType = ClipboardDataConverter.detectPrimaryType(content)
+      if (statisticsType !== 'empty') {
+        this.sendEvent('copy-statistics', {
+          timestamp: copiedAt,
+          type: statisticsType,
+          source: (source.window?.application ?? '').trim().slice(0, 200),
+          bytes:
+            (content.image?.byteLength ?? 0) +
+            [content.text, content.html, content.rtf, ...(content.files ?? [])].reduce<number>(
+              (size, text) => size + (text ? Buffer.byteLength(text, 'utf8') : 0),
+              0
+            ),
+          files: content.files?.length ?? 0
+        })
+      }
       const hash = ClipboardDataConverter.generateContentHash(content) // or processor.generateClipboardHash(converted)?
       // processor.generateClipboardHash does buildClipboardContent then hash.
       // but we need 'content' to save it.
@@ -254,12 +288,9 @@ class ClipboardManagerWorker extends BaseWorker {
           appInfo,
           refreshSourceApp: source.reason === 'before-screenshot',
           enableLocalOCR: this.config.enableLocalOCR,
-          onOCRUpdated: ({ contentId, ocrText }) => {
-            this.sendEvent('record-ocr-updated', {
-              contentId,
-              ocrText,
-              timestamp: Date.now()
-            })
+          onOCRRequested: (contentId) => {
+            const result = this.requestOCR(contentId, true)
+            if (!result.success) logger.error('[OCR] 自动识别排队失败:', result.message)
           }
         })
 
@@ -352,35 +383,28 @@ class ClipboardManagerWorker extends BaseWorker {
   }
 
   public updateConfig(newConfig: Partial<ClipboardManagerConfig>): Promise<void> {
-    const update = this.ocrUpdateQueue.then(async () => {
-      const previous = this.config
-      const previousHash = this.buildOCRConfigHash()
-      this.config = {
-        ...previous,
-        ...newConfig,
-        ocrRemoteConfig: { ...previous.ocrRemoteConfig, ...newConfig.ocrRemoteConfig }
-      }
-      try {
-        if (
-          !this.config.enableLocalOCR &&
-          (previous.enableLocalOCR || previousHash !== this.buildOCRConfigHash())
-        ) {
+    const previousHash = this.buildOCRConfigHash()
+    const previousAuto = this.config.enableLocalOCR
+    this.config = {
+      ...this.config,
+      ...newConfig,
+      ocrRemoteConfig: { ...this.config.ocrRemoteConfig, ...newConfig.ocrRemoteConfig }
+    }
+    if (!this.config.enableLocalOCR) this.ocrQueue.cancelAutomatic()
+    if (previousHash !== this.buildOCRConfigHash() || previousAuto !== this.config.enableLocalOCR) {
+      const idle = this.ocrQueue.pause()
+      this.ocrUpdateQueue = this.ocrUpdateQueue
+        .then(async () => {
+          await idle
           await ocrService.stop()
           this.ocrConfigHash = ''
-        } else if (this.config.enableLocalOCR && !(await this.ensureOCRServiceInitialized())) {
-          throw new Error(this.ocrInitializationError || 'OCR 服务初始化失败')
-        }
-        if (!this.config.enableLocalOCR) this.repository.clearPendingOCR()
-      } catch (error) {
-        this.config = previous
-        throw error
-      }
-    })
-    this.ocrUpdateQueue = update.then(
-      () => undefined,
-      () => undefined
-    )
-    return update
+        })
+        .catch((error) => {
+          logger.error('[OCR] 更新后台服务失败:', error)
+          this.ocrQueue.failPending(error instanceof Error ? error.message : String(error))
+        })
+    }
+    return Promise.resolve()
   }
 
   public isListeningActive(): boolean {
@@ -509,38 +533,87 @@ class ClipboardManagerWorker extends BaseWorker {
     }
   }
 
-  public async parseOcrFromItem(itemId: string): Promise<{ success: boolean; message?: string }> {
-    const record = this.repository.getById(itemId)
-    if (!record || !record.content_image) return { success: false, message: 'Not an image' }
+  public parseOcrFromItem(itemId: string): { success: boolean; message?: string } {
+    return this.requestOCR(itemId, false)
+  }
 
-    try {
-      // 使用repository的updateOCR方法来触发OCR解析
-      // 这里直接调用ocrService进行OCR解析
-      logger.info('[ClipboardManagerWorker] Parsing OCR from item:', itemId)
-      const initialized = await this.ensureOCRServiceInitialized()
-      if (!initialized)
-        return { success: false, message: this.ocrInitializationError || 'OCR 服务初始化失败' }
-
-      const ocrResult = await ocrService.recognizeText(record.content_image)
-      if (ocrResult.success && ocrResult.text && ocrResult.text.trim()) {
-        // 更新数据库中的OCR字段
-        const updated = this.repository.updateOCR(itemId, ocrResult.text)
-        if (updated) {
-          // 发送事件通知前端更新
-          this.sendEvent('record-ocr-updated', {
-            contentId: itemId,
-            ocrText: ocrResult.text,
-            timestamp: Date.now()
-          })
-          return { success: true, message: 'OCR parsed successfully' }
-        }
-        return { success: false, message: 'Failed to update OCR' }
-      }
-      return { success: false, message: 'No text recognized' }
-    } catch (e) {
-      logger.error('[ClipboardManagerWorker] OCR parse error:', e)
-      return { success: false, message: 'OCR parse error' }
+  private requestOCR(
+    contentId: string,
+    automatic: boolean
+  ): { success: boolean; message?: string } {
+    const record = this.repository.getById(contentId)
+    if (!record?.content_image) return { success: false, message: '剪贴板记录不包含图片' }
+    if (this.config.ocrMode === 'local' && this.suspendedModels.has(this.config.ocrLocalModel)) {
+      this.sendEvent('ocr:task-status', {
+        contentId,
+        state: 'error',
+        error: '本地模型正在维护，请稍后重试'
+      })
+      return { success: false, message: '本地模型正在维护，请稍后重试' }
     }
+    try {
+      const hash = createHash('sha256').update(record.content_image).digest('hex')
+      const duplicate = this.ocrQueue.enqueue(hash, contentId, automatic)
+      this.sendEvent('ocr-requested', undefined)
+      return { success: true, message: duplicate ? 'OCR 已在队列中' : 'OCR 已加入后台队列' }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      this.sendEvent('ocr:task-status', { contentId, state: 'error', error: message })
+      return { success: false, message }
+    }
+  }
+
+  private async runOCRJob(job: OCRJob): Promise<void> {
+    const record = [...job.records.keys()]
+      .map((id) => this.repository.getById(id))
+      .find((item) => item?.content_image)
+    if (!record?.content_image) return
+    if (!(await this.ensureOCRServiceInitialized()))
+      throw new Error(this.ocrInitializationError || 'OCR 服务初始化失败')
+    const result = await ocrService.recognizeText(record.content_image)
+    if (!result.success) throw new Error(result.error || 'OCR 识别失败')
+    if (!result.text.trim()) throw new Error('未识别到文字')
+    for (const id of job.records.keys()) {
+      if (!this.repository.getById(id)) continue
+      if (!this.repository.updateOCR(id, result.text)) throw new Error('保存 OCR 识别结果失败')
+      this.sendEvent('record-ocr-updated', {
+        contentId: id,
+        ocrText: result.text,
+        timestamp: Date.now()
+      })
+    }
+  }
+
+  public async resumeOCR(): Promise<void> {
+    while (true) {
+      const update = this.ocrUpdateQueue
+      await update
+      if (update !== this.ocrUpdateQueue) continue
+      if (!this.config.enableLocalOCR && !this.ocrQueue.hasJobs) return
+      if (this.config.ocrMode === 'local' && this.suspendedModels.has(this.config.ocrLocalModel))
+        return
+      const hash = this.buildOCRConfigHash()
+      const initialized = await this.ensureOCRServiceInitialized()
+      if (update !== this.ocrUpdateQueue || hash !== this.buildOCRConfigHash()) continue
+      if (initialized) this.ocrQueue.resume()
+      else this.ocrQueue.failPending(this.ocrInitializationError || 'OCR 服务初始化失败')
+      return
+    }
+  }
+
+  public async suspendOCRModel(id: unknown): Promise<void> {
+    const model = getOCRModel(id)
+    this.suspendedModels.add(model.id)
+    if (this.config.ocrMode === 'local' && this.config.ocrLocalModel === model.id) {
+      await this.ocrQueue.pause()
+      await this.ocrUpdateQueue
+      await ocrService.stop()
+      this.ocrConfigHash = ''
+    }
+  }
+
+  public releaseOCRModel(id: unknown): void {
+    this.suspendedModels.delete(getOCRModel(id).id)
   }
 
   public setImageToClipboard(imageBuffer: unknown): boolean {
@@ -598,6 +671,21 @@ class ClipboardManagerWorker extends BaseWorker {
           break
         case 'getConfig':
           result = this.getConfig()
+          break
+        case 'hasOCRJobs':
+          result = this.ocrQueue.hasJobs
+          break
+        case 'resumeOCR':
+          result = await this.resumeOCR()
+          break
+        case 'failPendingOCR':
+          this.ocrQueue.failPending(String(request.params))
+          break
+        case 'suspendOCRModel':
+          result = await this.suspendOCRModel(request.params)
+          break
+        case 'releaseOCRModel':
+          result = this.releaseOCRModel(request.params)
           break
         case 'startListening':
           result = this.startListening()

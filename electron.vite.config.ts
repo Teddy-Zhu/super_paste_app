@@ -8,6 +8,14 @@ import VueRouter from 'unplugin-vue-router/vite'
 import Icons from 'unplugin-icons/vite'
 import { useXWayland } from './src/main/system/session'
 
+const alias = {
+  '@': resolve('src/renderer/src'),
+  '@renderer': resolve('src/renderer/src'),
+  '@shared': resolve('src/shared'),
+  '@main': resolve('src/main'),
+  '@preload': resolve('src/preload')
+}
+
 // Ozone 在主进程 JS 加载前初始化，开发和预览必须在启动 Electron 前传参。
 if (useXWayland) {
   const args: string[] = JSON.parse(process.env.ELECTRON_CLI_ARGS || '[]')
@@ -18,6 +26,7 @@ if (useXWayland) {
 
 export default defineConfig({
   main: {
+    resolve: { alias },
     build: {
       rollupOptions: {
         output: {
@@ -27,18 +36,14 @@ export default defineConfig({
       }
     }
   },
-  preload: {},
+  preload: { resolve: { alias } },
   renderer: {
     build: {
       rollupOptions: {
         external: ['@paymoapp/active-window', '@teddyzhu/auto-launch', 'onnxruntime-node']
       }
     },
-    resolve: {
-      alias: {
-        '@renderer': resolve('src/renderer/src')
-      }
-    },
+    resolve: { alias },
     plugins: [
       VueRouter({
         routesFolder: './src/renderer/src/pages',

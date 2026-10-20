@@ -1,65 +1,83 @@
-import { watch, toRefs } from 'vue'
+import { watch, reactive } from 'vue'
 import type { PiniaPluginContext } from 'pinia'
+import type { StoreChangeSource } from '@shared/store-sync'
+
+export interface StoreSyncStatus {
+  pending: number
+  error: string | null
+}
 
 declare module 'pinia' {
   export interface PiniaCustomProperties {
-    $setSilent(key: string, value: unknown): void
+    $patchFromSync(patch: Record<string, unknown>): void
+    // 普通修改自动同步；只有需要确认保存结果时才等待。
+    $whenSynced(): Promise<void>
+    $syncStatus: StoreSyncStatus
   }
 }
 
-type FieldChangeCallback = (params: {
+export interface FieldChange {
   storeId: string
   key: string
   oldValue: unknown
   newValue: unknown
-}) => void
+  source: StoreChangeSource
+}
 
-export function createFieldChangePlugin(callback: FieldChangeCallback) {
-  return (context: PiniaPluginContext) => {
-    const { store } = context
-    const stateRefs = toRefs(store.$state)
-    let silent = false
+// 配置按 JSON 保存；同时隔离响应式引用和后续嵌套修改。
+export function cloneStateValue<T>(value: T): T {
+  return value === undefined ? value : JSON.parse(JSON.stringify(value))
+}
 
-    // 注入方法：store.$setSilent(key, value)
-    store.$setSilent = (key: string, value: unknown) => {
-      if (key in store.$state) {
-        silent = true
-        try {
-          store.$state[key] = value
-        } finally {
-          silent = false
-        }
-      } else {
-        console.warn(`[fieldChangePlugin] key "${key}" 不存在于 store "${store.$id}" 中`)
+export function createFieldChangePlugin(
+  callback: (change: FieldChange) => void,
+  source: StoreChangeSource
+) {
+  return ({ store, options }: PiniaPluginContext): void => {
+    if (!store.$persist) return
+    let remoteDepth = 0
+    const defaults = options.state?.() ?? {}
+    const stops: (() => void)[] = []
+    store.$syncStatus = reactive({ pending: 0, error: null })
+    store.$patchFromSync = (patch) => {
+      remoteDepth++
+      try {
+        store.$patch((state) => {
+          for (const [key, value] of Object.entries(patch)) {
+            if (Object.prototype.hasOwnProperty.call(state, key))
+              state[key] = cloneStateValue(value === undefined ? defaults[key] : value)
+          }
+        })
+      } finally {
+        remoteDepth--
       }
     }
-
-    if (!store.$persist) {
-      return
-    }
-    for (const key in stateRefs) {
-      let oldVal = stateRefs[key].value
-      watch(
-        stateRefs[key],
-        (newVal) => {
-          if (silent) {
-            oldVal = newVal
-            return // 👈 跳过本次回调
-          }
-
-          callback({
-            storeId: store.$id,
-            key,
-            oldValue: oldVal,
-            newValue: newVal
-          })
-          oldVal = newVal
-        },
-        {
-          deep: true,
-          flush: 'sync'
-        }
+    for (const key of Object.keys(store.$state)) {
+      let previous = JSON.stringify(store.$state[key])
+      stops.push(
+        watch(
+          () => store.$state[key],
+          (value) => {
+            const next = JSON.stringify(value)
+            const oldValue = previous
+            previous = next
+            if (remoteDepth || next === oldValue) return
+            callback({
+              storeId: store.$id,
+              key,
+              oldValue: oldValue === undefined ? undefined : JSON.parse(oldValue),
+              newValue: next === undefined ? undefined : JSON.parse(next),
+              source
+            })
+          },
+          { deep: true, flush: 'sync' }
+        )
       )
+    }
+    const dispose = store.$dispose.bind(store)
+    store.$dispose = () => {
+      stops.forEach((stop) => stop())
+      dispose()
     }
   }
 }

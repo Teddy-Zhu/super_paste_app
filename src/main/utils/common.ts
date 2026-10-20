@@ -66,12 +66,14 @@ export class HashUtils {
 
   /**
    * 生成快速哈希（用于剪贴板变化检测）
-   * 不包含图片具体内容，只检查基本格式和图片基本信息
+   * 图片只传入摘要，避免序列化完整二进制数据。
    */
   static generateQuickHash(content: {
     text?: string
     html?: string
     rtf?: string
+    files?: string[]
+    imageHash?: string
     hasImage?: boolean
     hasFiles?: boolean
     imageInfo?: { width: number; height: number; quickId: string }
@@ -81,6 +83,8 @@ export class HashUtils {
       text: content.text || undefined,
       html: content.html || undefined,
       rtf: content.rtf || undefined,
+      files: content.files || undefined,
+      imageHash: content.imageHash || undefined,
       hasImage: content.hasImage,
       hasFiles: content.hasFiles,
       imageInfo: content.imageInfo || undefined,

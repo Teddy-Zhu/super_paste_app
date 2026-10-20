@@ -1,10 +1,12 @@
 <script setup lang="ts">
 import { ref, shallowRef, computed, nextTick, watch, onMounted, onUnmounted } from 'vue'
 import { send, onSimple } from '@renderer/api'
-import { clipboard, store } from '@renderer/api/renderer-api'
+import { clipboard } from '@renderer/api/renderer-api'
+import { useSettingsStore } from '@renderer/stores/common'
 import type { ClipboardItem, ClipboardHistoryQueryOptions, AppInfo } from '@renderer/api/types'
 import { OverlayError, OverlayErrorCode, isClipboardItem } from '@renderer/types/overlay'
 import { reconcileClipboardHistory } from '@renderer/utils/clipboard-history'
+import type { OCRTaskStatus } from '@shared/ai-ocr'
 
 // 导入优化后的 composables
 import {
@@ -12,7 +14,7 @@ import {
   AnimationState,
   type AnimationControls
 } from '@renderer/composables/useAnimation'
-import type { OverlayRendererTrace } from '../../../../shared/overlay-events'
+import type { OverlayRendererTrace } from '@shared/overlay-events'
 import { useSearchAndNavigation } from '@renderer/composables/useSearchAndNavigation'
 import { useScrollAndTags, type ScrollAndTagsManager } from '@renderer/composables/useScrollAndTags'
 import { useEventManager, useThrottle } from '@renderer/composables/useUtils'
@@ -38,6 +40,7 @@ const tabsContainerRef = ref<HTMLElement>()
 // ==================== 核心状态 ====================
 const clipboardHistory = shallowRef<ClipboardItem[]>([])
 const clipboardApps = shallowRef<Record<string, AppInfo>>({})
+const ocrStatuses = ref<Record<string, OCRTaskStatus>>({})
 const selectedIndex = ref(0)
 
 // ==================== 快捷选择状态 ====================
@@ -89,8 +92,8 @@ type RestoreMethod =
   | 'generateQRCode'
 type OverlayPosition = 'top' | 'bottom' | 'left' | 'right'
 
-const OVERLAY_POSITION_STORE_KEY = 'settings.overlayPosition'
-const overlayPosition = ref<OverlayPosition>('bottom')
+const settingsStore = useSettingsStore()
+const overlayPosition = ref<OverlayPosition>(settingsStore.overlayPosition)
 
 const normalizeOverlayPosition = (value: unknown): OverlayPosition => {
   if (value === 'top' || value === 'bottom' || value === 'left' || value === 'right') {
@@ -790,8 +793,10 @@ onMounted(async () => {
         })
       })
     )
-    const savedOverlayPosition = await store.get<string>(OVERLAY_POSITION_STORE_KEY, 'bottom')
-    applyOverlayPosition(savedOverlayPosition)
+    const stopPositionWatch = watch(() => settingsStore.overlayPosition, applyOverlayPosition, {
+      immediate: true
+    })
+    ipcUnsubscribers.push(stopPositionWatch)
 
     const removeOverlayPositionUpdatedListener = onSimple(
       'overlay-position-updated',
@@ -800,16 +805,6 @@ onMounted(async () => {
       }
     )
     ipcUnsubscribers.push(removeOverlayPositionUpdatedListener)
-
-    const removeStoreValueChangedListener = onSimple(
-      'store-value-changed',
-      (data: { key?: string; value?: unknown }) => {
-        if (data?.key === OVERLAY_POSITION_STORE_KEY) {
-          applyOverlayPosition(data.value)
-        }
-      }
-    )
-    ipcUnsubscribers.push(removeStoreValueChangedListener)
 
     eventManager.addEventListener(document, 'keydown', (event: Event) => {
       handleKeyboardEvent(event as KeyboardEvent)
@@ -871,6 +866,13 @@ onMounted(async () => {
       }
     )
     ipcUnsubscribers.push(removeOCRUpdateListener)
+    ipcUnsubscribers.push(
+      onSimple('ocr:task-status', (status: OCRTaskStatus) => {
+        if (status.state === 'completed' || status.state === 'cancelled')
+          delete ocrStatuses.value[status.contentId]
+        else ocrStatuses.value[status.contentId] = status
+      })
+    )
 
     const preloadPromises = [
       loadClipboardHistory({
@@ -1082,6 +1084,7 @@ const isFilteredHistory = computed(
               :key="item.id"
               v-memo="[
                 item,
+                ocrStatuses[item.id],
                 index,
                 index === selectedIndex,
                 isQuickSelectMode,
@@ -1090,6 +1093,7 @@ const isFilteredHistory = computed(
                 item.source_app ? clipboardApps[item.source_app] : undefined
               ]"
               :item="item"
+              :ocr-status="ocrStatuses[item.id]"
               :index="index"
               :is-selected="index === selectedIndex"
               :is-quick-select-mode="isQuickSelectMode"

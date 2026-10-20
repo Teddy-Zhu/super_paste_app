@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { SettingsStore } from '@renderer/stores/common'
+import { useSettingsStore } from '@renderer/stores/common'
 import { clipboard } from '@renderer/api/renderer-api'
 import {
   KEEP_TIME_RANGE,
@@ -10,20 +10,15 @@ import IconCheck from '~icons/mdi/check'
 import { computed, onScopeDispose, ref, watch } from 'vue'
 import { executeTransition, TransitionPresets, usePreferredReducedMotion } from '@vueuse/core'
 
-// Props
-interface Props {
-  settingsStore: SettingsStore
-}
-
-const props = defineProps<Props>()
-const displayedKeepTime = ref(props.settingsStore.maxKeepTime)
+const settingsStore = useSettingsStore()
+const displayedKeepTime = ref(settingsStore.maxKeepTime)
 const reducedMotion = usePreferredReducedMotion()
 let keepTimeTransitionId = 0
 let animateKeepTimeChange = false
 
 // 动画只更新显示值，配置直接写入目标天数；拖动和键盘调整保持即时响应。
 watch(
-  [() => props.settingsStore.maxKeepTime, reducedMotion],
+  [() => settingsStore.maxKeepTime, reducedMotion],
   ([value, motion], [previousValue]) => {
     const id = ++keepTimeTransitionId
     if (!animateKeepTimeChange || value === -1 || previousValue === -1 || motion === 'reduce') {
@@ -69,16 +64,11 @@ type OverlayPosition = (typeof OVERLAY_POSITION_OPTIONS)[number]['value']
 const getKeepTimePercentage = (value: number): number =>
   ((value - KEEP_TIME_RANGE.min) / (KEEP_TIME_RANGE.max - KEEP_TIME_RANGE.min)) * 100
 
-// 切换开机自启
-const toggleAutoStart = (): void => {
-  props.settingsStore.$patch({ autoStart: !props.settingsStore.autoStart })
-}
-
 // 更新最大历史记录数量
 const updateMaxHistorySize = (value: number): void => {
   // 确保值在合理范围内
   const clampedValue = Math.max(10, Math.min(1000, value))
-  props.settingsStore.$patch({ maxHistorySize: clampedValue })
+  settingsStore.$patch({ maxHistorySize: clampedValue })
 }
 
 // 更新最大保存时间
@@ -93,7 +83,7 @@ const updateMaxKeepTime = (value: number, animate = false): void => {
     displayedKeepTime.value = clampedValue
   }
   animateKeepTimeChange = animate
-  props.settingsStore.$patch({ maxKeepTime: clampedValue })
+  settingsStore.$patch({ maxKeepTime: clampedValue })
   animateKeepTimeChange = false
 }
 
@@ -105,7 +95,7 @@ const normalizeOverlayPosition = (value: unknown): OverlayPosition => {
 }
 
 const getCurrentOverlayPosition = (): OverlayPosition => {
-  return normalizeOverlayPosition(props.settingsStore.overlayPosition)
+  return normalizeOverlayPosition(settingsStore.overlayPosition)
 }
 
 const overlayPositionIndex = computed(() =>
@@ -114,10 +104,10 @@ const overlayPositionIndex = computed(() =>
 
 const updateOverlayPosition = (value: OverlayPosition): void => {
   const normalized = normalizeOverlayPosition(value)
-  props.settingsStore.$patch({ overlayPosition: normalized })
+  settingsStore.$patch({ overlayPosition: normalized })
 }
 
-props.settingsStore.$patch({ overlayPosition: getCurrentOverlayPosition() })
+settingsStore.$patch({ overlayPosition: getCurrentOverlayPosition() })
 
 // 清除历史记录
 const clearHistory = async (): Promise<void> => {
@@ -156,7 +146,7 @@ const clearHistory = async (): Promise<void> => {
         </div>
         <div class="setting-control">
           <label class="toggle-switch">
-            <input type="checkbox" :checked="settingsStore.autoStart" @change="toggleAutoStart" />
+            <input v-model="settingsStore.autoStart" type="checkbox" />
             <span class="toggle-slider"></span>
           </label>
         </div>

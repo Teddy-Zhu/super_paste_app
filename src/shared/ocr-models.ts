@@ -1,3 +1,5 @@
+import type { AIOCRConfigs, AIOCRProvider } from './ai-ocr'
+
 const RELEASE_URL = 'https://github.com/xushengfeng/eSearch-OCR/releases/download/4.0.0/'
 
 export const OCR_MODELS = [
@@ -223,13 +225,14 @@ export interface OCRModelStatus {
 
 export interface OCRSettings {
   enableLocalOCR: boolean
-  ocrMode: 'local' | 'remote'
+  ocrMode: 'local' | 'remote' | AIOCRProvider
   ocrLocalModel: OCRModelId
   ocrRemoteUrl: string
   ocrRemoteExtraParams: string
   ocrRemoteImageFieldName: string
   ocrRemoteRequestFormat: 'json' | 'form'
   ocrRemoteResultPath: string
+  ocrAIConfigs: AIOCRConfigs
 }
 
 export const OCR_MODEL_STAGE_LABELS: Record<OCRModelStage, string> = {

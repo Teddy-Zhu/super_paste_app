@@ -12,6 +12,8 @@ import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import ipcManager from './communication/ipc-manager'
 import clipboardManager from './features/clipboard/manager/clipboard-manager'
 import clipboardDatabase from './infrastructure/database/clipboard-database'
+import { closeAIOCRUsage } from './ocr/usage-service'
+import { closeCopyStatistics } from './statistics/copy-statistics-service'
 import { clearAllDebounceTimers } from './utils/common'
 import { scheduledSyncManager } from './sync/scheduled-sync-manager'
 import { BaseWorkerManager } from './workers/base-worker-manager'
@@ -552,6 +554,18 @@ class SuperPasteApp {
         logger.info('[主进程] [步骤 4/12] ✓ 剪贴板管理器已停止')
       } catch (error) {
         logger.error('[主进程] [步骤 4/12] ✗ 停止剪贴板管理器失败:', error)
+      }
+
+      try {
+        closeCopyStatistics()
+      } catch (error) {
+        logger.error('[复制统计] 退出保存失败:', error)
+      }
+
+      try {
+        closeAIOCRUsage()
+      } catch (error) {
+        logger.error('[主进程] 保存 AI OCR 用量失败:', error)
       }
 
       // 5. 清理所有防抖定时器

@@ -1,4 +1,4 @@
-import type { OCRModelId } from '../../../../shared/ocr-models'
+import type { OCRModelId, OCRSettings } from '../../../../shared/ocr-models'
 import { HashUtils } from '../../../utils/common'
 
 /**
@@ -110,7 +110,8 @@ export interface ClipboardManagerConfig {
   maxHistorySize: number
   enableAutoSave: boolean
   enableLocalOCR: boolean
-  ocrMode: 'local' | 'remote'
+  ocrMode: OCRSettings['ocrMode']
+  ocrAIConfigs: OCRSettings['ocrAIConfigs']
   ocrLocalModel: OCRModelId
   ocrRemoteConfig: {
     url: string

@@ -1,45 +1,39 @@
 import { createPinia } from 'pinia'
 import { createPersistedState } from 'pinia-plugin-persistedstate'
 import { createFieldChangePlugin } from './fieldChangePlugin'
-import { sendSync, invoke, onSimple as on } from '@renderer/api/ipc'
-import { isProxy, toRaw } from 'vue'
+import { createStoreSyncBridge } from './syncBridge'
+import { sendSync, invoke, onSimple } from '@renderer/api/ipc'
+import type { StoreSnapshot, StoreValueChange, StoreWriteResult } from '@shared/store-sync'
+
+const clientId = crypto.randomUUID()
+const readSnapshot = (storeId: string): StoreSnapshot => {
+  const result = sendSync('store:get-snapshot', storeId) as {
+    success: boolean
+    data?: StoreSnapshot
+    error?: string
+  }
+  if (!result.success || !result.data) throw new Error(result.error || '读取配置失败')
+  return result.data
+}
+const bridge = createStoreSyncBridge(
+  {
+    write: (storeId, patch, metadata) =>
+      invoke<StoreWriteResult>('store:patch', storeId, patch, metadata),
+    snapshot: readSnapshot,
+    subscribe: (listener) =>
+      onSimple('store-value-changed', (change: StoreValueChange) => listener(change))
+  },
+  clientId
+)
 const store = createPinia()
-// pinia持久化
 store.use(
   createPersistedState({
     storage: {
-      setItem: () => {
-        // 写入由字段变更插件负责；此适配器只提供初始化读取。
-      },
-      getItem: (key: string) => {
-        // 需要同步方法
-        const val = sendSync('store-get-on', key)
-        return JSON.stringify(val)
-      }
+      setItem: () => {},
+      getItem: (key) => JSON.stringify(readSnapshot(key).value) ?? null
     }
   })
 )
-store.use(
-  createFieldChangePlugin(({ storeId, key, newValue }) => {
-    invoke('store-set', `${storeId}.${key}`, isProxy(newValue) ? toRaw(newValue) : newValue)
-  })
-)
-
-store.use(({ store: activeStore }) => {
-  const unsubscribe = on(
-    'store-value-changed',
-    ({ key, value }: { key: string; value: unknown }) => {
-      const [storeId, ...fieldParts] = key.split('.')
-      if (activeStore.$id === storeId && fieldParts.length === 1) {
-        activeStore.$setSilent(fieldParts[0], value)
-      }
-    }
-  )
-  const dispose = activeStore.$dispose.bind(activeStore)
-  activeStore.$dispose = () => {
-    unsubscribe()
-    dispose()
-  }
-})
-
+store.use(createFieldChangePlugin(bridge.onChange, { kind: 'renderer', id: clientId }))
+store.use(bridge.install)
 export default store

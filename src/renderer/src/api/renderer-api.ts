@@ -16,7 +16,6 @@ import {
 } from './ipc'
 
 import type {
-  StoreOperations,
   RendererAPI,
   ClipboardOperations,
   ClipboardItem,
@@ -31,26 +30,6 @@ import type {
   AppCacheStats,
   AppOperations
 } from './types'
-
-/**
- * 存储操作封装
- */
-export const store: StoreOperations = {
-  async get<T = unknown>(key: string, defaultValue?: T): Promise<T> {
-    const result = await invoke<ClipboardIpcResponse<T>>('store-get', key, defaultValue)
-    if (result.success) {
-      return (result.data ?? defaultValue) as T
-    }
-    throw new Error(result.error || '获取存储值失败')
-  },
-
-  async set<T = unknown>(key: string, value: T): Promise<void> {
-    const result = await invoke('store-set', key, value)
-    if (!result.success) {
-      throw new Error(result.error || '设置存储值失败')
-    }
-  }
-}
 
 /**
  * 剪贴板操作封装
@@ -294,9 +273,6 @@ export const app = {
  * 完整的渲染进程 API
  */
 export const rendererAPI: RendererAPI = {
-  // 存储操作
-  ...store,
-
   // 剪贴板操作
   clipboard,
 

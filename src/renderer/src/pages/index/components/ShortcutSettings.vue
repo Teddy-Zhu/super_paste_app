@@ -1,7 +1,6 @@
 <script setup lang="ts">
-import type { SettingsStore } from '@renderer/stores/common'
+import { useSettingsStore } from '@renderer/stores/common'
 import { ref, computed, onMounted, onUnmounted } from 'vue'
-import { invoke } from '@renderer/api/ipc'
 import {
   getSystemAccessStatus,
   SYSTEM_ACCESS_TEXT,
@@ -24,12 +23,7 @@ const refreshAccess = async (retry = false): Promise<void> => {
 }
 onMounted(() => refreshAccess())
 
-// Props
-interface Props {
-  settingsStore: SettingsStore
-}
-
-const props = defineProps<Props>()
+const settingsStore = useSettingsStore()
 
 // 快捷键设置相关状态
 const isListeningForShortcut = ref(false)
@@ -45,8 +39,8 @@ const displayShortcut = computed(() => {
   }
 
   // 将存储的 Electron Accelerator 格式转换为用户友好的显示格式
-  if (props.settingsStore.globalShortcut) {
-    return convertElectronAcceleratorToDisplay(props.settingsStore.globalShortcut)
+  if (settingsStore.globalShortcut) {
+    return convertElectronAcceleratorToDisplay(settingsStore.globalShortcut)
   }
 
   return '未设置快捷键' // 空状态显示
@@ -54,7 +48,7 @@ const displayShortcut = computed(() => {
 
 // 计算属性：检查是否有快捷键设置
 const hasShortcut = computed(() => {
-  return props.settingsStore.globalShortcut && props.settingsStore.globalShortcut.trim() !== ''
+  return settingsStore.globalShortcut && settingsStore.globalShortcut.trim() !== ''
 })
 
 // 与 shortcut-config.tsx 保持一致的按键映射
@@ -176,9 +170,8 @@ const convertElectronAcceleratorToDisplay = (accelerator: string): string => {
 // 设置全局快捷键（存储 Electron Accelerator 格式）
 const setGlobalShortcut = async (electronAccelerator: string): Promise<boolean> => {
   try {
-    const result = await invoke('store-set', 'settings.globalShortcut', electronAccelerator)
-    if (!result.success) throw new Error(result.error || '快捷键注册失败')
-    props.settingsStore.$setSilent('globalShortcut', electronAccelerator)
+    settingsStore.globalShortcut = electronAccelerator
+    await settingsStore.$whenSynced()
     await refreshAccess()
     return true
   } catch (error) {

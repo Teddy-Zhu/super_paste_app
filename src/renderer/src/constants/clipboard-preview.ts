@@ -56,6 +56,7 @@ export const PREVIEW_ACTIONS = {
   restoreAsText: '粘贴为纯文本',
   restoreOcrText: '复制 OCR 文字',
   parseOcr: '解析 OCR',
+  reparseOcr: '重新 OCR 识别',
   parseQRCode: '解析二维码',
   generateQRCode: '生成二维码',
   openInBrowser: '在浏览器中打开',

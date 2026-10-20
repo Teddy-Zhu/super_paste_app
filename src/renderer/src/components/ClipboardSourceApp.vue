@@ -30,12 +30,14 @@ watch(
 .source-app {
   display: flex;
   flex-direction: column;
-  align-items: center;
+  align-items: flex-end;
   justify-content: center;
   gap: 3px;
   min-width: 0;
   max-width: 120px;
   flex-shrink: 0;
+  margin-inline-start: auto;
+  text-align: right;
 }
 .source-app img {
   width: 32px;

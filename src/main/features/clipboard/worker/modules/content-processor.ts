@@ -1,4 +1,5 @@
 import type { ClipboardData } from '@teddyzhu/clipboard'
+import { createHash } from 'node:crypto'
 import {
   ClipboardContent,
   ClipboardSnapshot,
@@ -52,6 +53,10 @@ export class ContentProcessor {
         text: clipboardData.text || undefined,
         html: clipboardData.html || undefined,
         rtf: clipboardData.rtf || undefined,
+        files: clipboardData.files || undefined,
+        imageHash: clipboardData.image
+          ? createHash('sha256').update(clipboardData.image).digest('hex')
+          : undefined,
         hasImage: clipboardData.hasImage,
         hasFiles: clipboardData.hasFiles,
         imageInfo: clipboardData.imageInfo || undefined,
