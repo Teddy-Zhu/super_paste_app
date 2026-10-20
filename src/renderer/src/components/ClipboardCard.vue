@@ -7,6 +7,7 @@ import IconCheck from '~icons/mdi/check'
 import IconDelete from '~icons/mdi/delete'
 import IconCircle from '~icons/mdi/circle'
 import IconOpenInNew from '~icons/mdi/open-in-new'
+import IconExpand from '~icons/mdi/arrow-expand'
 import { useContextMenu, type ContextMenuItem } from '@renderer/composables/useContextMenu'
 import { tags, clipboard } from '@renderer/api/renderer-api'
 import { send } from '@renderer/api'
@@ -19,6 +20,7 @@ import {
 } from '@renderer/constants/clipboard-preview'
 import ClipboardPreviewContent from './ClipboardPreviewContent.vue'
 import ClipboardPreviewDialog from './ClipboardPreviewDialog.vue'
+import ClipboardSourceApp from './ClipboardSourceApp.vue'
 
 interface Props {
   item: ClipboardItem
@@ -45,7 +47,6 @@ const emit = defineEmits<{
 }>()
 
 const detailsOpen = ref(false)
-const sourceIconFailed = ref(false)
 const imageDimensions = ref<{ width: number; height: number } | null>(null)
 // 大文本解析和图片解码继续受可见区域控制。
 const preview = computed(() => (previewVisible.value ? createClipboardPreview(props.item) : null))
@@ -72,13 +73,6 @@ watch(
     imageDimensions.value = null
   }
 )
-watch(
-  () => sourceAppInfo.value?.icon,
-  () => {
-    sourceIconFailed.value = false
-  }
-)
-
 const handleImageLoad = (event: Event): void => {
   const image = event.target as HTMLImageElement
   imageDimensions.value = { width: image.naturalWidth, height: image.naturalHeight }
@@ -304,19 +298,7 @@ const shortcutLabel = computed(() => {
           formatTime(item.timestamp)
         }}</time>
       </div>
-      <div
-        v-if="sourceAppInfo"
-        class="source-app"
-        :title="`${PREVIEW_LABELS.source} · ${sourceAppInfo.application}`"
-      >
-        <img
-          v-if="sourceAppInfo.icon && !sourceIconFailed"
-          :src="sourceAppInfo.icon"
-          alt=""
-          @error="sourceIconFailed = true"
-        />
-        <span class="source-name">{{ sourceAppInfo.application }}</span>
-      </div>
+      <ClipboardSourceApp v-if="sourceAppInfo" :app="sourceAppInfo" />
     </div>
 
     <div class="preview-toolbar">
@@ -333,7 +315,7 @@ const shortcutLabel = computed(() => {
         @keydown.enter.stop
         @keydown.space.stop
       >
-        {{ PREVIEW_LABELS.details }}<IconOpenInNew />
+        {{ PREVIEW_LABELS.details }}<IconExpand />
       </button>
     </div>
 
@@ -359,15 +341,19 @@ const shortcutLabel = computed(() => {
         <span v-if="item.tags.length > 3" class="tag-overflow">+{{ item.tags.length - 3 }}</span>
       </div>
       <span class="content-summary" :title="summary">{{ summary }}</span>
-      <span v-if="isQuickSelectMode && shortcutLabel" class="shortcut-label">{{
-        shortcutLabel
-      }}</span>
+      <span
+        v-if="shortcutLabel"
+        class="shortcut-label"
+        :class="{ visible: isQuickSelectMode }"
+        :aria-hidden="!isQuickSelectMode"
+        >{{ shortcutLabel }}</span
+      >
     </div>
     <div v-if="isSelected" class="selection-indicator"></div>
     <ClipboardPreviewDialog
       v-if="detailsOpen && preview"
       :preview="preview"
-      :source="sourceAppInfo?.application"
+      :source="sourceAppInfo"
       :summary="summary"
       @close="detailsOpen = false"
     />
@@ -377,31 +363,45 @@ const shortcutLabel = computed(() => {
 <style scoped>
 .clipboard-card {
   --type-color: #2563eb;
-  background: linear-gradient(135deg, #ffffff, #fafbfc);
-  border-radius: 16px;
+  background: var(--color-bg-primary);
+  border-radius: var(--radius-sm);
   cursor: pointer;
   transition:
-    transform 0.2s ease,
-    box-shadow 0.2s ease;
+    border-color var(--duration-fast),
+    box-shadow var(--duration-fast);
   display: flex;
   flex-direction: column;
   position: relative;
   overflow: hidden;
-  box-shadow: 0 1px 3px #00000014;
+  box-shadow: var(--shadow-soft-xs);
   width: min(300px, calc(100vw - 24px));
-  height: 76vh;
+  height: var(--clipboard-card-height, calc(100vh - 66px));
   flex-shrink: 0;
-  border: 1px solid #c5c5c5cc;
+  border: 1px solid var(--color-control-border);
   contain: layout style paint;
 }
 .clipboard-card:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 6px 20px #0000001a;
+  border-color: var(--color-primary);
+  box-shadow: var(--shadow-soft-sm);
 }
 .clipboard-card.selected {
-  transform: translateY(-2px);
-  border-color: #3b82f6;
-  box-shadow: 0 6px 20px #3b82f633;
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 1px var(--color-primary);
+}
+.clipboard-card.selected:hover {
+  border-color: var(--color-primary-hover);
+  box-shadow: 0 0 0 1px var(--color-primary-hover);
+}
+.clipboard-card:hover .card-header {
+  background: var(--color-selection);
+}
+.clipboard-card:active,
+.clipboard-card.selected:active {
+  border-color: var(--color-primary-active);
+  box-shadow: inset 0 0 0 1px var(--color-primary-active);
+}
+.clipboard-card:active .card-header {
+  background: var(--color-selection-hover);
 }
 .theme-green {
   --type-color: #059669;
@@ -426,7 +426,7 @@ const shortcutLabel = computed(() => {
   justify-content: space-between;
   align-items: center;
   gap: 12px;
-  padding: 12px 14px 8px;
+  padding: 10px 12px 8px;
   flex-shrink: 0;
 }
 .header-left {
@@ -439,51 +439,37 @@ const shortcutLabel = computed(() => {
 .type-label {
   font-size: 11px;
   font-weight: 600;
-  padding: 3px 8px;
-  border-radius: 6px;
-  color: #fff;
-  background: var(--type-color);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--type-color);
   white-space: nowrap;
+}
+.type-label::before {
+  content: '';
+  width: 5px;
+  height: 5px;
+  border-radius: 2px;
+  background: currentColor;
 }
 .time-label {
-  font-size: 10px;
+  font-size: 11px;
   color: #64748b;
-}
-.source-app {
-  display: flex;
-  align-items: flex-end;
-  flex-direction: column;
-  gap: 3px;
-  min-width: 0;
-  max-width: 130px;
-}
-.source-app img {
-  width: 28px;
-  height: 28px;
-  object-fit: contain;
-}
-.source-name {
-  max-width: 100%;
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-  color: #64748b;
-  font-size: 10px;
 }
 .preview-toolbar {
   display: flex;
   align-items: center;
   gap: 6px;
   min-height: 25px;
-  padding: 0 14px 5px;
+  padding: 0 10px 5px;
   flex-shrink: 0;
-  border-bottom: 1px solid #f1f5f9;
+  border-bottom: 1px solid var(--color-border-light);
 }
 .content-formats {
   flex: 1;
   min-width: 0;
-  font-size: 10px;
-  color: #94a3b8;
+  font-size: 11px;
+  color: var(--color-text-tertiary);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -502,11 +488,11 @@ const shortcutLabel = computed(() => {
   cursor: pointer;
 }
 .details-button:hover {
-  color: #2563eb;
-  background: #eff6ff;
+  color: var(--color-primary);
+  background: var(--color-selection);
 }
 .details-button:focus-visible {
-  outline: 2px solid #3b82f6;
+  outline: 2px solid var(--color-primary);
   outline-offset: 1px;
 }
 .card-main {
@@ -540,11 +526,11 @@ const shortcutLabel = computed(() => {
   align-items: center;
   gap: 7px;
   padding: 8px 10px;
-  min-height: 32px;
+  height: 40px;
   box-sizing: border-box;
   border-top: 1px solid #e2e8f0;
   flex-shrink: 0;
-  background: #f8fafc;
+  background: var(--color-bg-tertiary);
 }
 .tag-dots {
   display: flex;
@@ -565,26 +551,42 @@ const shortcutLabel = computed(() => {
 .content-summary {
   min-width: 0;
   flex: 1;
-  font-size: 10px;
+  font-size: 11px;
   color: #64748b;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  text-align: center;
+  text-align: left;
 }
 .shortcut-label {
+  visibility: hidden;
+  opacity: 0;
+  translate: 0 2px;
   padding: 2px 4px;
   border-radius: 3px;
-  background: #2563eb;
-  color: #fff;
-  font-size: 10px;
+  border: 1px solid var(--color-control-border);
+  background: var(--color-bg-primary);
+  color: var(--color-text-secondary);
+  box-shadow: 0 1px 0 var(--color-control-border);
+  font-size: 11px;
+  line-height: 16px;
   white-space: nowrap;
   flex-shrink: 0;
+  pointer-events: none;
+  transition:
+    opacity var(--duration-fast),
+    translate var(--duration-fast) var(--ease-out),
+    visibility var(--duration-fast);
+}
+.shortcut-label.visible {
+  visibility: visible;
+  opacity: 1;
+  translate: 0 0;
 }
 .selection-indicator {
   position: absolute;
   inset: 0;
-  border: 2px solid #3b82f6;
+  border: 1px solid var(--color-primary);
   border-radius: inherit;
   pointer-events: none;
 }

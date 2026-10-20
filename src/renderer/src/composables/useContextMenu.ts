@@ -19,7 +19,7 @@ export interface ContextMenuState {
 
 const MENU_WIDTH = 160
 const MENU_ITEM_HEIGHT = 24
-const MENU_VERTICAL_PADDING = 4
+const MENU_VERTICAL_PADDING = 10
 const VIEWPORT_MARGIN = 10
 
 const contextMenuState = reactive<ContextMenuState>({

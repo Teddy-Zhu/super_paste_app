@@ -7,7 +7,7 @@ const { contextMenuState, hideContextMenu } = useContextMenu()
 
 const SUBMENU_WIDTH = 120
 const MENU_ITEM_HEIGHT = 24
-const MENU_PADDING = 8
+const MENU_PADDING = 10
 const VIEWPORT_MARGIN = 10
 const MENU_CLOSE_DELAY = 150
 
@@ -238,21 +238,21 @@ onUnmounted(clearCloseMenuTimer)
 
 <style scoped>
 .context-menu {
-  background: rgba(255, 255, 255, 0.95);
-  border: 1px solid rgba(0, 0, 0, 0.1);
+  animation: menu-appear var(--duration-fast) var(--ease-out);
+  background: var(--color-bg-elevated);
+  border: 1px solid var(--color-border-strong);
   border-radius: 6px;
   box-shadow:
     0 2px 12px rgba(0, 0, 0, 0.12),
     0 1px 4px rgba(0, 0, 0, 0.08);
-  backdrop-filter: blur(10px);
-  min-width: 120px;
-  padding: 2px 0;
+  width: 160px;
+  padding: 4px;
   font-size: 12px;
   user-select: none;
 }
 
 .submenu {
-  min-width: 100px;
+  width: 120px;
 }
 
 .menu-item-list {
@@ -263,20 +263,26 @@ onUnmounted(clearCloseMenuTimer)
 .menu-item {
   display: flex;
   align-items: center;
-  padding: 6px 12px;
+  min-height: 24px;
+  padding: 3px 8px;
+  border-radius: var(--radius-xs);
   cursor: pointer;
-  transition: background-color 0.15s ease;
-  color: #333;
+  transition: background-color var(--duration-fast);
+  color: var(--color-text-primary);
   position: relative;
 }
 
 .menu-item:hover:not(.disabled) {
-  background-color: rgba(0, 123, 255, 0.08);
-  color: #007bff;
+  background-color: var(--color-selection);
+  color: var(--color-primary);
+}
+
+.menu-item:active:not(.disabled) {
+  background: var(--color-selection-hover);
 }
 
 .menu-item.disabled {
-  color: #999;
+  color: var(--color-text-tertiary);
   cursor: not-allowed;
 }
 
@@ -298,6 +304,9 @@ onUnmounted(clearCloseMenuTimer)
 
 .menu-item-label {
   flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
   font-size: 12px;
 }
@@ -318,5 +327,13 @@ onUnmounted(clearCloseMenuTimer)
   height: 1px;
   background-color: rgba(0, 0, 0, 0.08);
   margin: 2px 6px;
+}
+@keyframes menu-appear {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
 }
 </style>

@@ -11,6 +11,7 @@ declare module 'vue' {
     ClipboardCard: typeof import('./components/ClipboardCard.vue')['default']
     ClipboardPreviewContent: typeof import('./components/ClipboardPreviewContent.vue')['default']
     ClipboardPreviewDialog: typeof import('./components/ClipboardPreviewDialog.vue')['default']
+    ClipboardSourceApp: typeof import('./components/ClipboardSourceApp.vue')['default']
     ContextMenu: typeof import('./components/ContextMenu.vue')['default']
     ImageDisplay: typeof import('./components/ImageDisplay.vue')['default']
     RouterLink: typeof import('vue-router')['RouterLink']

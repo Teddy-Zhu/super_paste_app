@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useSyncStore } from '@renderer/stores/sync'
+import { SETTINGS_LABELS } from '@renderer/constants/desktop-ui'
 import { invoke, onSimple } from '@renderer/api/ipc'
 import type { ScheduledSyncStatus, SyncResult } from '../../../../../main/sync/types'
 
@@ -453,7 +454,7 @@ onUnmounted(() => {
 
     <!-- 未保存更改提示 -->
     <div v-if="hasUnsavedChanges" class="unsaved-changes-warning">
-      ⚠️ 您有未保存的更改，请点击保存按钮保存配置
+      {{ SETTINGS_LABELS.unsavedChanges }}
     </div>
 
     <div class="settings-grid">
@@ -700,7 +701,7 @@ onUnmounted(() => {
 
         <!-- 配置验证提示 -->
         <div v-if="!isConfigValid" class="config-warning">
-          ⚠️ 配置不完整，请填写完整的服务器信息并确保 URL 格式正确
+          配置不完整，请填写完整的服务器信息并确保 URL 格式正确
         </div>
 
         <!-- 连接测试结果 -->
@@ -818,85 +819,92 @@ onUnmounted(() => {
 <style scoped>
 /* 保存消息样式 */
 .save-message {
-  background: linear-gradient(135deg, #e8f5e8 0%, #d4edda 100%);
+  background: #edf7f0;
   border: 1px solid rgba(40, 167, 69, 0.2);
-  border-radius: 10px;
+  border-radius: var(--radius-sm);
   padding: 12px 16px;
   font-size: 13px;
   color: #155724;
   margin-bottom: 20px;
   font-weight: 500;
-  box-shadow: 0 2px 8px rgba(40, 167, 69, 0.1);
 }
 
 /* 未保存更改警告 */
 .unsaved-changes-warning {
-  background: linear-gradient(135deg, #fff3cd 0%, #ffeaa7 100%);
+  background: #fff8e8;
   border: 1px solid rgba(255, 193, 7, 0.3);
-  border-radius: 10px;
+  border-radius: var(--radius-sm);
   padding: 12px 16px;
   font-size: 13px;
   color: #856404;
   margin-bottom: 20px;
   font-weight: 500;
-  box-shadow: 0 2px 8px rgba(255, 193, 7, 0.1);
 }
 
 /* 配置保存区域 */
 .config-save-section {
-  margin-top: 32px;
-  padding-top: 24px;
+  margin-top: 24px;
+  padding-top: 20px;
   border-top: 1px solid rgba(0, 0, 0, 0.06);
 }
 
 .save-actions {
   display: flex;
-  gap: 16px;
+  flex-wrap: wrap;
+  gap: 8px;
   margin-top: 16px;
 }
 
 .save-button {
-  min-width: 120px;
+  min-width: 96px;
 }
 
 /* WebDAV 配置区域 */
 .webdav-config {
-  margin-top: 32px;
-  padding-top: 24px;
+  margin-top: 24px;
+  padding-top: 20px;
   border-top: 1px solid rgba(0, 0, 0, 0.06);
+}
+
+.webdav-config .setting-control:has(.text-input) {
+  width: clamp(200px, 45%, 360px);
 }
 
 /* 选择框样式 */
 .select-input {
   width: 100%;
-  padding: 10px 12px;
-  border: 1px solid rgba(0, 0, 0, 0.1);
-  border-radius: 8px;
-  font-size: 14px;
+  padding: 5px 9px;
+  border: 1px solid var(--color-control-border);
+  border-radius: var(--radius-xs);
+  font-size: 13px;
   background: white;
-  transition: all 0.2s ease;
+  transition:
+    border-color var(--duration-fast),
+    box-shadow var(--duration-fast);
 }
 
 .select-input:focus {
   outline: none;
-  border-color: #007aff;
-  box-shadow: 0 0 0 3px rgba(0, 122, 255, 0.1);
+  border-color: var(--color-primary);
+  box-shadow: var(--shadow-focus-primary);
 }
 
 /* 文本输入框样式 */
 .text-input {
   width: 100%;
-  padding: 10px 12px;
-  border: 1px solid rgba(0, 0, 0, 0.1);
-  border-radius: 8px;
-  font-size: 14px;
-  transition: all 0.2s ease;
+  padding: 5px 9px;
+  border: 1px solid var(--color-control-border);
+  border-radius: var(--radius-xs);
+  font-size: 13px;
+  transition:
+    border-color var(--duration-fast),
+    box-shadow var(--duration-fast);
 }
 
 .text-input:focus {
   outline: none;
-  border-color: #007aff;
-  box-shadow: 0 0 0 3px rgba(0, 122, 255, 0.1);
+  border-color: var(--color-primary);
+  box-shadow: var(--shadow-focus-primary);
 }
 
 /* 单选按钮组样式 */
@@ -911,21 +919,37 @@ onUnmounted(() => {
   align-items: flex-start;
   gap: 10px;
   cursor: pointer;
-  padding: 12px;
-  border-radius: 8px;
-  transition: background-color 0.2s ease;
+  padding: 6px;
+  border-radius: var(--radius-xs);
+  transition:
+    background-color var(--duration-normal),
+    box-shadow var(--duration-normal);
 }
 
 .radio-option:hover {
-  background: rgba(0, 122, 255, 0.05);
+  background: var(--color-selection);
+}
+
+.radio-option:has(.radio-input:checked) {
+  background: var(--color-selection);
+  box-shadow: inset 0 0 0 1px var(--color-primary);
+}
+
+.radio-option:has(.radio-input:checked):hover,
+.radio-option:active {
+  background: var(--color-selection-hover);
 }
 
 .radio-input {
+  flex-shrink: 0;
+  accent-color: var(--color-primary);
   margin-top: 2px;
 }
 
 .radio-label {
   display: flex;
+  min-width: 0;
+  overflow-wrap: anywhere;
   flex-direction: column;
   gap: 4px;
 }
@@ -945,15 +969,16 @@ onUnmounted(() => {
 
 .action-buttons {
   display: flex;
-  gap: 16px;
+  flex-wrap: wrap;
+  gap: 8px;
   margin-bottom: 16px;
 }
 
 /* 配置警告 */
 .config-warning {
-  background: linear-gradient(135deg, #fff3cd 0%, #ffeaa7 100%);
+  background: #fff8e8;
   border: 1px solid rgba(255, 193, 7, 0.3);
-  border-radius: 8px;
+  border-radius: var(--radius-xs);
   padding: 12px 16px;
   font-size: 13px;
   color: #856404;
@@ -964,47 +989,47 @@ onUnmounted(() => {
 /* 连接测试结果 */
 .connection-result {
   padding: 12px 16px;
-  border-radius: 8px;
+  border-radius: var(--radius-xs);
   font-size: 13px;
   font-weight: 500;
 }
 
 .connection-result.success {
-  background: linear-gradient(135deg, #e8f5e8 0%, #d4edda 100%);
+  background: #edf7f0;
   border: 1px solid rgba(40, 167, 69, 0.2);
   color: #155724;
 }
 
 .connection-result.error {
-  background: linear-gradient(135deg, #ffebee 0%, #ffcdd2 100%);
+  background: #fff1f0;
   border: 1px solid rgba(255, 59, 48, 0.2);
   color: #d70015;
 }
 
 /* 同步状态区域 */
 .sync-status {
-  margin-top: 32px;
-  padding-top: 24px;
+  margin-top: 24px;
+  padding-top: 20px;
   border-top: 1px solid rgba(0, 0, 0, 0.06);
 }
 
 .status-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-  gap: 16px;
+  grid-template-columns: repeat(auto-fit, minmax(min(200px, 100%), 1fr));
+  gap: 8px;
   margin-top: 16px;
 }
 
 .status-card {
-  background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+  min-width: 0;
+  overflow-wrap: anywhere;
+  background: var(--color-bg-primary);
   border: 1px solid rgba(0, 0, 0, 0.06);
-  border-radius: 12px;
+  border-radius: var(--radius-sm);
   padding: 16px;
-  transition: all 0.2s ease;
-}
-
-.status-card:hover {
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+  transition:
+    border-color var(--duration-fast),
+    box-shadow var(--duration-fast);
 }
 
 .status-info {
@@ -1021,7 +1046,7 @@ onUnmounted(() => {
 }
 
 .status-value {
-  font-size: 15px;
+  font-size: 13px;
   font-weight: 600;
   color: #1d1d1f;
   margin: 0;

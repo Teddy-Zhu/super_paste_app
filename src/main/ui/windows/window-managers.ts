@@ -12,6 +12,7 @@ import { globalShortcutManager } from '../../system/global-shortcut-manager'
 import { appLifecycleManager } from '../../system/app-lifecycle-manager'
 import store from '../../config/store'
 import { STORE_KEY } from '../../config/common'
+import { MAIN_WINDOW_CONFIG } from '../../config/constants'
 import logger from '../../utils/logger'
 import { isWayland } from '../../system/session'
 import { OVERLAY_RENDERER_EVENTS, type OverlayRendererTrace } from '../../../shared/overlay-events'
@@ -43,17 +44,15 @@ export class MainWindowManager {
       this.mainWindow = new BrowserWindow({
         width,
         height,
-        minWidth: width,
-        minHeight: height,
-        maxWidth: width,
-        maxHeight: height,
+        minWidth: MAIN_WINDOW_CONFIG.MIN_WIDTH,
+        minHeight: MAIN_WINDOW_CONFIG.MIN_HEIGHT,
         frame: false,
         show: false, // 确保窗口创建时不显示
         center: true, // 窗口居中显示
-        hasShadow: false,
-        backgroundColor: '#eef2f7',
+        hasShadow: true,
+        backgroundColor: '#f5f6f8',
         autoHideMenuBar: true,
-        resizable: false, // 禁止调整大小
+        resizable: true,
         skipTaskbar: true, // 在 Windows 和 Linux 上不显示在任务栏
         ...(process.platform === 'linux' ? { icon: IconSelector.getWindowIcon() } : {}),
         webPreferences: {

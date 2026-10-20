@@ -1,11 +1,13 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import type { AppInfo } from '@renderer/api/types'
 import type { ClipboardPreview } from '@renderer/utils/clipboard-preview'
 import { PREVIEW_LABELS } from '@renderer/constants/clipboard-preview'
 import IconClose from '~icons/mdi/close'
 import ClipboardPreviewContent from './ClipboardPreviewContent.vue'
+import ClipboardSourceApp from './ClipboardSourceApp.vue'
 
-const props = defineProps<{ preview: ClipboardPreview; source?: string; summary?: string }>()
+const props = defineProps<{ preview: ClipboardPreview; source?: AppInfo; summary?: string }>()
 const emit = defineEmits<{ close: [] }>()
 const dialog = ref<HTMLDialogElement>()
 const plain = ref(false)
@@ -37,7 +39,7 @@ onBeforeUnmount(() => dialog.value?.close())
         <header class="dialog-header">
           <div class="dialog-title">
             <strong>{{ preview.label }}</strong
-            ><span>{{ [summary || preview.summary, source].filter(Boolean).join(' · ') }}</span>
+            ><span>{{ summary || preview.summary }}</span>
           </div>
           <button
             v-if="canToggle"
@@ -48,6 +50,7 @@ onBeforeUnmount(() => dialog.value?.close())
           >
             {{ plain ? PREVIEW_LABELS.formatted : PREVIEW_LABELS.original }}
           </button>
+          <ClipboardSourceApp v-if="source" :app="source" />
           <button
             type="button"
             class="close-button"
@@ -74,14 +77,17 @@ onBeforeUnmount(() => dialog.value?.close())
   margin: auto;
   padding: 0;
   border: 1px solid #cbd5e1;
-  border-radius: 14px;
+  border-radius: var(--radius-lg);
   background: #fff;
   color: #334155;
   box-shadow: 0 16px 60px #0f172a40;
   overflow: hidden;
 }
+.clipboard-preview-dialog[open] {
+  animation: surface-appear var(--duration-normal) var(--ease-out);
+}
 .clipboard-preview-dialog::backdrop {
-  background: #0f172a66;
+  background: rgba(28, 38, 54, 0.22);
 }
 .dialog-layout {
   display: flex;
@@ -92,7 +98,8 @@ onBeforeUnmount(() => dialog.value?.close())
   display: flex;
   gap: 12px;
   align-items: center;
-  padding: 12px 16px;
+  padding: 10px 12px;
+  background: var(--color-titlebar);
   border-bottom: 1px solid #e2e8f0;
   flex-shrink: 0;
 }
@@ -104,7 +111,8 @@ onBeforeUnmount(() => dialog.value?.close())
   gap: 3px;
 }
 .dialog-title strong {
-  font-size: 15px;
+  font-size: 13px;
+  font-weight: 600;
 }
 .dialog-title span {
   font-size: 11px;
@@ -115,11 +123,16 @@ onBeforeUnmount(() => dialog.value?.close())
 }
 .dialog-header button {
   border: 1px solid #e2e8f0;
-  border-radius: 6px;
-  background: #f8fafc;
+  border-radius: var(--radius-xs);
+  background: var(--color-bg-primary);
   color: #475569;
   cursor: pointer;
   flex-shrink: 0;
+}
+.preview-toggle[aria-pressed='true'] {
+  background: var(--color-selection);
+  border-color: var(--color-primary);
+  color: var(--color-primary);
 }
 .preview-toggle {
   font-size: 12px;
@@ -132,10 +145,10 @@ onBeforeUnmount(() => dialog.value?.close())
   font-size: 18px;
 }
 .dialog-header button:hover {
-  background: #e2e8f0;
+  background: var(--color-control-hover);
 }
 .dialog-header button:focus-visible {
-  outline: 2px solid #3b82f6;
+  outline: 2px solid var(--color-primary);
   outline-offset: 2px;
 }
 .dialog-body {

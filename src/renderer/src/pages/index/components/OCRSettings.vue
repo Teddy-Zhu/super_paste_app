@@ -373,14 +373,22 @@ watch(readStoreConfig, () => {
 .text-input,
 .text-area {
   width: 100%;
+  min-width: 0;
+  max-width: 100%;
   margin-top: 12px;
-  padding: 10px 12px;
-  border: 1px solid rgba(0, 0, 0, 0.1);
-  border-radius: 8px;
-  font-size: 14px;
+  padding: 5px 9px;
+  border: 1px solid var(--color-control-border);
+  border-radius: var(--radius-xs);
+  font-size: 13px;
   background: #fff;
-  transition: all 0.2s ease;
+  transition:
+    border-color var(--duration-fast),
+    box-shadow var(--duration-fast);
   box-sizing: border-box;
+}
+
+.ocr-mode-control .select-input {
+  margin-top: 0;
 }
 
 .text-area {
@@ -396,8 +404,8 @@ watch(readStoreConfig, () => {
 .text-input:focus,
 .text-area:focus {
   outline: none;
-  border-color: #007aff;
-  box-shadow: 0 0 0 3px rgba(0, 122, 255, 0.1);
+  border-color: var(--color-primary);
+  box-shadow: var(--shadow-focus-primary);
 }
 
 .field-error {
@@ -408,7 +416,8 @@ watch(readStoreConfig, () => {
 
 .save-actions {
   display: flex;
-  gap: 12px;
+  flex-wrap: wrap;
+  gap: 8px;
   margin-top: 12px;
 }
 
@@ -438,6 +447,13 @@ watch(readStoreConfig, () => {
 .model-status.field-error {
   color: #d70015;
 }
+.model-description,
+.model-status,
+.save-message,
+.field-error {
+  overflow-wrap: anywhere;
+}
+
 .download-progress {
   display: flex;
   flex-direction: column;

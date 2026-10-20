@@ -17,6 +17,7 @@ import { useSearchAndNavigation } from '@renderer/composables/useSearchAndNaviga
 import { useScrollAndTags, type ScrollAndTagsManager } from '@renderer/composables/useScrollAndTags'
 import { useEventManager, useThrottle } from '@renderer/composables/useUtils'
 import { useContextMenu } from '@renderer/composables/useContextMenu'
+import { useTabIndicator } from '@renderer/composables/useTabIndicator'
 
 // 导入组件
 import ClipboardCard from '@renderer/components/ClipboardCard.vue'
@@ -25,6 +26,8 @@ import ContextMenu from '@renderer/components/ContextMenu.vue'
 // 导入图标
 import IconSettings from '~icons/mdi/cog'
 import IconDelete from '~icons/mdi/delete'
+import IconClipboard from '~icons/mdi/clipboard-text-outline'
+import { OVERLAY_LABELS } from '@renderer/constants/desktop-ui'
 
 // ==================== DOM 引用 ====================
 const overlayContentRef = ref<HTMLElement>()
@@ -541,6 +544,7 @@ scrollAndTagsManager = useScrollAndTags(
   () => searchAndNavManager.searchText.value || '',
   isSideLayout
 )
+const tabIndicatorStyle = useTabIndicator(tabsContainerRef, scrollAndTagsManager.tabs)
 
 // ==================== 动画流程函数 ====================
 
@@ -639,6 +643,18 @@ const handleCloseWindow = async (force = false, id = transitionId): Promise<void
  * 处理键盘按下事件
  */
 const handleKeyboardEvent = (event: KeyboardEvent): void => {
+  // 聚焦按钮时保留 Enter / Space 的原生激活行为，避免误粘贴历史内容。
+  if (
+    event.target instanceof Element &&
+    event.target.closest('button') &&
+    ['Enter', ' '].includes(event.key)
+  )
+    return
+  if (event.key === 'Escape' && isDropdownVisible.value) {
+    event.preventDefault()
+    hideDropdownMenu()
+    return
+  }
   const isCtrlOrCmd = event.ctrlKey || event.metaKey
 
   if (isCtrlOrCmd) {
@@ -896,6 +912,11 @@ onUnmounted(() => {
     console.error('[前端] Overlay 组件资源清理失败:', error)
   }
 })
+const isFilteredHistory = computed(
+  () =>
+    Boolean(searchAndNavManager.searchText.value.trim()) ||
+    scrollAndTagsManager.activeTagId.value !== 'all'
+)
 </script>
 
 <template>
@@ -911,7 +932,14 @@ onUnmounted(() => {
       <!-- 顶部工具栏 -->
       <div class="top-toolbar">
         <!-- 搜索图标 -->
-        <button class="toolbar-icon search-icon" @click="toggleSearch(false)">
+        <button
+          type="button"
+          class="toolbar-icon search-icon"
+          :title="OVERLAY_LABELS.search"
+          :aria-label="OVERLAY_LABELS.search"
+          :aria-expanded="animationManager.isSearchVisible.value"
+          @click="toggleSearch(false)"
+        >
           <svg
             width="18"
             height="18"
@@ -934,7 +962,10 @@ onUnmounted(() => {
           <input
             type="text"
             class="search-input"
-            placeholder="Search clipboard history..."
+            :placeholder="OVERLAY_LABELS.searchPlaceholder"
+            :aria-label="OVERLAY_LABELS.search"
+            spellcheck="false"
+            autocomplete="off"
             :value="searchAndNavManager.searchText.value"
             @input="searchAndNavManager.handleSearchInput"
             @keydown.escape.stop.prevent="toggleSearch(false)"
@@ -947,21 +978,20 @@ onUnmounted(() => {
           ref="tabsContainerRef"
           class="tabs-container"
         >
-          <div
+          <span class="tab-indicator" :style="tabIndicatorStyle" aria-hidden="true" />
+          <button
             v-for="tab in scrollAndTagsManager.tabs.value"
             :key="tab.id"
+            type="button"
             class="tab"
             :class="{
               active: tab.active,
-              'has-count': tab.count > 0,
-              switching: scrollAndTagsManager.isTagSwitching.value && tab.active
+              'has-count': tab.count > 0
             }"
-            tabindex="0"
-            role="button"
-            :aria-label="`Switch to ${tab.label} tag${tab.count > 0 ? ` (${tab.count} items)` : ''}`"
+            :aria-pressed="tab.active"
+            :aria-busy="scrollAndTagsManager.isTagSwitching.value && tab.active"
+            :aria-label="`${tab.label}${tab.count > 0 ? ` (${tab.count})` : ''}`"
             @click="scrollAndTagsManager.switchTag(tab.id)"
-            @keydown.enter="scrollAndTagsManager.switchTag(tab.id)"
-            @keydown.space.prevent="scrollAndTagsManager.switchTag(tab.id)"
           >
             <span class="tab-dot" :style="{ backgroundColor: tab.color }"></span>
             <span class="tab-label">{{ tab.label }}</span>
@@ -970,13 +1000,20 @@ onUnmounted(() => {
             <div v-if="scrollAndTagsManager.isTagSwitching.value && tab.active" class="tab-loading">
               <div class="loading-spinner"></div>
             </div>
-          </div>
+          </button>
         </div>
 
         <!-- 右侧按钮组 -->
         <div class="toolbar-buttons">
           <div class="dropdown-container">
-            <button class="toolbar-icon menu-icon" @click="toggleDropdownMenu">
+            <button
+              type="button"
+              class="toolbar-icon menu-icon"
+              :title="OVERLAY_LABELS.menu"
+              :aria-label="OVERLAY_LABELS.menu"
+              :aria-expanded="isDropdownVisible"
+              @click="toggleDropdownMenu"
+            >
               <svg
                 width="16"
                 height="16"
@@ -993,18 +1030,22 @@ onUnmounted(() => {
 
             <!-- 下拉菜单 -->
             <div v-if="isDropdownVisible" class="dropdown-menu">
-              <div class="dropdown-item" @click="openSettings">
+              <button type="button" class="dropdown-item" @click="openSettings">
                 <span class="dropdown-icon">
                   <IconSettings />
                 </span>
                 <span class="dropdown-label">设置</span>
-              </div>
-              <div class="dropdown-item" @click="clearClipboardHistory">
+              </button>
+              <button
+                type="button"
+                class="dropdown-item dropdown-item--danger"
+                @click="clearClipboardHistory"
+              >
                 <span class="dropdown-icon">
                   <IconDelete />
                 </span>
                 <span class="dropdown-label">清空历史</span>
-              </div>
+              </button>
             </div>
           </div>
         </div>
@@ -1013,9 +1054,13 @@ onUnmounted(() => {
       <div class="overlay-body">
         <!-- 空状态 -->
         <div v-if="clipboardHistory.length === 0" class="empty-container">
-          <div class="empty-icon">📋</div>
-          <p class="empty-text">No clipboard history</p>
-          <p class="empty-hint">Copy something to get started</p>
+          <div class="empty-icon" aria-hidden="true"><IconClipboard /></div>
+          <p class="empty-text">
+            {{ isFilteredHistory ? OVERLAY_LABELS.noResults : OVERLAY_LABELS.empty }}
+          </p>
+          <p class="empty-hint">
+            {{ isFilteredHistory ? OVERLAY_LABELS.noResultsHint : OVERLAY_LABELS.emptyHint }}
+          </p>
         </div>
 
         <!-- 剪贴板历史横向滚动 -->

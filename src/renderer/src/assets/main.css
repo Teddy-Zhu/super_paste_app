@@ -6,18 +6,94 @@
   box-sizing: border-box;
 }
 
-html {
-  scroll-behavior: smooth;
-}
-
 body {
   margin: 0;
   padding: 0;
   font-family: var(--font-family-base);
+  font-size: var(--font-size-base);
+  line-height: var(--line-height-normal);
+  color: var(--color-text-primary);
+  cursor: default;
   overflow: hidden;
   user-select: none;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+  color: inherit;
+}
+
+button,
+select,
+input[type='checkbox'],
+input[type='radio'],
+input[type='range'],
+input[type='color'] {
+  cursor: pointer;
+}
+
+input,
+textarea {
+  user-select: text;
+}
+
+button:disabled,
+input:disabled,
+select:disabled,
+textarea:disabled {
+  cursor: not-allowed;
+}
+
+:where(button, [tabindex='0'], input, select, textarea):focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+
+/* 按压反馈使用位移，不参与布局计算。 */
+:where(.settings-shell, .overlay-container, .clipboard-preview-dialog)
+  button:not(:disabled):not(.window-control-btn):not(.nav-item):not(.slider-mark):not(.tab) {
+  transition:
+    background-color var(--duration-fast),
+    border-color var(--duration-fast),
+    color var(--duration-fast),
+    box-shadow var(--duration-fast),
+    translate var(--duration-fast) var(--ease-out);
+}
+
+:where(.settings-shell, .overlay-container, .clipboard-preview-dialog)
+  button:active:not(:disabled):not(.window-control-btn):not(.nav-item):not(.slider-mark):not(.tab) {
+  translate: 0 1px;
+}
+
+@keyframes surface-appear {
+  from {
+    opacity: 0;
+    translate: 0 -3px;
+  }
+  to {
+    opacity: 1;
+    translate: 0 0;
+  }
+}
+
+::selection {
+  background: var(--color-selection);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }
 
 #app {

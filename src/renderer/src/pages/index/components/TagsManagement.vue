@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import IconTag from '~icons/mdi/tag-outline'
+import { SETTINGS_LABELS } from '@renderer/constants/desktop-ui'
 import { ref, onMounted } from 'vue'
 import { tags } from '@renderer/api/renderer-api'
 import type { TagGroup } from '@renderer/api/types'
@@ -167,63 +169,68 @@ onMounted(() => {
     </div>
 
     <!-- 标签表单 -->
-    <div v-if="isCreatingTag || isEditingTag" class="tag-form-card">
-      <div class="tag-form-header">
-        <h4 class="tag-form-title">{{ isCreatingTag ? '创建新标签' : '编辑标签' }}</h4>
-      </div>
-
-      <div class="tag-form-content">
-        <!-- 标签名称 -->
-        <div class="form-group">
-          <label class="form-label">标签名称</label>
-          <input
-            v-model="tagForm.name"
-            type="text"
-            class="form-input"
-            placeholder="请输入标签名称"
-            maxlength="20"
-          />
+    <Transition name="settings-reveal">
+      <div v-if="isCreatingTag || isEditingTag" class="tag-form-card">
+        <div class="tag-form-header">
+          <h4 class="tag-form-title">{{ isCreatingTag ? '创建新标签' : '编辑标签' }}</h4>
         </div>
 
-        <!-- 标签颜色 -->
-        <div class="form-group">
-          <label class="form-label">标签颜色</label>
-          <div class="color-picker">
-            <div class="color-options">
-              <div
-                v-for="color in presetColors"
-                :key="color"
-                class="color-option"
-                :class="{ active: tagForm.color === color }"
-                :style="{ backgroundColor: color }"
-                @click="tagForm.color = color"
-              ></div>
+        <div class="tag-form-content">
+          <!-- 标签名称 -->
+          <div class="form-group">
+            <label class="form-label">标签名称</label>
+            <input
+              v-model="tagForm.name"
+              type="text"
+              class="form-input"
+              placeholder="请输入标签名称"
+              maxlength="20"
+            />
+          </div>
+
+          <!-- 标签颜色 -->
+          <div class="form-group">
+            <label class="form-label">标签颜色</label>
+            <div class="color-picker">
+              <div class="color-options">
+                <button
+                  v-for="color in presetColors"
+                  :key="color"
+                  type="button"
+                  class="color-option"
+                  :aria-label="color"
+                  :aria-pressed="tagForm.color === color"
+                  :class="{ active: tagForm.color === color }"
+                  :style="{ backgroundColor: color }"
+                  @click="tagForm.color = color"
+                ></button>
+              </div>
+              <input v-model="tagForm.color" type="color" class="color-input" />
             </div>
-            <input v-model="tagForm.color" type="color" class="color-input" />
+          </div>
+
+          <!-- 标签描述 -->
+          <div class="form-group">
+            <label class="form-label">描述（可选）</label>
+            <textarea
+              v-model="tagForm.description"
+              class="form-textarea"
+              placeholder="请输入标签描述"
+              maxlength="100"
+              rows="3"
+            ></textarea>
+          </div>
+
+          <!-- 表单按钮 -->
+          <div class="form-actions">
+            <button class="form-button primary" @click="saveTag">
+              {{ isCreatingTag ? '创建' : '保存' }}
+            </button>
+            <button class="form-button secondary" @click="cancelEdit">取消</button>
           </div>
         </div>
-
-        <!-- 标签描述 -->
-        <div class="form-group">
-          <label class="form-label">描述（可选）</label>
-          <textarea
-            v-model="tagForm.description"
-            class="form-textarea"
-            placeholder="请输入标签描述"
-            maxlength="100"
-            rows="3"
-          ></textarea>
-        </div>
-
-        <!-- 表单按钮 -->
-        <div class="form-actions">
-          <button class="form-button primary" @click="saveTag">
-            {{ isCreatingTag ? '创建' : '保存' }}
-          </button>
-          <button class="form-button secondary" @click="cancelEdit">取消</button>
-        </div>
       </div>
-    </div>
+    </Transition>
 
     <!-- 标签列表 -->
     <div class="tags-list">
@@ -233,7 +240,7 @@ onMounted(() => {
       </div>
 
       <div v-else-if="allTags.length === 0" class="empty-state">
-        <div class="empty-icon">🏷️</div>
+        <div class="empty-icon" aria-hidden="true"><IconTag /></div>
         <p class="empty-text">暂无标签</p>
         <p class="empty-hint">点击"新建标签"创建第一个标签</p>
       </div>
@@ -246,7 +253,12 @@ onMounted(() => {
               <h4 class="tag-name">{{ tag.name }}</h4>
             </div>
             <div class="tag-actions-menu">
-              <button class="tag-action-button" @click="startEditTag(tag)">
+              <button
+                class="tag-action-button"
+                :aria-label="`${SETTINGS_LABELS.editTag}：${tag.name}`"
+                :title="SETTINGS_LABELS.editTag"
+                @click="startEditTag(tag)"
+              >
                 <svg
                   width="14"
                   height="14"
@@ -259,7 +271,12 @@ onMounted(() => {
                   <path d="m18.5 2.5 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
                 </svg>
               </button>
-              <button class="tag-action-button danger" @click="deleteTag(tag)">
+              <button
+                class="tag-action-button danger"
+                :aria-label="`${SETTINGS_LABELS.deleteTag}：${tag.name}`"
+                :title="SETTINGS_LABELS.deleteTag"
+                @click="deleteTag(tag)"
+              >
                 <svg
                   width="14"
                   height="14"

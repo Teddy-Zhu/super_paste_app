@@ -1,6 +1,14 @@
 <script setup lang="ts">
 import type { SettingsStore } from '@renderer/stores/common'
 import { clipboard } from '@renderer/api/renderer-api'
+import {
+  KEEP_TIME_RANGE,
+  OVERLAY_POSITION_OPTIONS,
+  SETTINGS_LABELS
+} from '@renderer/constants/desktop-ui'
+import IconCheck from '~icons/mdi/check'
+import { computed, onScopeDispose, ref, watch } from 'vue'
+import { executeTransition, TransitionPresets, usePreferredReducedMotion } from '@vueuse/core'
 
 // Props
 interface Props {
@@ -8,6 +16,34 @@ interface Props {
 }
 
 const props = defineProps<Props>()
+const displayedKeepTime = ref(props.settingsStore.maxKeepTime)
+const reducedMotion = usePreferredReducedMotion()
+let keepTimeTransitionId = 0
+let animateKeepTimeChange = false
+
+// 动画只更新显示值，配置直接写入目标天数；拖动和键盘调整保持即时响应。
+watch(
+  [() => props.settingsStore.maxKeepTime, reducedMotion],
+  ([value, motion], [previousValue]) => {
+    const id = ++keepTimeTransitionId
+    if (!animateKeepTimeChange || value === -1 || previousValue === -1 || motion === 'reduce') {
+      displayedKeepTime.value = value
+      return
+    }
+    void executeTransition(displayedKeepTime, displayedKeepTime.value, value, {
+      duration: 200,
+      transition: TransitionPresets.easeOutCubic,
+      abort: () => id !== keepTimeTransitionId
+    })
+  },
+  { flush: 'sync' }
+)
+
+onScopeDispose(() => {
+  keepTimeTransitionId++
+})
+
+const sliderKeepTime = computed(() => Math.round(displayedKeepTime.value))
 
 // 保存时间预设选项
 const keepTimePresets = [
@@ -28,38 +64,10 @@ const sliderMarks = [
   { label: '365天', value: 365 }
 ]
 
-type OverlayPosition = 'top' | 'bottom' | 'left' | 'right'
+type OverlayPosition = (typeof OVERLAY_POSITION_OPTIONS)[number]['value']
 
-const overlayPositionOptions: Array<{ label: string; value: OverlayPosition }> = [
-  { label: '上', value: 'top' },
-  { label: '下', value: 'bottom' },
-  { label: '左', value: 'left' },
-  { label: '右', value: 'right' }
-]
-
-// 计算滑块标记位置的函数
-const getMarkPosition = (value: number): number => {
-  // 滑块范围是 1-365
-  const min = 1
-  const max = 365
-
-  // 计算基础百分比
-  const percentage = (value - min) / (max - min)
-
-  // 尝试使用更精确的调整方法
-  // 基于实际观察，HTML range元素的thumb定位遵循特定的模式
-
-  // 对于不同的值，使用不同的调整策略
-  // 继续向左微调
-  if (percentage === 0) {
-    return 1.6 // 最小值时的位置
-  } else if (percentage === 1) {
-    return 98.6 // 最大值时的位置
-  } else {
-    // 中间值使用线性插值
-    return 1.6 + percentage * (98.6 - 1.6)
-  }
-}
+const getKeepTimePercentage = (value: number): number =>
+  ((value - KEEP_TIME_RANGE.min) / (KEEP_TIME_RANGE.max - KEEP_TIME_RANGE.min)) * 100
 
 // 切换开机自启
 const toggleAutoStart = (): void => {
@@ -74,13 +82,19 @@ const updateMaxHistorySize = (value: number): void => {
 }
 
 // 更新最大保存时间
-const updateMaxKeepTime = (value: number): void => {
+const updateMaxKeepTime = (value: number, animate = false): void => {
   // 确保值在合理范围内，-1 表示不限制，否则最少1天，最多365天
   let clampedValue = value
   if (value !== -1) {
-    clampedValue = Math.max(1, Math.min(365, value))
+    clampedValue = Math.max(KEEP_TIME_RANGE.min, Math.min(KEEP_TIME_RANGE.max, value))
   }
+  if (!animate) {
+    keepTimeTransitionId++
+    displayedKeepTime.value = clampedValue
+  }
+  animateKeepTimeChange = animate
   props.settingsStore.$patch({ maxKeepTime: clampedValue })
+  animateKeepTimeChange = false
 }
 
 const normalizeOverlayPosition = (value: unknown): OverlayPosition => {
@@ -93,6 +107,10 @@ const normalizeOverlayPosition = (value: unknown): OverlayPosition => {
 const getCurrentOverlayPosition = (): OverlayPosition => {
   return normalizeOverlayPosition(props.settingsStore.overlayPosition)
 }
+
+const overlayPositionIndex = computed(() =>
+  OVERLAY_POSITION_OPTIONS.findIndex((option) => option.value === getCurrentOverlayPosition())
+)
 
 const updateOverlayPosition = (value: OverlayPosition): void => {
   const normalized = normalizeOverlayPosition(value)
@@ -147,22 +165,43 @@ const clearHistory = async (): Promise<void> => {
       <!-- Overlay 出现位置 -->
       <div class="setting-card">
         <div class="setting-info">
-          <h4 class="setting-title">粘贴面板出现位置</h4>
+          <h4 class="setting-title">{{ SETTINGS_LABELS.overlayPosition }}</h4>
           <p class="setting-description">设置快捷面板从屏幕的哪个方向出现，默认底部</p>
         </div>
         <div class="setting-control">
-          <div class="overlay-position-grid">
+          <div
+            class="overlay-position-grid"
+            role="group"
+            :aria-label="SETTINGS_LABELS.overlayPosition"
+            :style="{
+              '--position-index': overlayPositionIndex,
+              '--position-count': OVERLAY_POSITION_OPTIONS.length
+            }"
+          >
+            <span class="overlay-position-indicator" aria-hidden="true" />
             <button
-              v-for="option in overlayPositionOptions"
+              v-for="option in OVERLAY_POSITION_OPTIONS"
               :key="option.value"
               type="button"
               :class="[
                 'overlay-position-button',
+                `overlay-position-button--${option.value}`,
                 { active: getCurrentOverlayPosition() === option.value }
               ]"
+              :aria-pressed="getCurrentOverlayPosition() === option.value"
               @click="updateOverlayPosition(option.value)"
             >
+              <span class="overlay-position-preview" aria-hidden="true">
+                <span class="overlay-position-edge" />
+              </span>
               <span class="overlay-position-label">{{ option.label }}</span>
+              <Transition name="position-check">
+                <IconCheck
+                  v-if="getCurrentOverlayPosition() === option.value"
+                  class="overlay-position-check"
+                  aria-hidden="true"
+                />
+              </Transition>
             </button>
           </div>
         </div>
@@ -195,7 +234,7 @@ const clearHistory = async (): Promise<void> => {
       <!-- 最大保存时间 -->
       <div class="setting-card keep-time-card">
         <div class="setting-info">
-          <h4 class="setting-title">历史记录保存时间</h4>
+          <h4 class="setting-title">{{ SETTINGS_LABELS.keepTime }}</h4>
           <p class="setting-description">设置历史记录的最大保存时间</p>
         </div>
         <div class="setting-control keep-time-control">
@@ -210,7 +249,8 @@ const clearHistory = async (): Promise<void> => {
                   'preset-button-compact',
                   { active: settingsStore.maxKeepTime === preset.value }
                 ]"
-                @click="updateMaxKeepTime(preset.value)"
+                :aria-pressed="settingsStore.maxKeepTime === preset.value"
+                @click="updateMaxKeepTime(preset.value, true)"
               >
                 {{ preset.label }}
               </button>
@@ -222,8 +262,8 @@ const clearHistory = async (): Promise<void> => {
                 type="number"
                 :value="settingsStore.maxKeepTime === -1 ? '' : settingsStore.maxKeepTime"
                 :placeholder="settingsStore.maxKeepTime === -1 ? '不限制' : '输入天数'"
-                min="1"
-                max="365"
+                :min="KEEP_TIME_RANGE.min"
+                :max="KEEP_TIME_RANGE.max"
                 step="1"
                 class="number-input"
                 :disabled="settingsStore.maxKeepTime === -1"
@@ -238,25 +278,38 @@ const clearHistory = async (): Promise<void> => {
           </div>
 
           <!-- 紧凑的滑块控制 -->
-          <div v-if="settingsStore.maxKeepTime !== -1" class="keep-time-slider-compact">
+          <div
+            v-if="settingsStore.maxKeepTime !== -1"
+            class="keep-time-slider-compact"
+            :style="{ '--slider-progress': `${getKeepTimePercentage(sliderKeepTime)}%` }"
+          >
+            <div class="keep-time-slider-track" aria-hidden="true">
+              <div class="keep-time-slider-fill" />
+            </div>
             <input
               type="range"
-              :value="settingsStore.maxKeepTime"
-              min="1"
-              max="365"
+              :value="sliderKeepTime"
+              :min="KEEP_TIME_RANGE.min"
+              :max="KEEP_TIME_RANGE.max"
               step="1"
               class="keep-time-slider"
+              :aria-label="SETTINGS_LABELS.keepTime"
+              :aria-valuenow="settingsStore.maxKeepTime"
               @input="updateMaxKeepTime(parseInt(($event.target as HTMLInputElement).value))"
             />
             <div class="slider-marks">
-              <div
+              <button
                 v-for="mark in sliderMarks"
                 :key="mark.value"
+                type="button"
                 class="slider-mark"
-                :style="{ left: `${getMarkPosition(mark.value)}%` }"
+                :class="{ active: settingsStore.maxKeepTime === mark.value }"
+                :aria-pressed="settingsStore.maxKeepTime === mark.value"
+                :style="{ left: `${getKeepTimePercentage(mark.value)}%` }"
+                @click="updateMaxKeepTime(mark.value, true)"
               >
                 <span class="mark-label">{{ mark.label }}</span>
-              </div>
+              </button>
             </div>
           </div>
         </div>
