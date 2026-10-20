@@ -808,6 +808,8 @@ onMounted(async () => {
     })
 
     wheelHandler = (event: WheelEvent) => {
+      // 详情弹窗使用原生滚动，不参与历史列表的横向/纵向滚动映射。
+      if ((event.target as Element | null)?.closest('.clipboard-preview-dialog')) return
       if (handleTabsContainerWheel(event)) {
         return
       }

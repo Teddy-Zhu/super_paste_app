@@ -9,6 +9,8 @@ export {}
 declare module 'vue' {
   export interface GlobalComponents {
     ClipboardCard: typeof import('./components/ClipboardCard.vue')['default']
+    ClipboardPreviewContent: typeof import('./components/ClipboardPreviewContent.vue')['default']
+    ClipboardPreviewDialog: typeof import('./components/ClipboardPreviewDialog.vue')['default']
     ContextMenu: typeof import('./components/ContextMenu.vue')['default']
     ImageDisplay: typeof import('./components/ImageDisplay.vue')['default']
     RouterLink: typeof import('vue-router')['RouterLink']

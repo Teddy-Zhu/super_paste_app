@@ -8,14 +8,16 @@
     @load="handleLoad"
     @error="handleError"
   />
-  <div v-else-if="isLoading" :class="loadingClass">Loading...</div>
+  <div v-else-if="isLoading" :class="loadingClass">{{ PREVIEW_LABELS.imageLoading }}</div>
   <div v-else-if="hasError" :class="errorClass">
-    {{ errorMessage }}
+    {{ PREVIEW_LABELS.imageUnavailable }}
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, onUnmounted, watch } from 'vue'
+import { getImageMimeType } from '@renderer/utils/clipboard-preview'
+import { PREVIEW_LABELS } from '@renderer/constants/clipboard-preview'
 
 interface Props {
   imageData: Uint8Array
@@ -26,7 +28,7 @@ interface Props {
 }
 
 const props = withDefaults(defineProps<Props>(), {
-  alt: 'Image preview',
+  alt: PREVIEW_LABELS.image,
   imageClass: '',
   loadingClass: 'image-loading',
   errorClass: 'image-error'
@@ -41,7 +43,6 @@ const emit = defineEmits<{
 const imageSrc = ref<string>('')
 const isLoading = ref<boolean>(true)
 const hasError = ref<boolean>(false)
-const errorMessage = ref<string>('')
 const currentObjectURL = ref<string | null>(null)
 
 // 将 Uint8Array 安全转换为 ArrayBuffer，避免 Blob 构造函数类型报错
@@ -51,98 +52,28 @@ const toArrayBuffer = (data: Uint8Array): ArrayBuffer => {
   return buffer
 }
 
-// 根据魔数识别图片类型，确保 Blob 和 base64 前缀正确
-const detectMimeType = (data: Uint8Array): string => {
-  if (
-    data.length >= 8 &&
-    data[0] === 0x89 &&
-    data[1] === 0x50 &&
-    data[2] === 0x4e &&
-    data[3] === 0x47
-  ) {
-    return 'image/png'
-  }
-  if (data.length >= 3 && data[0] === 0xff && data[1] === 0xd8 && data[2] === 0xff) {
-    return 'image/jpeg'
-  }
-  if (
-    data.length >= 4 &&
-    data[0] === 0x47 &&
-    data[1] === 0x49 &&
-    data[2] === 0x46 &&
-    data[3] === 0x38
-  ) {
-    return 'image/gif'
-  }
-  if (
-    data.length >= 12 &&
-    data[0] === 0x52 &&
-    data[1] === 0x49 &&
-    data[2] === 0x46 &&
-    data[3] === 0x46 &&
-    data[8] === 0x57 &&
-    data[9] === 0x45 &&
-    data[10] === 0x42 &&
-    data[11] === 0x50
-  ) {
-    return 'image/webp'
-  }
-  if (
-    data.length >= 4 &&
-    data[0] === 0x49 &&
-    data[1] === 0x49 &&
-    data[2] === 0x2a &&
-    data[3] === 0x00
-  ) {
-    return 'image/tiff'
-  }
-  if (
-    data.length >= 4 &&
-    data[0] === 0x4d &&
-    data[1] === 0x4d &&
-    data[2] === 0x00 &&
-    data[3] === 0x2a
-  ) {
-    return 'image/tiff'
-  }
-  if (data.length >= 2 && data[0] === 0x42 && data[1] === 0x4d) {
-    return 'image/bmp'
-  }
-  if (
-    data.length >= 4 &&
-    data[0] === 0x00 &&
-    data[1] === 0x00 &&
-    data[2] === 0x01 &&
-    data[3] === 0x00
-  ) {
-    return 'image/x-icon'
-  }
-  return 'image/png'
-}
-
 // Blob URL 避免 Array.from/map/join/base64 的多次分配与主线程编码。
-const processImage = () => {
+const processImage = (): void => {
   cleanupObjectURL()
   imageSrc.value = ''
   hasError.value = false
-  errorMessage.value = ''
   isLoading.value = true
   try {
     if (!props.imageData?.byteLength) throw new Error('无效的图片数据')
     const blob = new Blob([toArrayBuffer(props.imageData)], {
-      type: detectMimeType(props.imageData)
+      type: getImageMimeType(props.imageData)
     })
     currentObjectURL.value = URL.createObjectURL(blob)
     imageSrc.value = currentObjectURL.value
   } catch (error) {
     hasError.value = true
-    errorMessage.value = error instanceof Error ? error.message : '图片处理失败'
+    console.warn('剪贴板图片预览失败:', error)
     isLoading.value = false
   }
 }
 
 // 清理 Object URL
-const cleanupObjectURL = () => {
+const cleanupObjectURL = (): void => {
   if (currentObjectURL.value) {
     URL.revokeObjectURL(currentObjectURL.value)
     currentObjectURL.value = null
@@ -150,7 +81,7 @@ const cleanupObjectURL = () => {
 }
 
 // 处理图片加载成功
-const handleLoad = (event: Event) => {
+const handleLoad = (event: Event): void => {
   isLoading.value = false
   hasError.value = false
 
@@ -158,10 +89,9 @@ const handleLoad = (event: Event) => {
 }
 
 // 处理图片加载失败
-const handleError = (event: Event) => {
+const handleError = (event: Event): void => {
   isLoading.value = false
   hasError.value = true
-  errorMessage.value = '图片加载失败'
   imageSrc.value = ''
   cleanupObjectURL()
   emit('error', event)
@@ -187,7 +117,10 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   justify-content: center;
-  min-height: 100px;
+  min-height: 0;
+  height: 100%;
+  width: 100%;
+  box-sizing: border-box;
   color: #64748b;
   font-size: 14px;
   background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
@@ -198,7 +131,10 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   justify-content: center;
-  min-height: 100px;
+  min-height: 0;
+  height: 100%;
+  width: 100%;
+  box-sizing: border-box;
   color: #ef4444;
   font-size: 14px;
   background: linear-gradient(135deg, #fef2f2 0%, #fee2e2 100%);

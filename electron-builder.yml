@@ -17,7 +17,7 @@ files:
   - '!**/node_modules/@super-paste/active-window-kwin/{target,src,scripts}/**'
   - '!**/node_modules/@super-paste/active-window-kwin/{Cargo.*,build.rs}'
 asarUnpack:
-  - '**/@teddyzhu/clipboard/**/*.node'
+  - '**/@teddyzhu/clipboard-*/**/*.node'
   - '**/@super-paste/active-window-kwin/**/*.node'
   - resources/**
 extraResources:

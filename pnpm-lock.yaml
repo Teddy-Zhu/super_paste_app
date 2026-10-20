@@ -24,8 +24,8 @@ importers:
         specifier: 6.0.0-rc.8
         version: 6.0.0-rc.8
       '@teddyzhu/clipboard':
-        specifier: 0.0.10
-        version: 0.0.10
+        specifier: 0.0.12
+        version: 0.0.12
       '@zxing/library':
         specifier: ^0.21.3
         version: 0.21.3
@@ -1114,46 +1114,46 @@ packages:
     resolution: {integrity: sha512-1JSJYZesXZ7xFzk9CfnZEI8xjAifWKvT27Huxo61Lk2KP2WE+rJPMdr+Eijv7Eq+K2bu5mTRNTZIh0qNXo7Fuw==}
     engines: {node: '>=14.0.0'}
 
-  '@teddyzhu/clipboard-darwin-arm64@0.0.10':
-    resolution: {integrity: sha512-UkOv6M7PsHO921XWa0Jh6R1O/RCwzKLjrdEbDOwiQqONH2nC4INfnVlIbMz+7dwdK+h9qQv5pFvTrXL1+6bs4A==}
+  '@teddyzhu/clipboard-darwin-arm64@0.0.12':
+    resolution: {integrity: sha512-eMBTo1BB2KKzXSsrzTvI9uBtLOmRWEama1NfBOlI+qy2cvK43lHyE2ftmmLeaJX23xyh9SkTajI0B1+oG1cDKg==}
     engines: {node: '>= 10.16.0 < 11 || >= 11.8.0 < 12 || >= 12.0.0'}
     cpu: [arm64]
     os: [darwin]
 
-  '@teddyzhu/clipboard-darwin-x64@0.0.10':
-    resolution: {integrity: sha512-2WwMMYfI533XJ3mXe4TDUgbC/8FhtqDkEzTqJvcY0/VoGPA4ftF0c2n1j4/a8Ws1UeI1m3b9L2YM3qOnmUlOqA==}
+  '@teddyzhu/clipboard-darwin-x64@0.0.12':
+    resolution: {integrity: sha512-8KSQJD5BNMYPzPqnHK3bv7VoQb9jGMjhTbk8XFwab9S3Qc2V/2OyM3IAaXrTXdzXdSg17pMF/wHR31YBsLwnIg==}
     engines: {node: '>= 10.16.0 < 11 || >= 11.8.0 < 12 || >= 12.0.0'}
     cpu: [x64]
     os: [darwin]
 
-  '@teddyzhu/clipboard-linux-arm64-gnu@0.0.10':
-    resolution: {integrity: sha512-S9WQuFId9+tRJwb8KahgZ1CeD+NhM9CFy/5j3RBTYr2lTBtnCPTEDrk1pf5ldk9NCyzjWtf20v0hSzRZY47qcw==}
+  '@teddyzhu/clipboard-linux-arm64-gnu@0.0.12':
+    resolution: {integrity: sha512-vOOC9E/EarkInBm/zDR0a47PGctKWlnMqvGb1Hxy2vUVnH000fcsasX4suLjTCo7/3MJcSByaRBFcIZMt5gbRA==}
     engines: {node: '>= 10.16.0 < 11 || >= 11.8.0 < 12 || >= 12.0.0'}
     cpu: [arm64]
     os: [linux]
     libc: [glibc]
 
-  '@teddyzhu/clipboard-linux-x64-gnu@0.0.10':
-    resolution: {integrity: sha512-WnQmoHV/zyhLU9Qadrqzb+FXOcnUSvLRdT+VAmo0iGnyZJtOjVEjKVWWzmnfgErcT9ZyLD8d3gSEJuDJcPEmLg==}
+  '@teddyzhu/clipboard-linux-x64-gnu@0.0.12':
+    resolution: {integrity: sha512-PtsXJ6+AdMcgUaEoMDC/Ns7UTX27cHlHlhhApTqkMgle0ePNm/QOuzwxhXvXXKKH/desVvbWuycnxPizl3/QUg==}
     engines: {node: '>= 10.16.0 < 11 || >= 11.8.0 < 12 || >= 12.0.0'}
     cpu: [x64]
     os: [linux]
     libc: [glibc]
 
-  '@teddyzhu/clipboard-win32-arm64-msvc@0.0.10':
-    resolution: {integrity: sha512-he+6w4JcrP/5RJydJZr0OuT5zFCliTzp8MaXrfT6ELELEZ76WA57kT+OwNQ6VDKa0K9FnXJfUyDJPHs2ERFd9A==}
+  '@teddyzhu/clipboard-win32-arm64-msvc@0.0.12':
+    resolution: {integrity: sha512-pnEew1FCaqr81XmiWPhs84TFEUQ3n8xthMVvAb8lLLfwsK1XT8ViwexPPFX+4G3IlqBiQ4dcsF7oCh56AZ1AJA==}
     engines: {node: '>= 10.16.0 < 11 || >= 11.8.0 < 12 || >= 12.0.0'}
     cpu: [arm64]
     os: [win32]
 
-  '@teddyzhu/clipboard-win32-x64-msvc@0.0.10':
-    resolution: {integrity: sha512-tcF2rrpos4QVwdhvuQi115Hb60VysaBktJABvTkUxZN4QxPXXqzmwXYo7lNqndxQG73mdIycV0l9MKdxc5FK/w==}
+  '@teddyzhu/clipboard-win32-x64-msvc@0.0.12':
+    resolution: {integrity: sha512-cCJAriAZ+u2P5BL3oMshGjB+COP9SMaPbSybpm9I5n2IO78rPJ5bHle2CvxsNWxDi2dhIsG+PpqF8nd+vclp9w==}
     engines: {node: '>= 10.16.0 < 11 || >= 11.8.0 < 12 || >= 12.0.0'}
     cpu: [x64]
     os: [win32]
 
-  '@teddyzhu/clipboard@0.0.10':
-    resolution: {integrity: sha512-u52kJBrniKndEA0rEsIndHObf6MGzRfilFVVXvYCXI5tz9mOIsP13NsxeVAjdAvOKpRd4bm9tZSwSEQFvKl4tQ==}
+  '@teddyzhu/clipboard@0.0.12':
+    resolution: {integrity: sha512-VgwM3o3ai8AuDPxdleiwCWcQcW1ITXU48HKohR1IhdBPln0qm4RZ09MV9v3CP8XBYtQeLgK6Z6gUbftjPUNjVg==}
     engines: {node: '>= 10.16.0 < 11 || >= 11.8.0 < 12 || >= 12.0.0'}
 
   '@tokenizer/token@0.3.0':
@@ -4642,32 +4642,32 @@ snapshots:
       untildify: 5.0.0
       winreg: 1.2.4
 
-  '@teddyzhu/clipboard-darwin-arm64@0.0.10':
+  '@teddyzhu/clipboard-darwin-arm64@0.0.12':
     optional: true
 
-  '@teddyzhu/clipboard-darwin-x64@0.0.10':
+  '@teddyzhu/clipboard-darwin-x64@0.0.12':
     optional: true
 
-  '@teddyzhu/clipboard-linux-arm64-gnu@0.0.10':
+  '@teddyzhu/clipboard-linux-arm64-gnu@0.0.12':
     optional: true
 
-  '@teddyzhu/clipboard-linux-x64-gnu@0.0.10':
+  '@teddyzhu/clipboard-linux-x64-gnu@0.0.12':
     optional: true
 
-  '@teddyzhu/clipboard-win32-arm64-msvc@0.0.10':
+  '@teddyzhu/clipboard-win32-arm64-msvc@0.0.12':
     optional: true
 
-  '@teddyzhu/clipboard-win32-x64-msvc@0.0.10':
+  '@teddyzhu/clipboard-win32-x64-msvc@0.0.12':
     optional: true
 
-  '@teddyzhu/clipboard@0.0.10':
+  '@teddyzhu/clipboard@0.0.12':
     optionalDependencies:
-      '@teddyzhu/clipboard-darwin-arm64': 0.0.10
-      '@teddyzhu/clipboard-darwin-x64': 0.0.10
-      '@teddyzhu/clipboard-linux-arm64-gnu': 0.0.10
-      '@teddyzhu/clipboard-linux-x64-gnu': 0.0.10
-      '@teddyzhu/clipboard-win32-arm64-msvc': 0.0.10
-      '@teddyzhu/clipboard-win32-x64-msvc': 0.0.10
+      '@teddyzhu/clipboard-darwin-arm64': 0.0.12
+      '@teddyzhu/clipboard-darwin-x64': 0.0.12
+      '@teddyzhu/clipboard-linux-arm64-gnu': 0.0.12
+      '@teddyzhu/clipboard-linux-x64-gnu': 0.0.12
+      '@teddyzhu/clipboard-win32-arm64-msvc': 0.0.12
+      '@teddyzhu/clipboard-win32-x64-msvc': 0.0.12
 
   '@tokenizer/token@0.3.0': {}
 

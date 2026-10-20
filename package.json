@@ -30,7 +30,7 @@
     "@paymoapp/active-window": "^2.1.2",
     "@super-paste/active-window-kwin": "workspace:*",
     "@teddyzhu/auto-launch": "6.0.0-rc.8",
-    "@teddyzhu/clipboard": "0.0.10",
+    "@teddyzhu/clipboard": "0.0.12",
     "@zxing/library": "^0.21.3",
     "better-sqlite3": "^12.11.1",
     "canvas": "^3.2.3",
