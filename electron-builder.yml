@@ -4,27 +4,40 @@ directories:
   buildResources: build
 icon: build/icon/icons/icon
 files:
-  - '!**/.vscode/*'
-  - '!src/*'
-  - '!electron.vite.config.{js,ts,mjs,cjs}'
-  - '!{.eslintcache,eslint.config.mjs,.prettierignore,.prettierrc.yaml,dev-app-update.yml,CHANGELOG.md,README.md}'
-  - '!{.env,.env.*,.npmrc,pnpm-lock.yaml}'
-  - '!{tsconfig.json,tsconfig.node.json,tsconfig.web.json}'
+  # 生产依赖由 electron-builder 单独收集，项目文件只包含运行产物和图标。
+  - out/**
+  - resources/icon.png
+  - '!**/*.map'
+  - '!**/*.d.{ts,mts,cts}'
+  # 其他依赖的 src 可能就是运行入口，按包裁剪源码。
+  - '!**/node_modules/{onnxruntime-node,onnxruntime-common}/**/*.{ts,tsx,mts,cts}'
+  - '!**/node_modules/{ajv,ajv-formats,@stablelib/base64,data-uri-to-buffer,boolean,fast-uri}/**/*.{ts,tsx,mts,cts}'
+  - '!**/node_modules/node-addon-api{,/**}'
+  - '!**/node_modules/better-sqlite3/{deps,src,bin}{,/**}'
+  - '!**/node_modules/better-sqlite3/build/Release/{obj,obj.target,.deps}{,/**}'
+  - '!**/node_modules/better-sqlite3/build/Release/test_extension.node'
+  - '!**/node_modules/canvas/{src,util}{,/**}'
+  - '!**/node_modules/@paymoapp/active-window/{module,scripts}{,/**}'
+  - '!**/node_modules/onnxruntime-node/script{,/**}'
   - '!**/*onnxruntime_providers_cuda*'
   - '!**/*onnxruntime_providers_tensorrt*'
-  - '!scripts/*'
-  - '!resources/ocr/**'
-  - '!packages/**'
   - '!**/node_modules/@super-paste/active-window-kwin/{target,src,scripts}/**'
   - '!**/node_modules/@super-paste/active-window-kwin/{Cargo.*,build.rs}'
 asarUnpack:
+  - '**/node_modules/{better-sqlite3,canvas,@paymoapp/active-window}/build/Release/**'
+  - '**/node_modules/onnxruntime-node/bin/**'
   - '**/@teddyzhu/clipboard-*/**/*.node'
   - '**/@super-paste/active-window-kwin/**/*.node'
-  - resources/**
+  - resources/icon.png
 electronLanguages:
   - en-US
   - zh-CN
+extraFiles:
+  - from: LICENSE
+    to: LICENSE.super-paste
 afterPack: scripts/afterPack.js
+toolsets:
+  appimage: '1.0.3'
 win:
   executableName: super_paste_app
   icon: build/icon/icons/icon.ico
@@ -45,7 +58,7 @@ mac:
     - NSDownloadsFolderUsageDescription: Application requests access to the user's Downloads folder.
   notarize: false
 dmg:
-  artifactName: ${name}-${version}.${ext}
+  artifactName: ${name}-${version}-${arch}.${ext}
 linux:
   target:
     - target: deb
@@ -54,8 +67,11 @@ linux:
     - target: pacman
       arch:
         - x64
+    - target: AppImage
+      arch:
+        - x64
   executableName: com.v2dawn.sp
-  maintainer: electronjs.org
+  maintainer: Teddy Zhu <teddyzhu15@gmail.com>
   category: Utility
   icon: build/icon/icons
   desktop:
@@ -64,7 +80,8 @@ linux:
       comment: a clipboard manager tool
       StartupWMClass: SuperPaste
 appImage:
-  artifactName: ${name}-${version}.${ext}
+  artifactName: ${name}-${version}-${arch}.${ext}
+  compression: zstd
 publish:
   provider: generic
   url: https://example.com/auto-updates

@@ -175,7 +175,7 @@ pnpm build:mac
 pnpm build:linux
 ```
 
-应用构建产物位于 `out/`，安装包与打包目录位于 `dist/`。当前 Linux 配置默认生成 x64 的 `.deb` 和 pacman 软件包。目标、图标、签名及发布设置见 [electron-builder.yml](electron-builder.yml)。
+应用构建产物位于 `out/`，安装包与打包目录位于 `dist/`。Linux 默认生成 x64 的 `.deb`、pacman 和 AppImage；发布时使用 `pnpm build:linux:portable` 在隔离环境构建，避免引入宿主机的新版本 glibc。目标配置见 [electron-builder.yml](electron-builder.yml)，手动触发的 GitHub Release 和 AUR 工作流见 [发布说明](packaging/aur/README.md)。
 
 ## 数据与隐私
 
@@ -217,4 +217,4 @@ scripts/         # 打包钩子等脚本
 
 ## 许可证
 
-当前仓库尚未提供项目级许可证文件。第三方依赖与 OCR 模型的许可请查阅各自项目；KWin 模块使用的 kdotool 许可随模块保存在 [kdotool-LICENSE](packages/active-window-kwin/licenses/kdotool-LICENSE)。
+本项目采用 [MIT License](LICENSE)。第三方依赖与 OCR 模型的许可请查阅各自项目；KWin 模块使用的 kdotool 许可随模块保存在 [kdotool-LICENSE](packages/active-window-kwin/licenses/kdotool-LICENSE)。

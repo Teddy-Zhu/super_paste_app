@@ -8,7 +8,11 @@ export function configurePlatform(): boolean {
 
   // 直接启动安装包时也要在进程启动参数中选定后端；JS 中 appendSwitch 已太迟。
   if (useXWayland && app.commandLine.getSwitchValue('ozone-platform') !== 'x11') {
-    app.relaunch({ args: [...process.argv.slice(1), '--ozone-platform=x11'] })
+    app.relaunch({
+      args: [...process.argv.slice(1), '--ozone-platform=x11'],
+      // AppImage 退出后会卸载内层可执行文件所在的临时目录。
+      ...(app.isPackaged && process.env.APPIMAGE ? { execPath: process.env.APPIMAGE } : {})
+    })
     app.exit(0)
     return false
   }

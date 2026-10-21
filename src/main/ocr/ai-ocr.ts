@@ -1,6 +1,6 @@
 import OpenAI from 'openai'
 import Anthropic from '@anthropic-ai/sdk'
-import { Jimp } from 'jimp'
+import { Jimp } from '../utils/image'
 import { randomUUID } from 'node:crypto'
 import {
   AI_OCR_REQUEST_TIMEOUT_MS,

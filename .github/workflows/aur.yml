@@ -1,0 +1,62 @@
+name: Publish AUR
+
+on:
+  workflow_dispatch:
+    inputs:
+      variant:
+        description: AUR package variant
+        type: choice
+        default: bin
+        options: [git, bin]
+      release_tag:
+        description: 'bin only: release tag; leave empty for the latest stable release'
+        type: string
+        required: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: aur-${{ inputs.variant }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    container: archlinux:base-devel
+    timeout-minutes: 20
+    steps:
+      - name: Install publishing tools
+        run: pacman -Syu --noconfirm --needed git openssh nodejs libarchive
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Prepare publishing user and SSH credentials
+        env:
+          AUR_SSH_PRIVATE_KEY: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
+        run: |
+          test -n "$AUR_SSH_PRIVATE_KEY" || { echo 'Configure secret AUR_SSH_PRIVATE_KEY'; exit 1; }
+          useradd --create-home aur-builder
+          install -d -m700 -o aur-builder -g aur-builder /home/aur-builder/.ssh
+          umask 077
+          printf '%s\n' "$AUR_SSH_PRIVATE_KEY" > /home/aur-builder/.ssh/id_ed25519
+          ssh-keyscan -T 10 -t ed25519 aur.archlinux.org > /home/aur-builder/.ssh/known_hosts
+          # https://archlinux.org/news/aur-migration-new-ssh-hostkeys/
+          expected_fingerprint='SHA256:RFzBCUItH9LZS0cKB5UE6ceAYhBD5C8GeOBip8Z11+4'
+          actual_fingerprint=$(ssh-keygen -lf /home/aur-builder/.ssh/known_hosts -E sha256 | awk '{print $2}' | sort -u)
+          if [ "$actual_fingerprint" != "$expected_fingerprint" ]; then
+            echo 'AUR SSH host key does not match the published Ed25519 fingerprint'
+            exit 1
+          fi
+          chown -R aur-builder:aur-builder /home/aur-builder/.ssh "$GITHUB_WORKSPACE"
+      - name: Prepare metadata and push the selected AUR package
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          AUR_VARIANT: ${{ inputs.variant }}
+          AUR_RELEASE_TAG: ${{ inputs.release_tag }}
+          AUR_GIT_NAME: ${{ vars.AUR_GIT_NAME }}
+          AUR_GIT_EMAIL: ${{ vars.AUR_GIT_EMAIL }}
+          GIT_SSH_COMMAND: ssh -i /home/aur-builder/.ssh/id_ed25519 -o BatchMode=yes -o StrictHostKeyChecking=yes
+        run: runuser -u aur-builder -- node scripts/publish-aur.mjs "$AUR_VARIANT"

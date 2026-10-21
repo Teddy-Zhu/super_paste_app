@@ -33,7 +33,8 @@ class AutoStartManager {
         },
 
         name: this.appName,
-        path: process.execPath
+        // 系统 Electron 启动时，自启必须指向应用的启动脚本。
+        path: process.env.SUPER_PASTE_EXECUTABLE || process.execPath
       })
       // this.autoLauncher.opts.appName = this.appName
     }

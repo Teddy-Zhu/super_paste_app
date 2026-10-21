@@ -1,5 +1,7 @@
-import { resolve } from 'path'
+import { dirname, join, resolve } from 'node:path'
+import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs'
 import { defineConfig } from 'electron-vite'
+import type { Plugin } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import MetaLayouts from 'vite-plugin-vue-meta-layouts'
 import AutoImport from 'unplugin-auto-import/vite'
@@ -7,6 +9,53 @@ import Components from 'unplugin-vue-components/vite'
 import VueRouter from 'unplugin-vue-router/vite'
 import Icons from 'unplugin-icons/vite'
 import { useXWayland } from './src/main/system/session'
+
+function bundledLicenses(): Plugin {
+  return {
+    name: 'bundled-dependency-licenses',
+    generateBundle(_options, bundle) {
+      const packages = new Set<string>()
+      for (const id of this.getModuleIds()) {
+        if (
+          id.startsWith('\0') ||
+          !id.includes('/node_modules/') ||
+          this.getModuleInfo(id)?.isExternal
+        )
+          continue
+        let directory = dirname(id.split('?')[0])
+        while (directory.includes('/node_modules/')) {
+          const manifest = join(directory, 'package.json')
+          if (existsSync(manifest) && JSON.parse(readFileSync(manifest, 'utf8')).name) {
+            packages.add(directory)
+            break
+          }
+          directory = dirname(directory)
+        }
+      }
+      const notices = [...packages].sort().map((directory) => {
+        const manifest = JSON.parse(readFileSync(join(directory, 'package.json'), 'utf8'))
+        const licenses = readdirSync(directory)
+          .filter((name) => /^(licen[cs]e|copying|notice)(?:[.-]|$)/i.test(name))
+          .filter((name) => statSync(join(directory, name)).isFile())
+          .sort()
+          .map((name) => readFileSync(join(directory, name), 'utf8'))
+        return `${manifest.name}@${manifest.version} (${manifest.license || 'see upstream'})\n${licenses.join('\n')}`
+      })
+      if (!notices.length) return
+      // Worker 构建也会执行此插件，按入口命名以免互相覆盖许可证。
+      const entry = Object.values(bundle)
+        .filter((output) => output.type === 'chunk' && output.isEntry)
+        .map((output) => output.name)
+        .sort()
+        .join('-')
+      this.emitFile({
+        type: 'asset',
+        fileName: `THIRD_PARTY_LICENSES-${entry}.txt`,
+        source: notices.join('\n\n----------------------------------------\n\n')
+      })
+    }
+  }
+}
 
 const alias = {
   '@': resolve('src/renderer/src'),
@@ -27,7 +76,10 @@ if (useXWayland) {
 export default defineConfig({
   main: {
     resolve: { alias },
+    plugins: [bundledLicenses()],
     build: {
+      // 纯 JS 依赖放在 devDependencies，内联后不再重复复制整包。
+      minify: 'esbuild',
       rollupOptions: {
         output: {
           // CommonJS 加载 ESM 依赖时，需要解包默认导出。

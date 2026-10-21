@@ -1,0 +1,4 @@
+#!/bin/sh
+export SUPER_PASTE_EXECUTABLE=/usr/bin/super-paste
+export ELECTRON_FORCE_IS_PACKAGED=1
+exec /usr/bin/electron44 /usr/lib/super-paste/app.asar "$@"

@@ -4,7 +4,7 @@
  * 使用 qrcode 生成二维码
  */
 
-import { Jimp } from 'jimp'
+import { Jimp } from '../utils/image'
 import QRCode from 'qrcode'
 import QrCode from 'qrcode-reader'
 import logger from '../utils/logger'

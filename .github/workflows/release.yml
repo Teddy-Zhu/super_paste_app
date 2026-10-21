@@ -1,0 +1,124 @@
+name: Build and release
+
+on:
+  workflow_dispatch:
+    inputs:
+      platforms:
+        description: Platforms to build
+        type: choice
+        default: linux
+        options: [linux, win, mac, all]
+      prerelease:
+        description: Mark as a prerelease
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    outputs:
+      matrix: ${{ steps.release.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          package-manager-cache: false
+      - id: release
+        name: Prepare version and complete release notes
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          RELEASE_PLATFORMS: ${{ inputs.platforms }}
+        run: node scripts/github-release.mjs prepare
+      - uses: actions/upload-artifact@v7
+        with:
+          name: release-info
+          path: release-info/
+          if-no-files-found: error
+
+  build:
+    needs: prepare
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.prepare.outputs.matrix) }}
+    runs-on: ${{ matrix.runner }}
+    env:
+      CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+      ONNXRUNTIME_NODE_INSTALL: skip
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          package-manager-cache: false
+      - name: Build Linux in the compatibility container
+        if: matrix.platform == 'linux'
+        run: node scripts/build-linux-portable.mjs
+      - name: Install dependencies
+        if: matrix.platform != 'linux'
+        shell: bash
+        run: |
+          corepack enable pnpm
+          corepack prepare pnpm@11.4.0 --activate
+          pnpm install --frozen-lockfile
+      - name: Build Windows or macOS
+        if: matrix.platform != 'linux'
+        shell: bash
+        run: |
+          pnpm run build
+          pnpm exec electron-builder --${{ matrix.platform }} --${{ matrix.arch }} --publish never
+      - uses: actions/upload-artifact@v7
+        with:
+          name: build-${{ matrix.platform }}-${{ matrix.arch }}
+          compression-level: 0
+          if-no-files-found: error
+          path: |
+            dist/*.deb
+            dist/*.pacman
+            dist/*.AppImage
+            dist/*.exe
+            dist/*.dmg
+            dist/*.zip
+
+  publish:
+    needs: [prepare, build]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          package-manager-cache: false
+      - uses: actions/download-artifact@v8
+        with:
+          name: release-info
+          path: release-info
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: build-*
+          merge-multiple: true
+          path: release-assets
+      - name: Upload installers and publish the release
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          RELEASE_PRERELEASE: ${{ inputs.prerelease }}
+        run: node scripts/github-release.mjs publish

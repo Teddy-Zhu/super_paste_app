@@ -1,0 +1,10 @@
+.git
+node_modules
+dist
+out
+packages/*/target
+packages/*/*.node
+*.log*
+.eslintcache
+release-info
+release-assets
