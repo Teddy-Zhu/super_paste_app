@@ -61,7 +61,7 @@ export class SystemIntegrationService {
 
   /**
    * 同步自启状态
-   * 检查配置中的自启设置与系统实际状态是否一致，如果不一致则同步
+   * 同步配置与系统自启状态，并在 Linux 启用自启时刷新桌面条目
    */
   private static async syncAutoStartStatus(): Promise<void> {
     try {
@@ -72,8 +72,12 @@ export class SystemIntegrationService {
 
       logger.debug(`[主进程] 自启状态检查 - 配置: ${configuredAutoStart}, 实际: ${actualAutoStart}`)
 
-      if (configuredAutoStart !== actualAutoStart) {
-        logger.debug(`[主进程] 自启状态不一致，正在同步到配置状态: ${configuredAutoStart}`)
+      // 已启用的 Linux 条目也需要刷新，以更新图标名称和启动路径。
+      if (
+        configuredAutoStart !== actualAutoStart ||
+        (process.platform === 'linux' && configuredAutoStart)
+      ) {
+        logger.debug(`[主进程] 正在同步自启配置: ${configuredAutoStart}`)
 
         const success = await autoStartManager.setEnabled(configuredAutoStart)
 

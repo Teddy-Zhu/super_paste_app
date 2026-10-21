@@ -10,7 +10,7 @@ import logger from '../utils/logger'
 class AutoStartManager {
   private autoLauncher: AutoLaunch | null = null
   private readonly appName: string = 'Super Paste'
-  private readonly packageName: string = 'super_paste_app'
+  private readonly linuxIconName: string = 'com.v2dawn.sp'
 
   private readonly isUnix: boolean =
     process.platform === 'linux' ||
@@ -28,7 +28,7 @@ class AutoStartManager {
             useLaunchAgent: true
           },
           linux: {
-            icon: this.packageName
+            icon: this.linuxIconName
           }
         },
 
