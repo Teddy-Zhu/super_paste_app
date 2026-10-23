@@ -15,6 +15,7 @@ export class OCRTaskQueue {
   constructor(
     private readonly run: (job: OCRJob) => Promise<void>,
     private readonly onStatus: (status: OCRTaskStatus) => void,
+    private readonly onIdle: () => void,
     private readonly limit = 10000
   ) {}
 
@@ -61,6 +62,7 @@ export class OCRTaskQueue {
       if (!job.records.size) this.jobs.delete(job.imageHash)
     }
     this.pending = this.pending.filter((job) => job.records.size)
+    if (!this.hasJobs) this.onIdle()
   }
 
   public failPending(error: string): void {
@@ -69,6 +71,7 @@ export class OCRTaskQueue {
       this.jobs.delete(job.imageHash)
     }
     this.pending = []
+    if (!this.hasJobs) this.onIdle()
   }
 
   private drain(): void {
@@ -95,6 +98,7 @@ export class OCRTaskQueue {
         this.active = undefined
         this.running = null
         this.drain()
+        if (!this.hasJobs) this.onIdle()
       })
   }
 }

@@ -24,7 +24,6 @@ const defaultSyncPreferences = {
   provider: '',
   interval: 30 * 60000,
   direction: 'bidirectional',
-  configOnly: false,
   params: {
     webdav: {
       serverUrl: '',

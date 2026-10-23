@@ -91,25 +91,6 @@ class ClipboardManager extends BaseWorkerManager {
         logger.error('[OCR] 保存 AI 用量失败:', error)
       }
     })
-
-    // 监听清理检查请求事件
-    // 注意：清理器已优化为直接使用 Worker，不再需要事件转发
-    // this.on('cleanup-check-required', (data: { reason: string; maxHistorySize: number }) => {
-    //   // 转发给清理器处理
-    // })
-
-    // 监听清理完成事件，直接更新缓存
-    // 注意：清理器已优化为直接使用 Worker，不再需要事件转发
-    // clipboardHistoryCleaner.on(
-    //   'cleanup-completed',
-    //   (data: { stats: any; deletedRecordIds?: string[] }) => {
-    //     logger.info('[剪贴板管理器] 收到清理完成事件:', data.stats)
-    //     // 直接通知 clipboard-manager worker 更新缓存
-    //     if (data.deletedRecordIds && data.deletedRecordIds.length > 0) {
-    //       this.notifyWorkerCacheUpdate(data.deletedRecordIds)
-    //     }
-    //   }
-    // )
   }
 
   /**
@@ -176,13 +157,6 @@ class ClipboardManager extends BaseWorkerManager {
       }
     }
   }
-
-  // notifyWorkerCacheUpdate 方法已弃用，因为清理器不再通过主线程通知
-  // private async notifyWorkerCacheUpdate(deletedIds: string[]): Promise<void> {
-  //   if (this.isRunning()) {
-  //     await this.safeCall('syncDeletedRecordsByIds', '通知 Worker 缓存更新失败', undefined, deletedIds)
-  //   }
-  // }
 
   /**
    * 重写基类方法来处理来自 Worker 的请求

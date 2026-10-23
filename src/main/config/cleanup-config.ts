@@ -18,7 +18,7 @@ export class CleanupConfigManager {
       maxKeepTime,
       maxHistorySize,
       cleanupInterval: 60 * 60 * 1000, // 1小时
-      enableAutoCleanup: maxKeepTime !== -1,
+      enableAutoCleanup: maxKeepTime > 0 || maxHistorySize > 0,
       enableCountBasedCleanup: true
     }
   }

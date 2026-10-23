@@ -35,6 +35,7 @@ import { OVERLAY_LABELS } from '@renderer/constants/desktop-ui'
 const overlayContentRef = ref<HTMLElement>()
 const clipboardScrollRef = ref<HTMLElement>()
 const searchContainerRef = ref<HTMLElement>()
+const searchInputRef = ref<HTMLInputElement>()
 const tabsContainerRef = ref<HTMLElement>()
 
 // ==================== 核心状态 ====================
@@ -42,6 +43,32 @@ const clipboardHistory = shallowRef<ClipboardItem[]>([])
 const clipboardApps = shallowRef<Record<string, AppInfo>>({})
 const ocrStatuses = ref<Record<string, OCRTaskStatus>>({})
 const selectedIndex = ref(0)
+const previewsActive = ref(true)
+let previewIdleTimer: ReturnType<typeof setTimeout> | undefined
+let ocrExpiryTimer: ReturnType<typeof setInterval> | undefined
+const ocrErrorsExpireAt = new Map<string, number>()
+
+const removeOCRStatus = (id: string): void => {
+  delete ocrStatuses.value[id]
+  ocrErrorsExpireAt.delete(id)
+}
+const pruneOCRStatuses = (): void => {
+  const ids = new Set(clipboardHistory.value.map((item) => item.id))
+  for (const id of Object.keys(ocrStatuses.value)) {
+    if (!ids.has(id) || (ocrErrorsExpireAt.get(id) ?? Infinity) <= Date.now()) removeOCRStatus(id)
+  }
+}
+const retainPreviews = (): void => {
+  clearTimeout(previewIdleTimer)
+  previewIdleTimer = undefined
+  previewsActive.value = true
+}
+const schedulePreviewRelease = (): void => {
+  clearTimeout(previewIdleTimer)
+  previewIdleTimer = setTimeout(() => {
+    previewsActive.value = false
+  }, 2 * 60000)
+}
 
 // ==================== 快捷选择状态 ====================
 const isQuickSelectMode = ref(false)
@@ -55,7 +82,10 @@ const eventManager = useEventManager()
 // ==================== 监听器状态管理 ====================
 let transitionId = 0
 let animationVersion = 0
+let searchAnimationVersion = 0
 let historyRequestId = 0
+let appliedHistoryFilterKey: string | null = null
+let pendingHistoryLoad: { filterKey: string; promise: Promise<boolean> } | undefined
 let overlayVisible = false
 let preparedOpening: { id: number; animation: AnimationControls } | null = null
 let closingTransitionId: number | null = null
@@ -114,21 +144,39 @@ const isSideLayout = computed(() => {
 
 // ==================== 剪贴板历史加载 ====================
 
+const getHistoryFilterKey = (text: string, tagIds: string[]): string => {
+  return JSON.stringify([text.trim(), [...tagIds].sort()])
+}
+
+const getCurrentHistoryFilterKey = (): string => {
+  return getHistoryFilterKey(getCurrentSearchText(), getActiveTagIds())
+}
+
 /**
  * 获取剪贴板历史记录（带类型验证和错误处理）
  */
-const loadClipboardHistory = async (options?: ClipboardHistoryQueryOptions): Promise<void> => {
+const queryClipboardHistory = async (options: ClipboardHistoryQueryOptions): Promise<boolean> => {
   const requestId = ++historyRequestId
   try {
     const defaultOptions: ClipboardHistoryQueryOptions = {
       limit: 200,
+      searchText: getCurrentSearchText(),
+      tagIds: getActiveTagIds(),
       orderBy: 'last_used',
       orderDirection: 'DESC'
     }
 
     const queryOptions = { ...defaultOptions, ...options }
+    queryOptions.searchText = queryOptions.searchText?.trim() ?? ''
+    const filterKey = getHistoryFilterKey(queryOptions.searchText ?? '', queryOptions.tagIds ?? [])
     const result = await clipboard.searchHistory(queryOptions)
-    if (requestId !== historyRequestId) return
+    // 输入一变化就拒绝旧筛选的响应，不等待下一次防抖查询启动。
+    if (
+      requestId !== historyRequestId ||
+      filterKey !== getCurrentHistoryFilterKey() ||
+      searchAndNavManager.isComposing.value
+    )
+      return false
     if (!Array.isArray(result.items)) {
       throw new OverlayError(
         '剪贴板历史数据格式无效：不是数组',
@@ -137,26 +185,50 @@ const loadClipboardHistory = async (options?: ClipboardHistoryQueryOptions): Pro
       )
     }
 
+    const selectedId = clipboardHistory.value[selectedIndex.value]?.id
+    const filterChanged = appliedHistoryFilterKey !== filterKey
     const reconciled = reconcileClipboardHistory(
       { items: clipboardHistory.value, apps: clipboardApps.value },
       { items: result.items.filter(isClipboardItem), apps: result.apps }
     )
     clipboardApps.value = reconciled.apps
-    if (reconciled.items === clipboardHistory.value) return
-    clipboardHistory.value = reconciled.items
-
-    if (selectedIndex.value >= reconciled.items.length) {
-      selectedIndex.value = Math.max(0, reconciled.items.length - 1)
+    const validIds = new Set(reconciled.items.map((item) => item.id))
+    for (const id of Object.keys(ocrStatuses.value)) {
+      if (!validIds.has(id)) removeOCRStatus(id)
     }
+    const preservedIndex = reconciled.items.findIndex((item) => item.id === selectedId)
+    selectedIndex.value = filterChanged
+      ? 0
+      : preservedIndex >= 0
+        ? preservedIndex
+        : Math.max(0, Math.min(selectedIndex.value, reconciled.items.length - 1))
+    appliedHistoryFilterKey = filterKey
+    if (reconciled.items === clipboardHistory.value && !filterChanged) return true
+    clipboardHistory.value = reconciled.items
 
     nextTick(() => {
       scrollAndTagsManager.initializeScrollbar()
       scrollAndTagsManager.scrollToSelectedItem()
     })
+    return true
   } catch (error) {
-    if (requestId !== historyRequestId) return
+    if (requestId !== historyRequestId) return false
     console.error('获取剪贴板历史失败:', error)
+    return false
   }
+}
+
+const loadClipboardHistory = (options?: ClipboardHistoryQueryOptions): Promise<boolean> => {
+  const filterKey = getHistoryFilterKey(
+    options?.searchText ?? getCurrentSearchText(),
+    options?.tagIds ?? getActiveTagIds()
+  )
+  const promise = queryClipboardHistory(options ?? {})
+  pendingHistoryLoad = { filterKey, promise }
+  promise.finally(() => {
+    if (pendingHistoryLoad?.promise === promise) pendingHistoryLoad = undefined
+  })
+  return promise
 }
 
 const getActiveTagIds = (): string[] => {
@@ -381,6 +453,9 @@ const closeWindow = async (): Promise<void> => {
   closingTransitionId = id
   preparedOpening = null
   const version = ++animationVersion
+  searchAndNavManager.cancelPendingActions()
+  ++historyRequestId
+  pendingHistoryLoad = undefined
   const startedAt = performance.now()
   hideDropdownMenu()
   hideContextMenu()
@@ -411,48 +486,30 @@ const closeWindow = async (): Promise<void> => {
   send('close-overlay-window', id)
 }
 
-/**
- * 切换搜索框显示状态
- * @param withBuffer 是否应用输入缓冲区内容
- * @param force 是否强制执行（忽略动画状态检查）
- */
-const toggleSearch = async (withBuffer = false, force = false): Promise<void> => {
+/** 切换搜索框；收起时同时清除筛选。 */
+const toggleSearch = async (): Promise<void> => {
   try {
-    if (!force && animationManager.isSearchAnimating.value) {
-      return
-    }
-
     if (animationManager.isSearchVisible.value) {
-      await hideSearchBox()
+      await Promise.all([searchAndNavManager.clearSearch(), hideSearchBox()])
     } else {
-      await showSearchBox(withBuffer)
+      await showSearchBox()
     }
   } catch (error) {
     console.error('[搜索框] 切换失败:', error)
     // 重置动画状态，防止卡死
     animationManager.setSearchAnimating(false)
-    animationManager.setOpeningSearch(false)
     throw new OverlayError('搜索框切换动画失败', OverlayErrorCode.ANIMATION_FAILED, {
-      withBuffer,
-      force,
       originalError: error
     })
   }
 }
 
-/**
- * 隐藏搜索框
- * @param clearText 是否清空搜索文本
- */
-const hideSearchBox = async (clearText = false): Promise<void> => {
-  if (clearText) {
-    searchAndNavManager.resetSearchState()
-    if (scrollAndTagsManager.activeTagId.value !== 'all') {
-      await scrollAndTagsManager.switchTag('all')
-    }
-  }
-
+/** 隐藏搜索框，输入控件仍可接收下一次输入。 */
+const hideSearchBox = async (): Promise<void> => {
+  const searchVersion = ++searchAnimationVersion
+  animationManager.setSearchVisible(false)
   animationManager.setSearchAnimating(true)
+  searchAndNavManager.focusSearchInput()
 
   const version = animationVersion
   const { play: playSearchCollapse, finished: searchCollapseFinished } =
@@ -465,24 +522,23 @@ const hideSearchBox = async (clearText = false): Promise<void> => {
   playTabsShow()
 
   await Promise.all([searchCollapseFinished, tabsShowFinished])
-  if (version !== animationVersion) return
+  if (version !== animationVersion || searchVersion !== searchAnimationVersion) return
 
-  animationManager.setSearchVisible(false)
   animationManager.setSearchAnimating(false)
 }
 
-/**
- * 显示搜索框
- * @param withBuffer 是否应用输入缓冲区内容
- */
-const showSearchBox = async (withBuffer: boolean): Promise<void> => {
-  animationManager.setOpeningSearch(true)
+/** 展开只负责视觉变化，输入不等待动画完成。 */
+const showSearchBox = async (): Promise<void> => {
+  if (animationManager.isSearchVisible.value) return
+  const searchVersion = ++searchAnimationVersion
+  const version = animationVersion
   animationManager.setSearchAnimating(true)
   animationManager.setSearchVisible(true)
 
   await nextTick()
+  if (version !== animationVersion || searchVersion !== searchAnimationVersion) return
+  searchAndNavManager.focusSearchInput()
 
-  const version = animationVersion
   const { play: playTabsHide, finished: tabsHideFinished } =
     animationManager.createTabsHideAnimation()
   const { play: playSearchExpand, finished: searchExpandFinished } =
@@ -493,49 +549,48 @@ const showSearchBox = async (withBuffer: boolean): Promise<void> => {
   playSearchExpand()
 
   await Promise.all([tabsHideFinished, searchExpandFinished])
-  if (version !== animationVersion) return
+  if (version !== animationVersion || searchVersion !== searchAnimationVersion) return
 
   animationManager.setSearchAnimating(false)
-  animationManager.setOpeningSearch(false)
-
-  if (withBuffer) {
-    searchAndNavManager.applyInputBuffer()
-  }
-
-  searchAndNavManager.focusSearchInput()
 }
 
 // ==================== 搜索回调函数 ====================
-const performSearchCallback = async (text: string): Promise<void> => {
-  try {
-    const options: ClipboardHistoryQueryOptions = {
-      searchText: text.trim(),
-      tagIds: getActiveTagIds(),
-      limit: 50,
-      orderBy: 'last_used' as const,
-      orderDirection: 'DESC' as const
-    }
+const performSearchCallback = async (text: string): Promise<boolean> => {
+  const filterKey = getHistoryFilterKey(text, getActiveTagIds())
+  let promise =
+    pendingHistoryLoad?.filterKey === filterKey
+      ? pendingHistoryLoad.promise
+      : loadClipboardHistory({
+          searchText: text.trim(),
+          tagIds: getActiveTagIds(),
+          limit: 50,
+          orderBy: 'last_used',
+          orderDirection: 'DESC'
+        })
 
-    await loadClipboardHistory(options)
-  } catch (error) {
-    console.error('[前端] 搜索执行失败:', error)
-    throw new OverlayError('搜索操作失败', OverlayErrorCode.SEARCH_FAILED, {
-      searchText: text,
-      originalError: error
-    })
+  // 后台刷新可接替同一筛选的查询，确认操作继续等待最新请求。
+  while (true) {
+    const applied = await promise
+    if (applied || filterKey !== getCurrentHistoryFilterKey() || !overlayVisible) return applied
+    const latest = pendingHistoryLoad
+    if (!latest || latest.filterKey !== filterKey || latest.promise === promise) return false
+    promise = latest.promise
   }
 }
 
 // ==================== 初始化搜索和导航管理 ====================
-const searchAndNavManager = useSearchAndNavigation(
+const searchAndNavManager = useSearchAndNavigation({
+  searchInput: searchInputRef,
   clipboardHistory,
   selectedIndex,
-  animationManager.isSearchVisible,
-  performSearchCallback,
-  restoreClipboardContent,
-  closeWindow,
-  toggleSearch
-)
+  isSearchVisible: animationManager.isSearchVisible,
+  isActive: () => overlayVisible && closingTransitionId === null,
+  areResultsCurrent: () => appliedHistoryFilterKey === getCurrentHistoryFilterKey(),
+  performSearch: performSearchCallback,
+  onRestoreClipboard: restoreClipboardContent,
+  onOpenSearch: showSearchBox,
+  onDismiss: () => handleCloseWindow()
+})
 
 // ==================== 初始化滚动和标签管理 ====================
 scrollAndTagsManager = useScrollAndTags(
@@ -543,7 +598,9 @@ scrollAndTagsManager = useScrollAndTags(
   clipboardHistory,
   selectedIndex,
   animationManager.currentAnimationState,
-  loadClipboardHistory,
+  async (options) => {
+    await loadClipboardHistory(options)
+  },
   () => searchAndNavManager.searchText.value || '',
   isSideLayout
 )
@@ -556,10 +613,14 @@ const prepareOpening = async (position: OverlayPosition, id: number): Promise<vo
     traceOverlay('ignored', { receivedId: id, reason: 'stale-prepare' })
     return
   }
+  retainPreviews()
   transitionId = id
   const version = ++animationVersion
   const startedAt = performance.now()
   overlayVisible = false
+  searchAndNavManager.resetSearchState()
+  ++historyRequestId
+  pendingHistoryLoad = undefined
   closingTransitionId = null
   animationManager.resetOverlayState()
   applyOverlayPosition(position)
@@ -596,6 +657,7 @@ const triggerSlideInAnimation = async (id: number): Promise<void> => {
   }
   transitionId = id
   overlayVisible = true
+  retainPreviews()
   closingTransitionId = null
   const version = ++animationVersion
   const startedAt = performance.now()
@@ -607,6 +669,7 @@ const triggerSlideInAnimation = async (id: number): Promise<void> => {
   animationManager.setAnimationState(AnimationState.SLIDING_IN)
   traceOverlay('opening')
   animation.play()
+  searchAndNavManager.focusSearchInput()
   const finished = await animation.finished
   if (!finished || version !== animationVersion || id !== transitionId) {
     traceOverlay('cancelled', { receivedId: id, reason: 'open-superseded' })
@@ -629,9 +692,9 @@ const handleCloseWindow = async (force = false, id = transitionId): Promise<void
     return
   }
   if (animationManager.isSearchVisible.value) {
-    if (searchAndNavManager.searchText.value.trim()) {
-      searchAndNavManager.resetSearchState()
-      await performSearchCallback('')
+    if (searchAndNavManager.searchText.value) {
+      searchAndNavManager.focusSearchInput()
+      await searchAndNavManager.clearSearch()
     } else {
       await hideSearchBox()
     }
@@ -646,6 +709,15 @@ const handleCloseWindow = async (force = false, id = transitionId): Promise<void
  * 处理键盘按下事件
  */
 const handleKeyboardEvent = (event: KeyboardEvent): void => {
+  // 输入法组词时，方向键、回车和 Escape 由输入法处理。
+  if (
+    event.defaultPrevented ||
+    event.isComposing ||
+    event.keyCode === 229 ||
+    searchAndNavManager.isComposing.value
+  )
+    return
+
   // 聚焦按钮时保留 Enter / Space 的原生激活行为，避免误粘贴历史内容。
   if (
     event.target instanceof Element &&
@@ -664,14 +736,9 @@ const handleKeyboardEvent = (event: KeyboardEvent): void => {
     const numberKey = Number(event.key)
 
     if (!isNaN(numberKey) && numberKey >= 1 && numberKey <= 9) {
-      const targetIndex = numberKey - 1
-
-      if (targetIndex < clipboardHistory.value.length) {
-        const targetItem = clipboardHistory.value[targetIndex]
-        restoreClipboardContent(targetItem.id)
-        event.preventDefault()
-        return
-      }
+      event.preventDefault()
+      if (!event.repeat) searchAndNavManager.restoreSelectedItem(numberKey - 1)
+      return
     }
 
     if (!isQuickSelectMode.value) {
@@ -767,12 +834,14 @@ onMounted(async () => {
         closingTransitionId = null
         preparedOpening = null
         ++historyRequestId
+        pendingHistoryLoad = undefined
         historyDirty = true
         throttledLoadClipboardHistory.cancel()
         isQuickSelectMode.value = false
         hideDropdownMenu()
         searchAndNavManager.resetSearchState()
         animationManager.resetOverlayState()
+        schedulePreviewRelease()
         traceOverlay('hidden')
       })
     )
@@ -868,12 +937,22 @@ onMounted(async () => {
     ipcUnsubscribers.push(removeOCRUpdateListener)
     ipcUnsubscribers.push(
       onSimple('ocr:task-status', (status: OCRTaskStatus) => {
-        if (status.state === 'completed' || status.state === 'cancelled')
-          delete ocrStatuses.value[status.contentId]
-        else ocrStatuses.value[status.contentId] = status
+        if (status.state === 'completed' || status.state === 'cancelled') {
+          removeOCRStatus(status.contentId)
+          return
+        }
+        if (status.state === 'error') {
+          if (!clipboardHistory.value.some((item) => item.id === status.contentId)) return
+          ocrErrorsExpireAt.set(status.contentId, Date.now() + 2 * 60000)
+        } else ocrErrorsExpireAt.delete(status.contentId)
+        ocrStatuses.value[status.contentId] = status
+        const ids = Object.keys(ocrStatuses.value)
+        for (const id of ids.slice(0, Math.max(0, ids.length - 500))) removeOCRStatus(id)
       })
     )
 
+    ocrExpiryTimer = setInterval(pruneOCRStatuses, 60000)
+    schedulePreviewRelease()
     const preloadPromises = [
       loadClipboardHistory({
         tagIds: [],
@@ -897,6 +976,8 @@ onMounted(async () => {
  * 组件卸载时的清理逻辑
  */
 onUnmounted(() => {
+  clearTimeout(previewIdleTimer)
+  clearInterval(ocrExpiryTimer)
   ++animationVersion
   try {
     throttledLoadClipboardHistory.cancel()
@@ -940,7 +1021,7 @@ const isFilteredHistory = computed(
           :title="OVERLAY_LABELS.search"
           :aria-label="OVERLAY_LABELS.search"
           :aria-expanded="animationManager.isSearchVisible.value"
-          @click="toggleSearch(false)"
+          @click="toggleSearch"
         >
           <svg
             width="18"
@@ -957,20 +1038,25 @@ const isFilteredHistory = computed(
 
         <!-- 搜索输入框 -->
         <div
-          v-show="animationManager.showSearchContainer.value"
           ref="searchContainerRef"
           class="search-container"
+          :class="{
+            'search-container--collapsed': !animationManager.showSearchContainer.value
+          }"
         >
           <input
+            ref="searchInputRef"
             type="text"
             class="search-input"
             :placeholder="OVERLAY_LABELS.searchPlaceholder"
             :aria-label="OVERLAY_LABELS.search"
             spellcheck="false"
             autocomplete="off"
+            :tabindex="animationManager.isSearchVisible.value ? 0 : -1"
             :value="searchAndNavManager.searchText.value"
             @input="searchAndNavManager.handleSearchInput"
-            @keydown.escape.stop.prevent="toggleSearch(false)"
+            @compositionstart="searchAndNavManager.handleCompositionStart"
+            @compositionend="searchAndNavManager.handleCompositionEnd"
           />
         </div>
 
@@ -1084,6 +1170,7 @@ const isFilteredHistory = computed(
               :key="item.id"
               v-memo="[
                 item,
+                previewsActive,
                 ocrStatuses[item.id],
                 index,
                 index === selectedIndex,
@@ -1092,6 +1179,7 @@ const isFilteredHistory = computed(
                 scrollAndTagsManager.activeTagId.value,
                 item.source_app ? clipboardApps[item.source_app] : undefined
               ]"
+              :previews-active="previewsActive"
               :item="item"
               :ocr-status="ocrStatuses[item.id]"
               :index="index"

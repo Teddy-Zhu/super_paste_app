@@ -33,7 +33,7 @@ export class MainWindowManager {
   /**
    * 创建主窗口
    */
-  createWindow(): void {
+  createWindow(showWhenReady = false): void {
     try {
       logger.debug('[主进程] 开始创建主窗口')
 
@@ -64,6 +64,10 @@ export class MainWindowManager {
       })
 
       this.setupEventHandlers()
+      // 按需重建时在首帧就绪后显示，启动时预创建的窗口仍保持隐藏。
+      if (showWhenReady) {
+        this.mainWindow.once('ready-to-show', () => this.showWindow())
+      }
       this.loadContent()
 
       // 在 macOS 上创建窗口后立即隐藏 dock
@@ -143,9 +147,11 @@ export class MainWindowManager {
     try {
       if (!this.mainWindow || this.mainWindow.isDestroyed()) {
         logger.debug('[主进程] 主窗口不存在或已销毁，创建新窗口')
-        this.createWindow()
+        this.createWindow(true)
         return
       }
+
+      this.restore()
 
       // 如果窗口存在但被隐藏，则显示它
       WindowUtils.safelyShowWindow(this.mainWindow)
@@ -156,7 +162,7 @@ export class MainWindowManager {
       logger.error('[主进程] 显示主窗口时发生错误:', error)
       // 尝试重新创建窗口
       try {
-        this.createWindow()
+        this.createWindow(true)
       } catch (createError) {
         logger.error('[主进程] 重新创建主窗口失败:', createError)
       }

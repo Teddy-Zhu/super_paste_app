@@ -1,3 +1,4 @@
+import appEventBus from '../utils/app-event-bus'
 import { ipcMain, app, BrowserWindow, shell } from 'electron'
 import type { IpcMainInvokeEvent } from 'electron'
 import clipboardManager from '../features/clipboard/manager/clipboard-manager'
@@ -943,6 +944,9 @@ class IpcManager {
       if (!(await autoStartManager.setEnabled(settings.autoStart)))
         throw new Error('设置自动启动失败')
       trayManager.updateMenu()
+    }
+    if (fields.has('maxHistorySize') || fields.has('maxKeepTime')) {
+      appEventBus.emit('clipboard:cleanup-config-changed')
     }
     if (fields.has('maxHistorySize')) {
       debounceExecution(

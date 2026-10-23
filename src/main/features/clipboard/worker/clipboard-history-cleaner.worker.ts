@@ -81,6 +81,7 @@ class ClipboardHistoryCleanerWorker extends BaseWorker {
     // 更新配置
     if (config) {
       this.config = { ...this.config, ...config }
+      this.refreshCleanupEnabled()
 
       // 如果启用了自动清理，立即启动
       if (this.config.enableAutoCleanup) {
@@ -98,14 +99,13 @@ class ClipboardHistoryCleanerWorker extends BaseWorker {
     // 更新所有提供的配置项
     this.config = { ...this.config, ...newConfig }
 
-    // 自动设置 enableAutoCleanup 基于 maxKeepTime
-    if ('maxKeepTime' in newConfig) {
-      this.config.enableAutoCleanup = this.config.maxKeepTime !== -1
-    }
+    this.refreshCleanupEnabled()
 
     // 如果关键配置发生变化，重新启动自动清理
     const shouldRestart =
       oldConfig.maxKeepTime !== this.config.maxKeepTime ||
+      oldConfig.maxHistorySize !== this.config.maxHistorySize ||
+      oldConfig.enableCountBasedCleanup !== this.config.enableCountBasedCleanup ||
       oldConfig.enableAutoCleanup !== this.config.enableAutoCleanup ||
       oldConfig.cleanupInterval !== this.config.cleanupInterval
 
@@ -117,9 +117,13 @@ class ClipboardHistoryCleanerWorker extends BaseWorker {
     }
   }
 
-  /**
-   * 获取当前配置
-   */
+  private refreshCleanupEnabled(): void {
+    this.config.enableAutoCleanup =
+      this.config.maxKeepTime > 0 ||
+      (this.config.enableCountBasedCleanup && this.config.maxHistorySize > 0)
+  }
+
+  /** 获取当前配置。 */
   public getConfig(): CleanupConfig {
     return { ...this.config }
   }
@@ -228,20 +232,25 @@ class ClipboardHistoryCleanerWorker extends BaseWorker {
         if (currentCount > this.config.maxHistorySize) {
           const excessCount = currentCount - this.config.maxHistorySize
 
-          // 只获取需要删除的无标签记录 ID，避免删除有标签的记录
-          const recordsToDelete = clipboardDatabase.queryRecordIdsAndHashesWithoutTags({
-            limit: excessCount,
-            offset: this.config.maxHistorySize,
-            orderBy: 'last_used',
-            orderDirection: 'DESC'
-          })
+          const db = clipboardDatabase.getDatabase()
+          if (!db) throw new Error('数据库未初始化')
+          db.transaction(() => {
+            // 只获取需要删除的无标签记录 ID，避免删除有标签的记录
+            const recordsToDelete = clipboardDatabase.queryRecordIdsAndHashesWithoutTags({
+              limit: excessCount,
+              offset: this.config.maxHistorySize,
+              orderBy: 'last_used',
+              orderDirection: 'DESC'
+            })
 
-          // 删除这些记录（无需解绑标签，因为这些记录没有标签）
-          for (const record of recordsToDelete) {
-            clipboardDatabase.deleteRecord(record.content_id)
-            deletedRecordIds.push(record.content_id)
-            deletedCount++
-          }
+            // 删除这些记录（无需解绑标签，因为这些记录没有标签）
+            for (const record of recordsToDelete) {
+              if (clipboardDatabase.deleteRecord(record.content_id)) {
+                deletedRecordIds.push(record.content_id)
+                deletedCount++
+              }
+            }
+          }).immediate()
         }
       }
 
@@ -295,52 +304,8 @@ class ClipboardHistoryCleanerWorker extends BaseWorker {
    * 检查是否需要基于数量的清理
    */
   public async checkCountBasedCleanup(maxHistorySize: number): Promise<void> {
-    if (!this.config.enableCountBasedCleanup || maxHistorySize <= 0) {
-      return
-    }
-
-    try {
-      const currentCount = clipboardDatabase.getRecordCount()
-
-      if (currentCount > maxHistorySize) {
-        const excessCount = currentCount - maxHistorySize
-
-        // 只获取需要删除的无标签记录 ID，避免删除有标签的记录
-        const recordsToDelete = clipboardDatabase.queryRecordIdsAndHashesWithoutTags({
-          limit: excessCount,
-          offset: maxHistorySize,
-          orderBy: 'last_used',
-          orderDirection: 'DESC'
-        })
-
-        const deletedIds: string[] = []
-
-        // 删除这些记录（无需解绑标签，因为这些记录没有标签）
-        for (const record of recordsToDelete) {
-          clipboardDatabase.deleteRecord(record.content_id)
-          deletedIds.push(record.content_id)
-        }
-
-        if (deletedIds.length > 0) {
-          logger.info(
-            `[历史记录清理器 Worker] 基于数量清理完成，删除了 ${deletedIds.length} 条记录`
-          )
-
-          // 通知清理完成，只传递删除的记录 ID
-          this.sendEvent('cleanup-completed', {
-            stats: {
-              totalRecords: currentCount,
-              expiredRecords: 0,
-              deletedRecords: deletedIds.length,
-              cleanupTime: 0
-            },
-            deletedRecordIds: deletedIds
-          })
-        }
-      }
-    } catch (error) {
-      logger.error('[历史记录清理器 Worker] 基于数量的清理失败:', error)
-    }
+    this.updateConfig({ maxHistorySize })
+    await this.performCleanup()
   }
 
   /**

@@ -45,6 +45,7 @@ class ClipboardManagerWorker extends BaseWorker {
   private ocrInitializing: Promise<boolean> | null = null
   private ocrConfigHash: string = ''
   private ocrQueue: OCRTaskQueue
+  private ocrIdleTimer: NodeJS.Timeout | undefined
   private suspendedModels = new Set<string>()
 
   constructor() {
@@ -73,7 +74,8 @@ class ClipboardManagerWorker extends BaseWorker {
       (status) => {
         if (status.state === 'error') logger.error('[OCR] 后台任务失败:', status.error)
         this.sendEvent('ocr:task-status', status)
-      }
+      },
+      () => this.scheduleOCRRelease()
     )
   }
 
@@ -554,6 +556,7 @@ class ClipboardManagerWorker extends BaseWorker {
     try {
       const hash = createHash('sha256').update(record.content_image).digest('hex')
       const duplicate = this.ocrQueue.enqueue(hash, contentId, automatic)
+      clearTimeout(this.ocrIdleTimer)
       this.sendEvent('ocr-requested', undefined)
       return { success: true, message: duplicate ? 'OCR 已在队列中' : 'OCR 已加入后台队列' }
     } catch (error) {
@@ -584,24 +587,48 @@ class ClipboardManagerWorker extends BaseWorker {
     }
   }
 
+  private scheduleOCRRelease(): void {
+    clearTimeout(this.ocrIdleTimer)
+    if (this.ocrQueue.hasJobs || !ocrService.isRunning()) return
+    // 连续识别复用热模型；空闲五分钟后回收原生会话与整个 OCR 线程。
+    this.ocrIdleTimer = setTimeout(() => {
+      this.ocrIdleTimer = undefined
+      this.ocrUpdateQueue = this.ocrUpdateQueue
+        .then(async () => {
+          if (this.ocrQueue.hasJobs || this.ocrInitializing) return
+          await this.ocrQueue.pause()
+          if (this.ocrQueue.hasJobs) return
+          await ocrService.stop()
+          this.ocrConfigHash = ''
+        })
+        .catch((error) => logger.error('[OCR] 空闲资源回收失败:', error))
+    }, 5 * 60000)
+  }
+
   public async resumeOCR(): Promise<void> {
     while (true) {
       const update = this.ocrUpdateQueue
       await update
       if (update !== this.ocrUpdateQueue) continue
-      if (!this.config.enableLocalOCR && !this.ocrQueue.hasJobs) return
+      if (!this.config.enableLocalOCR && !this.ocrQueue.hasJobs) {
+        this.scheduleOCRRelease()
+        return
+      }
       if (this.config.ocrMode === 'local' && this.suspendedModels.has(this.config.ocrLocalModel))
         return
+      clearTimeout(this.ocrIdleTimer)
       const hash = this.buildOCRConfigHash()
       const initialized = await this.ensureOCRServiceInitialized()
       if (update !== this.ocrUpdateQueue || hash !== this.buildOCRConfigHash()) continue
       if (initialized) this.ocrQueue.resume()
       else this.ocrQueue.failPending(this.ocrInitializationError || 'OCR 服务初始化失败')
+      if (!this.ocrQueue.hasJobs) this.scheduleOCRRelease()
       return
     }
   }
 
   public async suspendOCRModel(id: unknown): Promise<void> {
+    clearTimeout(this.ocrIdleTimer)
     const model = getOCRModel(id)
     this.suspendedModels.add(model.id)
     if (this.config.ocrMode === 'local' && this.config.ocrLocalModel === model.id) {

@@ -12,10 +12,30 @@ import logger from '../utils/logger'
 export class WebDAVSyncProvider extends BaseSyncProvider {
   private client: WebDAVClient | null = null
   private webdavConfig: WebDAVConfig
+  private readonly requests = new Set<AbortController>()
 
   constructor(config: WebDAVConfig) {
     super(config)
     this.webdavConfig = config
+  }
+
+  private async request<T>(operation: (signal: AbortSignal) => Promise<T>): Promise<T> {
+    const controller = new AbortController()
+    this.requests.add(controller)
+    const configuredTimeout = this.webdavConfig.timeout
+    const timeout =
+      typeof configuredTimeout === 'number' &&
+      Number.isFinite(configuredTimeout) &&
+      configuredTimeout > 0
+        ? configuredTimeout
+        : 30000
+    const timer = setTimeout(() => controller.abort(new Error('WebDAV 请求超时')), timeout)
+    try {
+      return await operation(controller.signal)
+    } finally {
+      clearTimeout(timer)
+      this.requests.delete(controller)
+    }
   }
 
   name(): SyncProviderType {
@@ -61,7 +81,7 @@ export class WebDAVSyncProvider extends BaseSyncProvider {
     }
 
     try {
-      await this.client.getDirectoryContents('/')
+      await this.request((signal) => this.client!.getDirectoryContents('/', { signal }))
       logger.debug('[WebDAV同步] 连接测试成功')
       return true
     } catch (error) {
@@ -112,7 +132,9 @@ export class WebDAVSyncProvider extends BaseSyncProvider {
       await this.ensureRemoteDirectory(remoteDir)
 
       // 上传文件内容
-      await this.client.putFileContents(remotePath, fileContent)
+      await this.request((signal) =>
+        this.client!.putFileContents(remotePath, fileContent, { signal })
+      )
       logger.debug(`[WebDAV同步] 文件内容上传成功: ${remotePath}`)
       this.emitEvent('file-synced', {
         action: 'upload',
@@ -148,7 +170,9 @@ export class WebDAVSyncProvider extends BaseSyncProvider {
       await this.ensureLocalDirectory(localDir)
 
       // 下载文件
-      const fileContent = await this.client.getFileContents(remotePath)
+      const fileContent = await this.request((signal) =>
+        this.client!.getFileContents(remotePath, { signal })
+      )
       await fs.writeFile(localPath, fileContent as Buffer)
 
       logger.debug(`[WebDAV同步] 文件下载成功: ${remotePath} -> ${localPath}`)
@@ -175,7 +199,7 @@ export class WebDAVSyncProvider extends BaseSyncProvider {
     }
 
     try {
-      await this.client.deleteFile(remotePath)
+      await this.request((signal) => this.client!.deleteFile(remotePath, { signal }))
       logger.debug(`[WebDAV同步] 文件删除成功: ${remotePath}`)
       return true
     } catch (error) {
@@ -196,7 +220,9 @@ export class WebDAVSyncProvider extends BaseSyncProvider {
     const targetPath = remotePath || this.webdavConfig.remotePath
 
     try {
-      const files = (await this.client.getDirectoryContents(targetPath)) as FileStat[]
+      const files = (await this.request((signal) =>
+        this.client!.getDirectoryContents(targetPath, { signal })
+      )) as FileStat[]
       const fileInfos: SyncFileInfo[] = []
 
       for (const item of files) {
@@ -224,11 +250,7 @@ export class WebDAVSyncProvider extends BaseSyncProvider {
       return false
     }
 
-    try {
-      return await this.client.exists(remotePath)
-    } catch {
-      return false
-    }
+    return this.request((signal) => this.client!.exists(remotePath, { signal }))
   }
 
   /**
@@ -240,7 +262,9 @@ export class WebDAVSyncProvider extends BaseSyncProvider {
     }
 
     try {
-      const stat = (await this.client.stat(remotePath)) as FileStat
+      const stat = (await this.request((signal) =>
+        this.client!.stat(remotePath, { signal })
+      )) as FileStat
       if (stat.type === 'file') {
         return {
           path: stat.filename,
@@ -251,7 +275,7 @@ export class WebDAVSyncProvider extends BaseSyncProvider {
       return null
     } catch (error) {
       logger.error(`[WebDAV同步] 获取文件信息失败: ${remotePath}`, error)
-      return null
+      throw error
     }
   }
 
@@ -299,19 +323,19 @@ export class WebDAVSyncProvider extends BaseSyncProvider {
    * 执行上传同步
    */
   private async performUploadSync(): Promise<void> {
-    // 这里需要根据具体需求实现数据库和配置文件的上传逻辑
+    // 这里需要根据具体需求实现配置文件的上传逻辑
     // 暂时先实现基础框架
     logger.info('[WebDAV同步] 执行上传同步')
 
     // TODO: 实现具体的文件上传逻辑
-    // 例如: 上传数据库文件、配置文件等
+    // 例如: 上传配置文件
   }
 
   /**
    * 执行下载同步
    */
   private async performDownloadSync(): Promise<void> {
-    // 这里需要根据具体需求实现数据库和配置文件的下载逻辑
+    // 这里需要根据具体需求实现配置文件的下载逻辑
     logger.info('[WebDAV同步] 执行下载同步')
 
     // TODO: 实现具体的文件下载逻辑
@@ -337,10 +361,12 @@ export class WebDAVSyncProvider extends BaseSyncProvider {
     }
 
     try {
-      const exists = await this.client.exists(remotePath)
+      const exists = await this.request((signal) => this.client!.exists(remotePath, { signal }))
       if (!exists) {
         // 目录不存在，尝试创建
-        await this.client.createDirectory(remotePath, { recursive: true })
+        await this.request((signal) =>
+          this.client!.createDirectory(remotePath, { recursive: true, signal })
+        )
         logger.debug(`[WebDAV同步] 创建远程目录: ${remotePath}`)
       }
     } catch (error) {
@@ -377,6 +403,8 @@ export class WebDAVSyncProvider extends BaseSyncProvider {
    * 销毁 WebDAV 客户端
    */
   destroy(): void {
+    for (const controller of this.requests) controller.abort(new Error('同步服务已停止'))
+    this.requests.clear()
     super.destroy()
     this.client = null
     logger.debug('[WebDAV同步] 客户端已销毁')

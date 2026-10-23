@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { ClipboardItem, TagGroup, AppInfo } from '@renderer/api/types'
-import { computed, ref, watch } from 'vue'
+import { computed, ref, toRef, watch } from 'vue'
 import IconTextBox from '~icons/mdi/text-box'
 import IconTag from '~icons/mdi/tag'
 import IconCheck from '~icons/mdi/check'
@@ -26,6 +26,7 @@ import { OCR_MANAGE_TEXT } from '@renderer/constants/ocr'
 
 interface Props {
   item: ClipboardItem
+  previewsActive: boolean
   index: number
   isSelected: boolean
   isQuickSelectMode: boolean
@@ -46,7 +47,7 @@ const ocrStatusText = computed(() => {
   return ''
 })
 const cardRef = ref<HTMLElement>()
-const previewVisible = useDeferredPreview(cardRef)
+const previewVisible = useDeferredPreview(cardRef, toRef(props, 'previewsActive'))
 
 const emit = defineEmits<{
   click: [itemId: string]
@@ -61,7 +62,9 @@ const emit = defineEmits<{
 const detailsOpen = ref(false)
 const imageDimensions = ref<{ width: number; height: number } | null>(null)
 // 大文本解析和图片解码继续受可见区域控制。
-const preview = computed(() => (previewVisible.value ? createClipboardPreview(props.item) : null))
+const preview = computed(() =>
+  previewVisible.value || detailsOpen.value ? createClipboardPreview(props.item) : null
+)
 const presentation = computed(
   () => preview.value || PREVIEW_TYPES[props.item.primaryType] || PREVIEW_TYPES.empty
 )
@@ -79,16 +82,20 @@ const summary = computed(() =>
     .join(' · ')
 )
 
-watch(
-  () => props.item.content.image,
-  () => {
-    imageDimensions.value = null
-  }
-)
+watch([() => props.item.id, () => props.item.content.image], () => {
+  imageDimensions.value = null
+})
 const handleImageLoad = (event: Event): void => {
   const image = event.target as HTMLImageElement
   imageDimensions.value = { width: image.naturalWidth, height: image.naturalHeight }
 }
+
+watch(
+  () => props.previewsActive,
+  (active) => {
+    if (!active) detailsOpen.value = false
+  }
+)
 
 const hasConvertibleContent = (item: ClipboardItem): boolean => {
   const { text, html, rtf, files } = item.content

@@ -39,8 +39,6 @@ export enum SyncProviderType {
 export interface BaseSyncProviderConfig {
   /** 同步方向 */
   syncDirection: SyncDirection
-  /** 是否仅同步配置文件（不同步数据库文件） */
-  configOnly?: boolean
 }
 
 /**

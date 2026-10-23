@@ -241,7 +241,6 @@ class ScheduledSyncWorker extends BaseWorker {
       }
 
       this.isRunning = false
-      this.isSyncing = false
       this.nextSyncTime = 0
 
       logger.info(`[${this.getWorkerName()}] 定时同步已停止`)
@@ -262,7 +261,8 @@ class ScheduledSyncWorker extends BaseWorker {
       return
     }
 
-    const intervalMs = this.config.syncInterval
+    if (this.syncTimer) clearTimeout(this.syncTimer)
+    const intervalMs = this.config.syncInterval * 60000
     this.nextSyncTime = Date.now() + intervalMs
 
     this.syncTimer = setTimeout(async () => {
@@ -348,6 +348,8 @@ class ScheduledSyncWorker extends BaseWorker {
    * 手动执行同步
    */
   public async manualSync(): Promise<SyncResult> {
+    if (this.isSyncing) return { success: false, message: '同步正在进行中，请稍后重试' }
+    this.isSyncing = true
     try {
       logger.info(`[${this.getWorkerName()}] 开始执行手动同步`)
       this.sendEvent('manual-sync-started', { timestamp: Date.now() })
@@ -390,6 +392,8 @@ class ScheduledSyncWorker extends BaseWorker {
       })
 
       return errorResult
+    } finally {
+      this.isSyncing = false
     }
   }
 
@@ -397,12 +401,15 @@ class ScheduledSyncWorker extends BaseWorker {
    * 使用指定配置执行手动同步
    */
   public async manualSyncWithConfig(config: ScheduledSyncConfig): Promise<SyncResult> {
+    let tempSyncService: SyncService | undefined
+    if (this.isSyncing) return { success: false, message: '同步正在进行中，请稍后重试' }
+    this.isSyncing = true
     try {
       logger.info(`[${this.getWorkerName()}] 开始使用指定配置执行手动同步`)
       this.sendEvent('manual-sync-started', { timestamp: Date.now() })
 
       // 创建临时的同步服务实例进行同步
-      const tempSyncService = this.createSyncService(config.userDataPath)
+      tempSyncService = this.createSyncService(config.userDataPath)
 
       // 初始化临时同步服务
       const initialized = await tempSyncService.initialize(
@@ -426,9 +433,6 @@ class ScheduledSyncWorker extends BaseWorker {
 
       // 执行同步
       const result: SyncResult = await tempSyncService.sync()
-
-      // 销毁临时同步服务
-      tempSyncService.destroy()
 
       this.lastSyncTime = Date.now()
 
@@ -462,6 +466,9 @@ class ScheduledSyncWorker extends BaseWorker {
       })
 
       return errorResult
+    } finally {
+      this.isSyncing = false
+      tempSyncService?.destroy()
     }
   }
 
@@ -503,13 +510,12 @@ class ScheduledSyncWorker extends BaseWorker {
    * 使用指定配置测试同步连接
    */
   public async testConnectionWithConfig(config: ScheduledSyncConfig): Promise<boolean> {
+    let tempSyncService: SyncService | undefined
     try {
-      logger.info(
-        `[${this.getWorkerName()}] 开始使用指定配置测试同步连接，配置:${JSON.stringify(config)}`
-      )
+      logger.info(`[${this.getWorkerName()}] 开始使用指定配置测试同步连接`)
 
       // 创建临时的同步服务实例进行测试
-      const tempSyncService = this.createSyncService(config.userDataPath)
+      tempSyncService = this.createSyncService(config.userDataPath)
 
       // 初始化临时同步服务
       const initialized = await tempSyncService.initialize(
@@ -525,9 +531,6 @@ class ScheduledSyncWorker extends BaseWorker {
 
       // 测试连接
       const result = await tempSyncService.testConnection()
-
-      // 销毁临时同步服务
-      tempSyncService.destroy()
 
       if (result) {
         logger.info(`[${this.getWorkerName()}] 使用指定配置连接测试成功`)
@@ -546,6 +549,8 @@ class ScheduledSyncWorker extends BaseWorker {
         error: error instanceof Error ? error.message : '未知错误'
       })
       return false
+    } finally {
+      tempSyncService?.destroy()
     }
   }
 

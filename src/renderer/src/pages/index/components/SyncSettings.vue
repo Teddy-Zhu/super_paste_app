@@ -14,7 +14,6 @@ const localConfig = ref({
   provider: '',
   interval: 30, // 分钟
   direction: 'bidirectional',
-  configOnly: false,
   params: {
     webdav: {
       serverUrl: '',
@@ -38,6 +37,9 @@ const lastSyncTime = ref<string>('')
 const hasUnsavedChanges = ref(false)
 const currentSyncStatus = ref<string>('idle') // 当前同步状态：idle, syncing, success, error
 const syncStatusMessage = ref<string>('') // 同步状态消息
+let disposed = false
+let statusTimer: ReturnType<typeof setTimeout> | undefined
+let saveMessageTimer: ReturnType<typeof setTimeout> | undefined
 
 // 同步间隔选项（分钟）
 const intervalOptions = [
@@ -66,7 +68,6 @@ const initializeLocalConfig = (): void => {
     provider: syncStore.provider,
     interval: Math.floor(syncStore.interval / 60000), // 从毫秒转换为分钟
     direction: syncStore.direction,
-    configOnly: syncStore.configOnly,
     params: {
       webdav: { ...syncStore.params.webdav }
     }
@@ -102,12 +103,6 @@ const updateDirection = (direction: string): void => {
 // 更新同步间隔
 const updateInterval = (interval: number): void => {
   localConfig.value.interval = interval
-  hasUnsavedChanges.value = true
-}
-
-// 更新仅同步配置选项
-const updateConfigOnly = (configOnly: boolean): void => {
-  localConfig.value.configOnly = configOnly
   hasUnsavedChanges.value = true
 }
 
@@ -154,7 +149,6 @@ const buildSyncConfig = (): {
   providerType: 'webdav'
   providerConfig: {
     syncDirection: string
-    configOnly: boolean
     serverUrl: string
     username: string
     password: string
@@ -175,7 +169,6 @@ const buildSyncConfig = (): {
     providerType: 'webdav' as const,
     providerConfig: {
       syncDirection: localConfig.value.direction,
-      configOnly: localConfig.value.configOnly,
       serverUrl: webdav.serverUrl.trim(),
       username: webdav.username.trim(),
       password: webdav.password,
@@ -232,8 +225,10 @@ const testConnection = async (): Promise<void> => {
 
 // 显示保存消息
 const showSaveMessage = (message: string): void => {
+  if (disposed) return
   saveMessage.value = message
-  setTimeout(() => {
+  if (saveMessageTimer) clearTimeout(saveMessageTimer)
+  saveMessageTimer = setTimeout(() => {
     saveMessage.value = ''
   }, 3000)
 }
@@ -277,7 +272,6 @@ const saveConfig = async (): Promise<void> => {
       provider: localConfig.value.provider,
       interval: localConfig.value.interval * 60000,
       direction: localConfig.value.direction,
-      configOnly: localConfig.value.configOnly,
       params: { webdav: { ...localConfig.value.params.webdav } }
     })
     await syncStore.$whenSynced()
@@ -354,7 +348,7 @@ const manualSync = async (): Promise<void> => {
 const getSyncStatus = async (): Promise<void> => {
   try {
     const result = await invoke('scheduled-sync:get-status')
-    if (result.success && result.data) {
+    if (!disposed && result.success && result.data) {
       syncStatus.value = result.data
       if (result.data.lastSyncTime) {
         lastSyncTime.value = new Date(result.data.lastSyncTime).toLocaleString()
@@ -374,6 +368,7 @@ const handleSyncStatusUpdate = (data: {
   timestamp?: number
   result?: SyncResult
 }): void => {
+  if (statusTimer) clearTimeout(statusTimer)
   switch (data.type) {
     case 'sync-started':
     case 'manual-sync-started':
@@ -391,7 +386,7 @@ const handleSyncStatusUpdate = (data: {
         lastSyncTime.value = new Date(data.timestamp).toLocaleString()
       }
       // 3秒后清除状态消息
-      setTimeout(() => {
+      statusTimer = setTimeout(() => {
         if (currentSyncStatus.value === 'success') {
           currentSyncStatus.value = 'idle'
           syncStatusMessage.value = ''
@@ -404,7 +399,7 @@ const handleSyncStatusUpdate = (data: {
       currentSyncStatus.value = 'error'
       syncStatusMessage.value = data.result?.message || '同步失败'
       // 5秒后清除错误状态
-      setTimeout(() => {
+      statusTimer = setTimeout(() => {
         if (currentSyncStatus.value === 'error') {
           currentSyncStatus.value = 'idle'
           syncStatusMessage.value = ''
@@ -425,18 +420,18 @@ watch(
   { deep: true }
 )
 
-onMounted(async () => {
+onMounted(() => {
   // 初始化本地配置
   initializeLocalConfig()
 
-  // 获取当前同步状态
-  await getSyncStatus()
-
-  // 设置IPC事件监听器
   syncStatusUnsubscribe = onSimple('sync-status-updated', handleSyncStatusUpdate)
+  void getSyncStatus()
 })
 
 onUnmounted(() => {
+  disposed = true
+  if (statusTimer) clearTimeout(statusTimer)
+  if (saveMessageTimer) clearTimeout(saveMessageTimer)
   // 清理IPC事件监听器
   if (syncStatusUnsubscribe) {
     syncStatusUnsubscribe()
@@ -449,7 +444,7 @@ onUnmounted(() => {
   <div class="content-section">
     <div class="section-header">
       <h3 class="section-title">同步设置</h3>
-      <p class="section-subtitle">配置数据库和配置文件的云端同步</p>
+      <p class="section-subtitle">{{ SETTINGS_LABELS.configSyncDescription }}</p>
     </div>
 
     <!-- 保存提示消息 -->
@@ -514,29 +509,11 @@ onUnmounted(() => {
         </div>
       </div>
 
-      <!-- 仅同步配置 -->
-      <div v-if="localConfig.enabled" class="setting-card">
-        <div class="setting-info">
-          <h4 class="setting-title">仅同步配置</h4>
-          <p class="setting-description">仅同步配置文件，不进行数据同步</p>
-        </div>
-        <div class="setting-control">
-          <label class="toggle-switch">
-            <input
-              type="checkbox"
-              :checked="localConfig.configOnly"
-              @change="updateConfigOnly(($event.target as HTMLInputElement).checked)"
-            />
-            <span class="toggle-slider"></span>
-          </label>
-        </div>
-      </div>
-
       <!-- 同步方向 -->
       <div v-if="localConfig.enabled" class="setting-card">
         <div class="setting-info">
           <h4 class="setting-title">同步方向</h4>
-          <p class="setting-description">选择数据同步的方向</p>
+          <p class="setting-description">{{ SETTINGS_LABELS.configSyncDirection }}</p>
         </div>
         <div class="setting-control">
           <div class="radio-group">

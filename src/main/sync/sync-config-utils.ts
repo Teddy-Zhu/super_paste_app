@@ -35,7 +35,6 @@ export class SyncConfigUtils {
       )
       providerConfig = {
         syncDirection: this.parseSyncDirection(direction),
-        configOnly: store.get<boolean>(STORE_KEY.SYNC_CONFIG_ONLY, false),
         serverUrl: webdavParams.serverUrl || '',
         username: webdavParams.username || '',
         password: webdavParams.password || '',
@@ -47,7 +46,6 @@ export class SyncConfigUtils {
       // 默认 WebDAV 配置
       providerConfig = {
         syncDirection: this.parseSyncDirection(direction),
-        configOnly: store.get<boolean>(STORE_KEY.SYNC_CONFIG_ONLY, false),
         serverUrl: '',
         username: '',
         password: '',
@@ -103,7 +101,6 @@ export class SyncConfigUtils {
 
         providerConfig = {
           syncDirection: this.parseSyncDirection(direction),
-          configOnly: store.get<boolean>(STORE_KEY.SYNC_CONFIG_ONLY, false),
           serverUrl: webdavParams.serverUrl,
           username: webdavParams.username,
           password: webdavParams.password,

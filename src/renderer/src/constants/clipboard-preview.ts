@@ -21,7 +21,6 @@ export const PREVIEW_LABELS = {
   richUnavailable: '富文本预览不可用',
   richTooLarge: '富文本较大，已省略排版预览',
   imageUnavailable: '图片无法预览',
-  imageLoading: '图片加载中…',
   externalImage: '外部图片',
   previewExcerpt: '预览已截取',
   unknownFile: '未命名文件',

@@ -7,7 +7,9 @@ export const SETTINGS_LABELS = {
   deleteTag: '删除标签',
   unsavedChanges: '有未保存的更改',
   keepTime: '历史记录保存时间',
-  overlayPosition: '粘贴面板出现位置'
+  overlayPosition: '粘贴面板出现位置',
+  configSyncDescription: '将应用配置同步到云端',
+  configSyncDirection: '选择配置同步的方向'
 } as const
 
 export const KEEP_TIME_RANGE = { min: 1, max: 365 } as const

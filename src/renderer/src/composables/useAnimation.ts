@@ -42,7 +42,6 @@ export interface AnimationManager {
   // 搜索动画状态
   readonly isSearchVisible: Ref<boolean>
   readonly isSearchAnimating: Ref<boolean>
-  readonly isOpeningSearch: Ref<boolean>
   readonly showSearchContainer: Ref<boolean>
   readonly showTabsContainer: Ref<boolean>
 
@@ -65,7 +64,6 @@ export interface AnimationManager {
   initializeStyles: () => void
   setSearchVisible: (visible: boolean) => void
   setSearchAnimating: (animating: boolean) => void
-  setOpeningSearch: (opening: boolean) => void
 }
 
 // ==================== 动画配置 ====================
@@ -172,7 +170,6 @@ export function useAnimation(
   // 搜索动画状态
   const isSearchVisible = ref(false)
   const isSearchAnimating = ref(false)
-  const isOpeningSearch = ref(false)
 
   // 计算属性：控制元素可见性
   const showSearchContainer = computed(() => isSearchVisible.value || isSearchAnimating.value)
@@ -274,7 +271,6 @@ export function useAnimation(
     // 重置搜索框状态
     isSearchVisible.value = false
     isSearchAnimating.value = false
-    isOpeningSearch.value = false
 
     // 重置元素位置到初始状态
     if (overlayContentRef.value) {
@@ -459,10 +455,6 @@ export function useAnimation(
     isSearchAnimating.value = animating
   }
 
-  const setOpeningSearch = (opening: boolean): void => {
-    isOpeningSearch.value = opening
-  }
-
   // ==================== 返回接口 ====================
 
   return {
@@ -474,7 +466,6 @@ export function useAnimation(
     // 搜索动画状态
     isSearchVisible: readonly(isSearchVisible),
     isSearchAnimating: readonly(isSearchAnimating),
-    isOpeningSearch: readonly(isOpeningSearch),
     showSearchContainer: readonly(showSearchContainer),
     showTabsContainer: readonly(showTabsContainer),
 
@@ -496,7 +487,6 @@ export function useAnimation(
     resetSearchStyles,
     initializeStyles,
     setSearchVisible,
-    setSearchAnimating,
-    setOpeningSearch
+    setSearchAnimating
   }
 }

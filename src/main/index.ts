@@ -1,5 +1,6 @@
 // Electron 核心模块
 import { app } from 'electron'
+import { NotificationService } from './services/notification-service'
 import { configurePlatform } from './system/platform'
 
 // 首先初始化日志系统
@@ -54,6 +55,21 @@ const platformReady = configurePlatform()
  * 应用程序主类
  */
 class SuperPasteApp {
+  private historyCleanupTimer: NodeJS.Timeout | undefined
+  private shuttingDown = false
+  private requestHistoryCleanup = (): void => {
+    if (this.shuttingDown || this.historyCleanupTimer) return
+    // 合并连续复制产生的清理请求，清理在独立线程执行。
+    this.historyCleanupTimer = setTimeout(() => {
+      this.historyCleanupTimer = undefined
+      const cleaner = this.clipboardHistoryCleaner
+      if (!cleaner?.isRunning() || this.shuttingDown) return
+      void (async () => {
+        await cleaner.call('updateConfig', getCleanupConfig())
+        await cleaner.call('performCleanup')
+      })().catch((error) => logger.error('[主进程] 清理历史记录失败:', error))
+    }, 2000)
+  }
   private isInitialized = false // 标记应用是否已完成初始化
   private clipboardHistoryCleaner: ClipboardHistoryCleanerManager | null = null // 清理器 Worker 实例
 
@@ -299,6 +315,22 @@ class SuperPasteApp {
       // 创建 Worker 管理器实例
       this.clipboardHistoryCleaner = new ClipboardHistoryCleanerManager(config)
 
+      this.clipboardHistoryCleaner.on(
+        'cleanup-completed',
+        (data: { deletedRecordIds: string[] }) => {
+          void (async () => {
+            try {
+              if (clipboardManager.isRunning())
+                await clipboardManager.call('syncDeletedRecordsByIds', data.deletedRecordIds)
+            } catch (error) {
+              logger.error('[主进程] 更新历史缓存失败:', error)
+            } finally {
+              NotificationService.notifyClipboardHistoryUpdate({ timestamp: Date.now() })
+            }
+          })()
+        }
+      )
+
       // 启动 Worker
       await this.clipboardHistoryCleaner.start()
       logger.debug('[主进程] 剪贴板历史清理器 Worker 启动成功')
@@ -316,11 +348,8 @@ class SuperPasteApp {
       })
       logger.debug('[主进程] 剪贴板历史清理器配置初始化完成')
 
-      // 启动自动清理（如果配置了保留时间）
-      if (cleanupConfig.enableAutoCleanup) {
-        await this.clipboardHistoryCleaner.call('startAutoCleanup')
-        logger.debug('[主进程] 剪贴板历史清理器自动清理启动完成')
-      }
+      clipboardManager.on('clipboard-changed', this.requestHistoryCleanup)
+      appEventBus.on('clipboard:cleanup-config-changed', this.requestHistoryCleanup)
     } catch (error) {
       logger.error('[主进程] 剪贴板历史清理器初始化失败:', error)
       // 清理器初始化失败不影响应用主要功能
@@ -476,6 +505,11 @@ class SuperPasteApp {
    * 清理应用资源
    */
   public async cleanup(): Promise<void> {
+    this.shuttingDown = true
+    clearTimeout(this.historyCleanupTimer)
+    this.historyCleanupTimer = undefined
+    clipboardManager.off('clipboard-changed', this.requestHistoryCleanup)
+    appEventBus.off('clipboard:cleanup-config-changed', this.requestHistoryCleanup)
     logger.info('[主进程] ========== 开始清理应用资源 ==========')
 
     try {

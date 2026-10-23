@@ -201,6 +201,11 @@
     box-shadow var(--duration-fast);
 }
 
+.search-container--collapsed {
+  position: absolute;
+  pointer-events: none;
+}
+
 .search-input:hover:not(:focus) {
   border-color: var(--color-primary);
 }
