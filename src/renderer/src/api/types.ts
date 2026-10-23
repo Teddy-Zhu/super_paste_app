@@ -1,6 +1,7 @@
 import type { StoreWriteResult, StoreValueChange, StoreWriteMetadata } from '@shared/store-sync'
 import type { OCRSettings, OCRModelStatus, OCRModelId } from '@shared/ocr-models'
 import type { CopyStatistics, CopyStatisticsQuery } from '@shared/clipboard-statistics'
+import type { MCPSettings, MCPState, MCPStatus } from '@shared/mcp'
 import type {
   AIOCRAPIRequest,
   AIOCRModelOption,
@@ -24,6 +25,10 @@ export type SimpleListener<Args extends unknown[] = unknown[]> = (...args: Args)
 export type OverlayPosition = 'top' | 'bottom' | 'left' | 'right'
 
 export interface IpcChannels {
+  'mcp:get-state': void
+  'mcp:save-settings': MCPSettings
+  'mcp:generate-key': void
+  'mcp:status': MCPStatus
   'statistics:get-copy': CopyStatisticsQuery | undefined
   'statistics:clear-copy': void
   'statistics:copy-updated': void
@@ -91,6 +96,9 @@ export interface IpcChannels {
 
 // IPC 响应类型
 export interface IpcResponses {
+  'mcp:get-state': { success: boolean; data?: MCPState; error?: string }
+  'mcp:save-settings': { success: boolean; data?: MCPState; error?: string }
+  'mcp:generate-key': { success: boolean; data?: string; error?: string }
   'statistics:get-copy': { success: boolean; data?: CopyStatistics; error?: string }
   'statistics:clear-copy': { success: boolean; error?: string }
   'ocr:list-models': { success: boolean; data?: OCRModelStatus[]; error?: string }

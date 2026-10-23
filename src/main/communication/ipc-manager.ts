@@ -40,6 +40,8 @@ import type { StoreMutationContext, StoreWriteMetadata } from '../../shared/stor
 import { OCR_SETTING_KEYS, parseOCRSettings, toClipboardOCRConfig } from '../ocr/settings'
 import { isColorMode } from '../../shared/color-mode'
 import { applyColorMode } from '../ui/theme'
+import { randomBytes } from 'node:crypto'
+import { mcpService } from '../mcp/service'
 
 /**
  * IPC 管理器
@@ -150,6 +152,7 @@ class IpcManager {
     this.registerSystemHandlers()
     this.registerOCRHandlers()
     this.registerStatisticsHandlers()
+    this.registerMCPHandlers()
 
     this.isInitialized = true
     logger.debug('[IPC管理器] 所有 IPC 事件处理器注册完成')
@@ -214,6 +217,9 @@ class IpcManager {
       'ocr:clear-usage',
       'statistics:get-copy',
       'statistics:clear-copy',
+      'mcp:get-state',
+      'mcp:save-settings',
+      'mcp:generate-key',
       // 系统
       'system-access-status',
       'system-access-retry',
@@ -730,6 +736,33 @@ class IpcManager {
         return { success: true }
       },
       '关闭当前窗口'
+    )
+  }
+
+  private registerMCPHandlers(): void {
+    this.registerHandler(
+      'mcp:get-state',
+      async () => ({
+        success: true,
+        data: await mcpService.getState()
+      }),
+      '读取 MCP 配置'
+    )
+    this.registerHandler(
+      'mcp:save-settings',
+      async (_event, settings: unknown) => ({
+        success: true,
+        data: await mcpService.save(settings)
+      }),
+      '保存 MCP 配置'
+    )
+    this.registerHandler(
+      'mcp:generate-key',
+      async () => ({
+        success: true,
+        data: randomBytes(32).toString('hex')
+      }),
+      '生成 MCP 密钥'
     )
   }
 

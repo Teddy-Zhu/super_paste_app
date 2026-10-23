@@ -8,6 +8,8 @@ import IconSync from '~icons/mdi/sync'
 import IconOCR from '~icons/mdi/text-recognition'
 import IconClipboard from '~icons/mdi/content-paste'
 import IconStatistics from '~icons/mdi/chart-line'
+import IconMCP from '~icons/mdi/connection'
+import { MCP_TEXT } from '@shared/mcp'
 import { SETTINGS_LABELS, STORE_SYNC_TEXT } from '@renderer/constants/desktop-ui'
 import { STATISTICS_TEXT } from '@renderer/constants/statistics'
 import { useSettingsStore } from '@renderer/stores/common'
@@ -22,6 +24,7 @@ import ShortcutSettings from './components/ShortcutSettings.vue'
 import DebugSettings from './components/DebugSettings.vue'
 import AboutSection from './components/AboutSection.vue'
 import SyncSettings from './components/SyncSettings.vue'
+import MCPSettings from './components/MCPSettings.vue'
 
 // 导入API
 import { onSimple } from '@renderer/api/ipc'
@@ -32,6 +35,7 @@ type SectionId =
   | 'general'
   | 'sync'
   | 'ocr'
+  | 'mcp'
   | 'statistics'
   | 'tags'
   | 'shortcuts'
@@ -81,6 +85,11 @@ const settingSections: SectionConfig[] = [
     icon: IconOCR
   },
   {
+    id: 'mcp',
+    name: MCP_TEXT.title,
+    icon: IconMCP
+  },
+  {
     id: 'tags',
     name: '标签管理',
     icon: IconTag
@@ -116,6 +125,9 @@ const sectionRendererMap: Record<SectionId, SectionRendererConfig> = {
   },
   ocr: {
     component: OCRSettings
+  },
+  mcp: {
+    component: MCPSettings
   },
   tags: {
     component: TagsManagement

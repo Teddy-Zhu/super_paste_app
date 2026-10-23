@@ -21,6 +21,7 @@ import { BaseWorkerManager } from './workers/base-worker-manager'
 import type { WorkerConfig } from './types/worker-types'
 import clipboardHistoryCleanerWorkerPath from './features/clipboard/worker/clipboard-history-cleaner.worker?modulePath'
 import { getCleanupConfig } from './config/cleanup-config'
+import { mcpService } from './mcp/service'
 
 // 重构后的模块管理器
 import { mainWindowManager, overlayWindowManager } from './ui/windows/window-managers'
@@ -249,6 +250,8 @@ class SuperPasteApp {
       } catch (error) {
         logger.error('[主进程] 剪贴板监听不可用，可在设置中重试:', error)
       }
+
+      await mcpService.initialize()
 
       // 4. 初始化剪贴板历史清理器
       await this.initializeClipboardHistoryCleaner()
@@ -516,6 +519,7 @@ class SuperPasteApp {
 
     try {
       // 先停止窗口来源更新，再关闭接收更新的剪贴板 Worker。
+      await mcpService.dispose()
       activeWindowService.cleanup()
       // 1. 首先停止剪贴板监听(避免在清理过程中产生新的数据)
       logger.info('[主进程] [步骤 1/12] 开始停止剪贴板监听...')

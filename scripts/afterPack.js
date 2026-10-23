@@ -26,6 +26,7 @@ module.exports = async function (context) {
   requireBinary('node_modules/canvas/build/Release/canvas.node')
   requireBinary('node_modules/@paymoapp/active-window/build/Release/PaymoActiveWindow.node')
 
+  // 剪贴板历史与 MCP SSE 推送共用此原生监听模块，打包时均须保留。
   const clipboardSuffix =
     targetPlatform === 'linux' ? '-gnu' : targetPlatform === 'win32' ? '-msvc' : ''
   const clipboardTarget = `${targetPlatform}-${targetArch}${clipboardSuffix}`

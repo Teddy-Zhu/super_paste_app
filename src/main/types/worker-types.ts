@@ -1,4 +1,5 @@
 import type { Transferable } from 'node:worker_threads'
+import type { ClipboardChangeData } from '../../shared/mcp'
 import type {
   ClipboardContent,
   ClipboardManagerConfig,
@@ -114,6 +115,7 @@ export interface WorkerEvents {
 
   // 剪贴板管理器事件
   'clipboard-changed': { timestamp: number }
+  'clipboard-content-changed': ClipboardChangeData
   'history-updated': { timestamp: number; source?: string }
 
   // 定时同步事件

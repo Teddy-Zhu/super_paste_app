@@ -263,6 +263,7 @@ class ClipboardManagerWorker extends BaseWorker {
 
       // Full process
       const content = await this.processor.buildClipboardContent(converted)
+      this.notifyClipboardChange(content, copiedAt)
       const statisticsType = ClipboardDataConverter.detectPrimaryType(content)
       if (statisticsType !== 'empty') {
         this.sendEvent('copy-statistics', {
@@ -315,6 +316,14 @@ class ClipboardManagerWorker extends BaseWorker {
     } catch (error) {
       this.handleCheckError(error, 'Clipboard Check')
     }
+  }
+
+  private notifyClipboardChange(content: ClipboardContent, timestamp: number): void {
+    const { image, ...snapshot } = content
+    this.sendEvent('clipboard-content-changed', {
+      timestamp,
+      content: { ...snapshot, ...(image ? { image: { bytes: image.length } } : {}) }
+    })
   }
 
   // Active Window Helper

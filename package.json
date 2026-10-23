@@ -55,6 +55,7 @@
     "@jimp/js-png": "1.6.0",
     "@jimp/js-tiff": "1.6.0",
     "@jimp/plugin-color": "1.6.0",
+    "@modelcontextprotocol/sdk": "^1.32.1",
     "@types/node": "^24.9.1",
     "@types/yauzl": "3.4.0",
     "@vitejs/plugin-vue": "^6.0.10",
@@ -84,7 +85,8 @@
     "vue-eslint-parser": "^10.2.0",
     "vue-router": "^4.5.1",
     "vue-tsc": "^3.3.13",
-    "webdav": "^5.8.0"
+    "webdav": "^5.8.0",
+    "zod": "^4.6.7"
   },
   "packageManager": "pnpm@11.4.0+sha512.f0febc7e37552ab485494a914241b338e0b3580b93d54ce31f00933015880863129038a1b4ae4e414a0ee63ac35bf21197e990172c4a68256450b5636310968f",
   "desktopName": "com.v2dawn.sp.desktop",
