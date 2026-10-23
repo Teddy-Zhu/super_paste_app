@@ -1,4 +1,12 @@
-import { app, BrowserWindow, screen, shell, type NativeImage, type WebContents } from 'electron'
+import {
+  app,
+  BrowserWindow,
+  nativeTheme,
+  screen,
+  shell,
+  type NativeImage,
+  type WebContents
+} from 'electron'
 import { join } from 'path'
 import { is } from '@electron-toolkit/utils'
 import {
@@ -13,6 +21,7 @@ import { appLifecycleManager } from '../../system/app-lifecycle-manager'
 import store from '../../config/store'
 import { STORE_KEY } from '../../config/common'
 import { MAIN_WINDOW_CONFIG } from '../../config/constants'
+import { getWindowBackgroundColor } from '../theme'
 import logger from '../../utils/logger'
 import { isWayland } from '../../system/session'
 import { OVERLAY_RENDERER_EVENTS, type OverlayRendererTrace } from '../../../shared/overlay-events'
@@ -50,7 +59,7 @@ export class MainWindowManager {
         show: false, // 确保窗口创建时不显示
         center: true, // 窗口居中显示
         hasShadow: true,
-        backgroundColor: '#f5f6f8',
+        backgroundColor: getWindowBackgroundColor(),
         autoHideMenuBar: true,
         resizable: true,
         skipTaskbar: true, // 在 Windows 和 Linux 上不显示在任务栏
@@ -85,6 +94,13 @@ export class MainWindowManager {
    */
   private setupEventHandlers(): void {
     if (!this.mainWindow) return
+
+    const window = this.mainWindow
+    const updateBackground = (): void => {
+      if (!window.isDestroyed()) window.setBackgroundColor(getWindowBackgroundColor())
+    }
+    nativeTheme.on('updated', updateBackground)
+    window.once('closed', () => nativeTheme.off('updated', updateBackground))
 
     // 监听主窗口显示事件
     this.mainWindow.on('show', () => {

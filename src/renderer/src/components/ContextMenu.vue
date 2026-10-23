@@ -242,9 +242,7 @@ onUnmounted(clearCloseMenuTimer)
   background: var(--color-bg-elevated);
   border: 1px solid var(--color-border-strong);
   border-radius: 6px;
-  box-shadow:
-    0 2px 12px rgba(0, 0, 0, 0.12),
-    0 1px 4px rgba(0, 0, 0, 0.08);
+  box-shadow: var(--shadow-elevated);
   width: 160px;
   padding: 4px;
   font-size: 12px;
@@ -315,7 +313,7 @@ onUnmounted(clearCloseMenuTimer)
   position: absolute;
   right: 8px;
   font-size: 10px;
-  color: #666;
+  color: var(--color-text-secondary);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -325,7 +323,7 @@ onUnmounted(clearCloseMenuTimer)
 
 .menu-separator {
   height: 1px;
-  background-color: rgba(0, 0, 0, 0.08);
+  background-color: var(--color-border-light);
   margin: 2px 6px;
 }
 @keyframes menu-appear {

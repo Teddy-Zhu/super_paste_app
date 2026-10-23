@@ -4,6 +4,7 @@
  */
 
 :root {
+  --app-color-scheme: light;
   /* ========== 颜色系统 ========== */
 
   /* 主色调 - macOS蓝 */
@@ -86,6 +87,27 @@
   --color-selection-hover: #d8e4fa;
   --color-selection-inactive: #e0e3e8;
   --color-control-border: #c9ced7;
+  --color-danger: #c03935;
+  --color-danger-bg: #fff1f0;
+  --color-danger-border: #d8a8a5;
+  --color-success-text: #1a7f37;
+  --color-success-bg: #edf7f0;
+  --color-success-border: rgba(40, 167, 69, 0.2);
+  --color-warning-text: #986100;
+  --color-warning-bg: #fff8e8;
+  --color-warning-border: rgba(255, 193, 7, 0.3);
+  --color-toggle-off: #b5bcc7;
+  --color-toggle-hover: #9aa5b5;
+  --color-scrollbar: #bfc5ce;
+  --color-scrollbar-hover: #a2aab6;
+  --color-backdrop: rgba(28, 38, 54, 0.22);
+  --color-type-blue: #2563eb;
+  --color-type-green: #059669;
+  --color-type-red: #dc2626;
+  --color-type-orange: #d97706;
+  --color-type-purple: #7c3aed;
+  --color-type-teal: #0891b2;
+  --color-type-gray: var(--color-text-secondary);
   --shadow-control: 0 1px 1px rgba(28, 38, 54, 0.05), inset 0 1px 0 rgba(255, 255, 255, 0.8);
 
   /* ========== 阴影系统 ========== */
@@ -201,4 +223,91 @@
   /* 透明度 */
   --opacity-disabled: 0.5;
   --opacity-hover: 0.8;
+}
+
+/* Electron 的 themeSource 同时控制系统跟随和手动选择，无需渲染层重复维护主题状态。 */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --app-color-scheme: dark;
+
+    --color-primary: #8ab4f8;
+    --color-primary-hover: #a4c5fb;
+    --color-primary-active: #71a1ee;
+    --color-accent-purple: #c49af3;
+    --color-accent-pink: #ff93b3;
+    --color-accent-orange: #f4b769;
+    --color-accent-green: #79d999;
+    --color-accent-indigo: #a6a0ff;
+
+    --gradient-bg-primary: linear-gradient(135deg, #191c22 0%, #242a34 100%);
+    --gradient-bg-secondary: linear-gradient(135deg, #20242c 0%, #292f3a 100%);
+
+    --color-neutral-50: #20242c;
+    --color-neutral-100: #262b34;
+    --color-neutral-200: #303743;
+    --color-neutral-300: #414a59;
+    --color-neutral-400: #667285;
+    --color-neutral-500: #8591a3;
+    --color-neutral-600: #9ca7b8;
+    --color-neutral-700: #b4bdcb;
+    --color-neutral-800: #d3dae5;
+    --color-neutral-900: #edf0f6;
+
+    --color-success: #79d999;
+    --color-warning: #f4bd6b;
+    --color-error: #ff9994;
+    --color-info: #79d1ee;
+
+    --color-bg-primary: #242932;
+    --color-bg-secondary: #1e222a;
+    --color-bg-tertiary: #20242c;
+    --color-bg-elevated: #2b313c;
+    --color-text-primary: #e6eaf0;
+    --color-text-secondary: #adb8c8;
+    --color-text-tertiary: #97a3b5;
+    --color-text-inverse: #13213a;
+    --color-border-light: rgba(218, 229, 248, 0.09);
+    --color-border-medium: rgba(218, 229, 248, 0.17);
+    --color-border-strong: rgba(218, 229, 248, 0.28);
+
+    --color-window: #191c22;
+    --color-titlebar: #20242b;
+    --color-sidebar: #1e222a;
+    --color-control-hover: #333c4b;
+    --color-control-active: #404c60;
+    --color-selection: #2c405f;
+    --color-selection-hover: #354f76;
+    --color-selection-inactive: #343b47;
+    --color-control-border: #505b6e;
+    --color-danger: #ffaaa3;
+    --color-danger-bg: #432c31;
+    --color-danger-border: #875159;
+    --color-success-text: #8ce0a7;
+    --color-success-bg: #243c30;
+    --color-success-border: #3e6a50;
+    --color-warning-text: #efc681;
+    --color-warning-bg: #403729;
+    --color-warning-border: #77603c;
+    --color-toggle-off: #586477;
+    --color-toggle-hover: #69778f;
+    --color-scrollbar: #505b6e;
+    --color-scrollbar-hover: #6c7b91;
+    --color-backdrop: rgba(0, 0, 0, 0.5);
+    --color-type-blue: #8ab4f8;
+    --color-type-green: #79d999;
+    --color-type-red: #ff9994;
+    --color-type-orange: #f4bd6b;
+    --color-type-purple: #c49af3;
+    --color-type-teal: #79d1ee;
+
+    --shadow-control: 0 1px 2px rgba(0, 0, 0, 0.25), inset 0 1px 0 rgba(255, 255, 255, 0.04);
+    --shadow-soft-xs: 0 1px 2px rgba(0, 0, 0, 0.16);
+    --shadow-soft-sm: 0 1px 3px rgba(0, 0, 0, 0.24);
+    --shadow-soft-md: 0 2px 5px rgba(0, 0, 0, 0.3);
+    --shadow-soft-lg: 0 4px 16px rgba(0, 0, 0, 0.36);
+    --shadow-soft-xl: 0 8px 24px rgba(0, 0, 0, 0.42);
+    --shadow-elevated: 0 2px 8px rgba(0, 0, 0, 0.36), 0 1px 3px rgba(0, 0, 0, 0.24);
+    --shadow-elevated-hover: 0 4px 12px rgba(0, 0, 0, 0.42), 0 2px 6px rgba(0, 0, 0, 0.3);
+    --shadow-focus-primary: 0 0 0 2px rgba(138, 180, 248, 0.3);
+  }
 }

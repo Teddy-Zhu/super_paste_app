@@ -38,6 +38,8 @@ import { getCopyStatisticsStore } from '../statistics/copy-statistics-service'
 import { getOCRModelStore } from '../ocr/model-service'
 import type { StoreMutationContext, StoreWriteMetadata } from '../../shared/store-sync'
 import { OCR_SETTING_KEYS, parseOCRSettings, toClipboardOCRConfig } from '../ocr/settings'
+import { isColorMode } from '../../shared/color-mode'
+import { applyColorMode } from '../ui/theme'
 
 /**
  * IPC 管理器
@@ -871,6 +873,9 @@ class IpcManager {
         return this.enqueueConfigUpdate(async () => {
           const previous = store.getSnapshot(storeId).value ?? {}
           const changes = { ...patch } as Record<string, unknown>
+          if (storeId === 'settings' && 'colorMode' in changes && !isColorMode(changes.colorMode)) {
+            throw new Error('颜色模式无效')
+          }
           if (
             storeId === 'settings' &&
             Object.keys(changes).some((key) => Object.hasOwn(OCR_SETTING_KEYS, key))
@@ -931,6 +936,10 @@ class IpcManager {
     }
     const fields = new Set(keys)
     const settings = { ...createDefaultSettings(), ...store.getSnapshot('settings').value }
+    if (fields.has('colorMode')) {
+      applyColorMode()
+      trayManager.updateMenu()
+    }
     if (fields.has('globalShortcut')) {
       const shortcut = store.get<string>(STORE_KEY.SETTINGS_GLOBAL_SHORTCUT, previousShortcut)
       if (

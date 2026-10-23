@@ -171,13 +171,13 @@ const compactText = computed(() => text.value.length <= 80 && !/[\r\n]/.test(tex
   min-height: 0;
   height: 100%;
   overflow: hidden;
-  color: #334155;
+  color: var(--color-text-primary);
   font-size: 14px;
   line-height: 1.65;
 }
 .preview-notice {
   margin: 0;
-  color: #64748b;
+  color: var(--color-text-secondary);
   font-size: 11px;
   flex-shrink: 0;
 }
@@ -201,7 +201,7 @@ const compactText = computed(() => text.value.length <= 80 && !/[\r\n]/.test(tex
   font-size: 12px;
   line-height: 1.7;
   padding: 10px;
-  background: #f1f5f9;
+  background: var(--color-bg-secondary);
   border-radius: 8px;
 }
 .file-list {
@@ -224,7 +224,7 @@ const compactText = computed(() => text.value.length <= 80 && !/[\r\n]/.test(tex
   flex-direction: column;
   align-items: center;
   flex-shrink: 0;
-  color: #0891b2;
+  color: var(--color-type-teal);
   width: 40px;
 }
 .file-symbol svg {
@@ -253,14 +253,19 @@ const compactText = computed(() => text.value.length <= 80 && !/[\r\n]/.test(tex
 }
 .file-directory {
   font-size: 11px;
-  color: #64748b;
+  color: var(--color-text-secondary);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 .checkerboard {
-  background-color: #fff;
-  background-image: conic-gradient(#e2e8f0 25%, transparent 0 50%, #e2e8f0 0 75%, transparent 0);
+  background-color: var(--color-bg-primary);
+  background-image: conic-gradient(
+    var(--color-border-light) 25%,
+    transparent 0 50%,
+    var(--color-border-light) 0 75%,
+    transparent 0
+  );
   background-size: 16px 16px;
 }
 .image-frame {
@@ -281,13 +286,13 @@ const compactText = computed(() => text.value.length <= 80 && !/[\r\n]/.test(tex
 .image-caption {
   flex-shrink: 0;
   min-width: 0;
-  border-top: 1px solid #e2e8f0;
+  border-top: 1px solid var(--color-border-light);
   padding-top: 6px;
   max-height: 35%;
   overflow: hidden;
 }
 .caption-label {
-  color: #64748b;
+  color: var(--color-text-secondary);
   font-size: 10px;
   font-weight: 600;
 }
@@ -306,7 +311,7 @@ const compactText = computed(() => text.value.length <= 80 && !/[\r\n]/.test(tex
   display: flex;
   align-items: center;
   gap: 4px;
-  color: #64748b;
+  color: var(--color-text-secondary);
   font-size: 11px;
   white-space: nowrap;
   overflow: hidden;
@@ -321,6 +326,12 @@ const compactText = computed(() => text.value.length <= 80 && !/[\r\n]/.test(tex
   overflow: hidden;
   overflow-wrap: anywhere;
   isolation: isolate;
+  /* 富文本可能自带文字和底色，保留原稿颜色并提供稳定的纸张背景。 */
+  --color-text-secondary: #64748b;
+  --color-control-border: #cbd5e1;
+  color-scheme: light;
+  color: #334155;
+  background: #fff;
 }
 .preview-content:not(.expanded) .rich-content {
   pointer-events: none;
@@ -371,14 +382,14 @@ const compactText = computed(() => text.value.length <= 80 && !/[\r\n]/.test(tex
 .rich-content :deep(th),
 .data-table td,
 .data-table th {
-  border: 1px solid #cbd5e1;
+  border: 1px solid var(--color-control-border);
   padding: 5px 8px;
   vertical-align: top;
 }
 .rich-content :deep(blockquote) {
-  border-left: 3px solid #cbd5e1;
+  border-left: 3px solid var(--color-control-border);
   padding-left: 10px;
-  color: #64748b;
+  color: var(--color-text-secondary);
 }
 .table-wrapper {
   overflow: hidden;
@@ -391,8 +402,8 @@ const compactText = computed(() => text.value.length <= 80 && !/[\r\n]/.test(tex
 .data-table th {
   width: 28px;
   padding-inline: 3px;
-  color: #64748b;
-  background: #f1f5f9;
+  color: var(--color-text-secondary);
+  background: var(--color-bg-secondary);
   font-size: 10px;
   text-align: center;
 }
@@ -402,13 +413,13 @@ const compactText = computed(() => text.value.length <= 80 && !/[\r\n]/.test(tex
   max-height: 100px;
 }
 .data-table tr:nth-child(even) td {
-  background: #f8fafc;
+  background: var(--color-bg-tertiary);
 }
 .identity-heading {
   display: flex;
   gap: 8px;
   align-items: flex-start;
-  color: #b45309;
+  color: var(--color-type-orange);
   font-size: 18px;
   overflow-wrap: anywhere;
 }
@@ -425,12 +436,12 @@ const compactText = computed(() => text.value.length <= 80 && !/[\r\n]/.test(tex
 .original-url {
   margin: auto 0 0;
   font-size: 11px;
-  color: #64748b;
+  color: var(--color-text-secondary);
   overflow-wrap: anywhere;
 }
 .contact-icon {
   font-size: 40px;
-  color: #e11d48;
+  color: var(--color-type-red);
   margin: auto auto 0;
 }
 .contact-value {
@@ -443,7 +454,7 @@ const compactText = computed(() => text.value.length <= 80 && !/[\r\n]/.test(tex
 .color-swatch {
   flex: 1;
   min-height: 48px;
-  border: 1px solid #e2e8f0;
+  border: 1px solid var(--color-border-light);
   border-radius: 10px;
   overflow: hidden;
 }
@@ -458,7 +469,7 @@ const compactText = computed(() => text.value.length <= 80 && !/[\r\n]/.test(tex
 }
 .empty-preview {
   margin: auto;
-  color: #94a3b8;
+  color: var(--color-text-tertiary);
   font-size: 13px;
   text-align: center;
 }

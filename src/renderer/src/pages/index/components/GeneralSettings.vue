@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { useSettingsStore } from '@renderer/stores/common'
 import { clipboard } from '@renderer/api/renderer-api'
+import { COLOR_MODE_OPTIONS, COLOR_MODE_TEXT } from '@shared/color-mode'
 import {
   KEEP_TIME_RANGE,
   OVERLAY_POSITION_OPTIONS,
@@ -138,6 +139,23 @@ const clearHistory = async (): Promise<void> => {
     </div>
 
     <div class="settings-grid">
+      <div class="setting-card">
+        <div class="setting-info">
+          <h4 class="setting-title">{{ COLOR_MODE_TEXT.title }}</h4>
+          <p class="setting-description">{{ COLOR_MODE_TEXT.description }}</p>
+        </div>
+        <div class="setting-control">
+          <select
+            v-model="settingsStore.colorMode"
+            class="select-input"
+            :aria-label="COLOR_MODE_TEXT.title"
+          >
+            <option v-for="option in COLOR_MODE_OPTIONS" :key="option.value" :value="option.value">
+              {{ option.label }}
+            </option>
+          </select>
+        </div>
+      </div>
       <!-- 开机自启 -->
       <div class="setting-card">
         <div class="setting-info">

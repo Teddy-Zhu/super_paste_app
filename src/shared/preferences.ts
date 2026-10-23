@@ -1,7 +1,9 @@
 import { DEFAULT_OCR_MODEL_ID, type OCRModelId, type OCRSettings } from './ocr-models'
 import { createDefaultAIOCRConfigs } from './ai-ocr'
+import { DEFAULT_COLOR_MODE, type ColorMode } from './color-mode'
 
 const defaultSettings = {
+  colorMode: DEFAULT_COLOR_MODE as ColorMode,
   autoStart: false,
   overlayPosition: 'bottom' as 'top' | 'bottom' | 'left' | 'right',
   globalShortcut: '',

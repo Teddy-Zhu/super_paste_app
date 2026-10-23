@@ -274,7 +274,7 @@ select {
   padding: 5px 9px;
   border: 1px solid var(--color-control-border);
   border-radius: var(--radius-xs);
-  background: white;
+  background: var(--color-bg-primary);
 }
 .usage-metrics {
   display: grid;
@@ -285,7 +285,7 @@ select {
 dt,
 small,
 .usage-time {
-  color: #666;
+  color: var(--color-text-secondary);
   font-size: 12px;
 }
 dd {
@@ -330,7 +330,7 @@ summary {
   font-size: 13px;
 }
 .usage-error {
-  color: #d70015;
+  color: var(--color-danger);
   margin-top: 12px;
   font-size: 12px;
 }

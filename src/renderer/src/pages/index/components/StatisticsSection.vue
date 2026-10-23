@@ -37,14 +37,14 @@ const activeTab = ref<'copy' | 'token'>('copy')
   display: flex;
   gap: 8px;
   margin-bottom: 20px;
-  border-bottom: 1px solid #e2e8f0;
+  border-bottom: 1px solid var(--color-border-light);
 }
 .statistics-tabs button {
   padding: 10px 18px;
   border: 0;
   border-bottom: 2px solid transparent;
   background: transparent;
-  color: #64748b;
+  color: var(--color-text-secondary);
   cursor: pointer;
   font-size: 14px;
 }

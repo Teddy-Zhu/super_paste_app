@@ -801,24 +801,24 @@ onUnmounted(() => {
 <style scoped>
 /* 保存消息样式 */
 .save-message {
-  background: #edf7f0;
-  border: 1px solid rgba(40, 167, 69, 0.2);
+  background: var(--color-success-bg);
+  border: 1px solid var(--color-success-border);
   border-radius: var(--radius-sm);
   padding: 12px 16px;
   font-size: 13px;
-  color: #155724;
+  color: var(--color-success-text);
   margin-bottom: 20px;
   font-weight: 500;
 }
 
 /* 未保存更改警告 */
 .unsaved-changes-warning {
-  background: #fff8e8;
-  border: 1px solid rgba(255, 193, 7, 0.3);
+  background: var(--color-warning-bg);
+  border: 1px solid var(--color-warning-border);
   border-radius: var(--radius-sm);
   padding: 12px 16px;
   font-size: 13px;
-  color: #856404;
+  color: var(--color-warning-text);
   margin-bottom: 20px;
   font-weight: 500;
 }
@@ -827,7 +827,7 @@ onUnmounted(() => {
 .config-save-section {
   margin-top: 24px;
   padding-top: 20px;
-  border-top: 1px solid rgba(0, 0, 0, 0.06);
+  border-top: 1px solid var(--color-border-light);
 }
 
 .save-actions {
@@ -845,7 +845,7 @@ onUnmounted(() => {
 .webdav-config {
   margin-top: 24px;
   padding-top: 20px;
-  border-top: 1px solid rgba(0, 0, 0, 0.06);
+  border-top: 1px solid var(--color-border-light);
 }
 
 .webdav-config .setting-control:has(.text-input) {
@@ -859,7 +859,7 @@ onUnmounted(() => {
   border: 1px solid var(--color-control-border);
   border-radius: var(--radius-xs);
   font-size: 13px;
-  background: white;
+  background: var(--color-bg-primary);
   transition:
     border-color var(--duration-fast),
     box-shadow var(--duration-fast);
@@ -938,7 +938,7 @@ onUnmounted(() => {
 
 .radio-description {
   font-size: 12px;
-  color: #86868b;
+  color: var(--color-text-secondary);
   font-weight: normal;
 }
 
@@ -946,7 +946,7 @@ onUnmounted(() => {
 .sync-actions {
   margin-top: 24px;
   padding-top: 20px;
-  border-top: 1px solid rgba(0, 0, 0, 0.06);
+  border-top: 1px solid var(--color-border-light);
 }
 
 .action-buttons {
@@ -958,12 +958,12 @@ onUnmounted(() => {
 
 /* 配置警告 */
 .config-warning {
-  background: #fff8e8;
-  border: 1px solid rgba(255, 193, 7, 0.3);
+  background: var(--color-warning-bg);
+  border: 1px solid var(--color-warning-border);
   border-radius: var(--radius-xs);
   padding: 12px 16px;
   font-size: 13px;
-  color: #856404;
+  color: var(--color-warning-text);
   font-weight: 500;
   margin-bottom: 12px;
 }
@@ -977,22 +977,22 @@ onUnmounted(() => {
 }
 
 .connection-result.success {
-  background: #edf7f0;
-  border: 1px solid rgba(40, 167, 69, 0.2);
-  color: #155724;
+  background: var(--color-success-bg);
+  border: 1px solid var(--color-success-border);
+  color: var(--color-success-text);
 }
 
 .connection-result.error {
-  background: #fff1f0;
-  border: 1px solid rgba(255, 59, 48, 0.2);
-  color: #d70015;
+  background: var(--color-danger-bg);
+  border: 1px solid var(--color-danger-border);
+  color: var(--color-danger);
 }
 
 /* 同步状态区域 */
 .sync-status {
   margin-top: 24px;
   padding-top: 20px;
-  border-top: 1px solid rgba(0, 0, 0, 0.06);
+  border-top: 1px solid var(--color-border-light);
 }
 
 .status-grid {
@@ -1006,7 +1006,7 @@ onUnmounted(() => {
   min-width: 0;
   overflow-wrap: anywhere;
   background: var(--color-bg-primary);
-  border: 1px solid rgba(0, 0, 0, 0.06);
+  border: 1px solid var(--color-border-light);
   border-radius: var(--radius-sm);
   padding: 16px;
   transition:
@@ -1023,35 +1023,35 @@ onUnmounted(() => {
 .status-title {
   font-size: 13px;
   font-weight: 600;
-  color: #86868b;
+  color: var(--color-text-secondary);
   margin: 0;
 }
 
 .status-value {
   font-size: 13px;
   font-weight: 600;
-  color: #1d1d1f;
+  color: var(--color-text-primary);
   margin: 0;
 }
 
 .status-value.status-enabled {
-  color: #28a745;
+  color: var(--color-success-text);
 }
 
 .status-value.status-disabled {
-  color: #dc3545;
+  color: var(--color-danger);
 }
 
 .status-value.status-syncing {
-  color: #007aff;
+  color: var(--color-primary);
 }
 
 .status-value.status-success {
-  color: #28a745;
+  color: var(--color-success-text);
 }
 
 .status-value.status-error {
-  color: #dc3545;
+  color: var(--color-danger);
 }
 
 /* 同步中的旋转动画 */

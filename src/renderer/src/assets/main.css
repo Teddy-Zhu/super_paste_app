@@ -7,6 +7,9 @@
 }
 
 body {
+  /* 在内容层设置原生控件配色，保留根画布供透明粘贴窗口使用。 */
+  color-scheme: var(--app-color-scheme);
+  background: transparent;
   margin: 0;
   padding: 0;
   font-family: var(--font-family-base);
@@ -26,6 +29,13 @@ select,
 textarea {
   font: inherit;
   color: inherit;
+}
+
+input,
+select,
+textarea {
+  background-color: var(--color-bg-primary);
+  accent-color: var(--color-primary);
 }
 
 button,

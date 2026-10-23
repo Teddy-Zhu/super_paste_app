@@ -88,12 +88,12 @@ svg {
   overflow: visible;
 }
 text {
-  fill: #64748b;
+  fill: var(--color-text-secondary);
   font-size: 11px;
   font-variant-numeric: tabular-nums;
 }
 .chart-grid line {
-  stroke: #e2e8f0;
+  stroke: var(--color-border-light);
   stroke-dasharray: 3 4;
 }
 .chart-line {
@@ -109,7 +109,7 @@ text {
   r: 5;
 }
 .chart-empty {
-  color: #64748b;
+  color: var(--color-text-secondary);
   font-size: 13px;
   padding: 35px 0;
   text-align: center;

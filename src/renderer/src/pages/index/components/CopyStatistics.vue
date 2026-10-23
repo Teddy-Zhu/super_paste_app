@@ -305,7 +305,7 @@ label {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  color: #64748b;
+  color: var(--color-text-secondary);
   font-size: 12px;
 }
 select,
@@ -313,8 +313,8 @@ input {
   padding: 6px 9px;
   border: 1px solid var(--color-control-border);
   border-radius: var(--radius-xs);
-  background: white;
-  color: #334155;
+  background: var(--color-bg-primary);
+  color: var(--color-text-primary);
   max-width: 220px;
 }
 .statistics-metrics {
@@ -325,7 +325,7 @@ input {
 }
 dt,
 .statistics-note {
-  color: #64748b;
+  color: var(--color-text-secondary);
   font-size: 12px;
   line-height: 1.7;
 }
@@ -356,7 +356,7 @@ table {
 th,
 td {
   text-align: left;
-  border-bottom: 1px solid #e5e7eb;
+  border-bottom: 1px solid var(--color-border-light);
   padding: 10px 8px;
   font-variant-numeric: tabular-nums;
 }
@@ -365,14 +365,14 @@ td:first-child {
   max-width: 240px;
 }
 .statistics-error {
-  color: #dc2626;
+  color: var(--color-danger);
   font-size: 13px;
 }
 .clear-confirm {
   margin-top: 16px;
   padding: 12px;
-  background: #fff7ed;
-  border: 1px solid #fed7aa;
+  background: var(--color-warning-bg);
+  border: 1px solid var(--color-warning-border);
   border-radius: 8px;
   font-size: 13px;
 }

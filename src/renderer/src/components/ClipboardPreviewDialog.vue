@@ -76,18 +76,18 @@ onBeforeUnmount(() => dialog.value?.close())
   max-height: calc(100dvh - 24px);
   margin: auto;
   padding: 0;
-  border: 1px solid #cbd5e1;
+  border: 1px solid var(--color-control-border);
   border-radius: var(--radius-lg);
-  background: #fff;
-  color: #334155;
-  box-shadow: 0 16px 60px #0f172a40;
+  background: var(--color-bg-primary);
+  color: var(--color-text-primary);
+  box-shadow: var(--shadow-soft-xl);
   overflow: hidden;
 }
 .clipboard-preview-dialog[open] {
   animation: surface-appear var(--duration-normal) var(--ease-out);
 }
 .clipboard-preview-dialog::backdrop {
-  background: rgba(28, 38, 54, 0.22);
+  background: var(--color-backdrop);
 }
 .dialog-layout {
   display: flex;
@@ -100,7 +100,7 @@ onBeforeUnmount(() => dialog.value?.close())
   align-items: center;
   padding: 10px 12px;
   background: var(--color-titlebar);
-  border-bottom: 1px solid #e2e8f0;
+  border-bottom: 1px solid var(--color-border-light);
   flex-shrink: 0;
 }
 .dialog-title {
@@ -116,16 +116,16 @@ onBeforeUnmount(() => dialog.value?.close())
 }
 .dialog-title span {
   font-size: 11px;
-  color: #64748b;
+  color: var(--color-text-secondary);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 .dialog-header button {
-  border: 1px solid #e2e8f0;
+  border: 1px solid var(--color-border-light);
   border-radius: var(--radius-xs);
   background: var(--color-bg-primary);
-  color: #475569;
+  color: var(--color-text-secondary);
   cursor: pointer;
   flex-shrink: 0;
 }

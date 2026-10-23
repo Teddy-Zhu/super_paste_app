@@ -370,9 +370,9 @@ onUnmounted(() => {
 .store-sync-error {
   padding: 12px 16px;
   margin: 0 0 16px;
-  border: 1px solid var(--color-danger, #dc2626);
+  border: 1px solid var(--color-danger);
   border-radius: 8px;
-  color: var(--color-danger, #dc2626);
+  color: var(--color-danger);
 }
 
 .settings-shell {
@@ -535,7 +535,7 @@ onUnmounted(() => {
 }
 
 .restart-dialog::backdrop {
-  background: rgba(28, 38, 54, 0.22);
+  background: var(--color-backdrop);
 }
 
 .restart-dialog-header {
@@ -626,7 +626,7 @@ onUnmounted(() => {
 .restart-btn-confirm {
   background: var(--color-primary);
   border-color: var(--color-primary-hover);
-  color: white;
+  color: var(--color-text-inverse);
 }
 
 .restart-btn-confirm:hover {

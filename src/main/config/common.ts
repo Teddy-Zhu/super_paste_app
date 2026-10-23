@@ -1,5 +1,6 @@
 export const STORE_KEY = {
   SETTINGS: 'settings',
+  SETTINGS_COLOR_MODE: 'settings.colorMode',
   SETTINGS_AUTO_START: 'settings.autoStart',
   SETTINGS_OVERLAY_POSITION: 'settings.overlayPosition',
   SETTINGS_GLOBAL_SHORTCUT: 'settings.globalShortcut',

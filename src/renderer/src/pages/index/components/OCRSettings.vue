@@ -797,7 +797,7 @@ watch(readStoreConfig, () => {
   border: 1px solid var(--color-control-border);
   border-radius: var(--radius-xs);
   font-size: 13px;
-  background: #fff;
+  background: var(--color-bg-primary);
   transition:
     border-color var(--duration-fast),
     box-shadow var(--duration-fast);
@@ -910,7 +910,7 @@ watch(readStoreConfig, () => {
 .field-error {
   margin-top: 8px;
   font-size: 12px;
-  color: #d70015;
+  color: var(--color-danger);
 }
 
 .save-actions {
@@ -928,23 +928,23 @@ watch(readStoreConfig, () => {
 .unsaved-text {
   margin-top: 10px;
   font-size: 12px;
-  color: #b26a00;
+  color: var(--color-warning-text);
 }
 
 .save-message {
   margin-top: 10px;
   font-size: 12px;
-  color: #1a7f37;
+  color: var(--color-success-text);
 }
 
 .model-description,
 .model-status {
   margin-top: 10px;
   font-size: 12px;
-  color: #666;
+  color: var(--color-text-secondary);
 }
 .model-status.field-error {
-  color: #d70015;
+  color: var(--color-danger);
 }
 .model-description,
 .model-status,
@@ -959,11 +959,11 @@ watch(readStoreConfig, () => {
   gap: 8px;
   margin-top: 12px;
   font-size: 12px;
-  color: #666;
+  color: var(--color-text-secondary);
 }
 .download-progress progress {
   width: 100%;
   height: 8px;
-  accent-color: #007aff;
+  accent-color: var(--color-primary);
 }
 </style>

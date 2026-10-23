@@ -7,6 +7,8 @@ import { STORE_KEY } from '../../config/common'
 import autoStartManager from '../../system/auto-start-manager'
 import clipboardManager from '../../features/clipboard/manager/clipboard-manager'
 import { appEventBus } from '../../utils/app-event-bus'
+import { COLOR_MODE_OPTIONS, COLOR_MODE_TEXT } from '../../../shared/color-mode'
+import { applyColorMode, getColorMode } from '../theme'
 
 /**
  * 系统托盘管理器
@@ -51,6 +53,7 @@ export class TrayManager {
     // 获取当前配置状态
     const autoStart = store.get(STORE_KEY.SETTINGS_AUTO_START, false) as boolean
     const enableLocalOCR = store.get(STORE_KEY.SETTINGS_ENABLE_LOCAL_OCR, false) as boolean
+    const colorMode = getColorMode()
 
     // 创建右键菜单
     const contextMenu = Menu.buildFromTemplate([
@@ -65,6 +68,25 @@ export class TrayManager {
         click: () => {
           overlayWindowManager.toggleWindow(true, 'tray-menu')
         }
+      },
+      {
+        label: COLOR_MODE_TEXT.title,
+        submenu: COLOR_MODE_OPTIONS.map((option) => ({
+          label: option.label,
+          type: 'radio' as const,
+          checked: colorMode === option.value,
+          click: () => {
+            try {
+              store.set(STORE_KEY.SETTINGS_COLOR_MODE, option.value, {
+                source: { kind: 'main', id: 'tray' }
+              })
+              applyColorMode()
+            } catch (error) {
+              logger.error('[主进程] 从托盘切换颜色模式失败:', error)
+            }
+            this.setupContextMenu()
+          }
+        }))
       },
       {
         type: 'separator'

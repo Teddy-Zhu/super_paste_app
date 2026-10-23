@@ -152,13 +152,13 @@
   margin-top: 4px;
   border-top: 1px solid var(--color-border-light);
   border-radius: 0 0 var(--radius-xs) var(--radius-xs);
-  color: #c03935;
+  color: var(--color-danger);
 }
 
 .dropdown-item--danger:hover,
 .dropdown-item--danger:focus-visible {
-  color: #c03935;
-  background: #fff1f0;
+  color: var(--color-danger);
+  background: var(--color-danger-bg);
 }
 
 .dropdown-icon {

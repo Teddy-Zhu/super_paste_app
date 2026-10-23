@@ -25,6 +25,7 @@ import { getCleanupConfig } from './config/cleanup-config'
 // 重构后的模块管理器
 import { mainWindowManager, overlayWindowManager } from './ui/windows/window-managers'
 import { trayManager } from './ui/tray/tray-manager'
+import { applyColorMode } from './ui/theme'
 import { powerMonitorManager } from './system/power-monitor-manager'
 import { globalShortcutManager } from './system/global-shortcut-manager'
 import { windowStateManager } from './ui/windows/window-state'
@@ -172,6 +173,7 @@ class SuperPasteApp {
     appLifecycleManager.hideDock()
 
     // 1. 立即创建主窗口以提升启动速度（但不显示）
+    applyColorMode()
     this.initializeIPCManager()
     this.createMainWindow()
 

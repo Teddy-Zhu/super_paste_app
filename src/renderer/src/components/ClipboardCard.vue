@@ -382,7 +382,7 @@ const shortcutLabel = computed(() => {
 
 <style scoped>
 .clipboard-card {
-  --type-color: #2563eb;
+  --type-color: var(--color-type-blue);
   background: var(--color-bg-primary);
   border-radius: var(--radius-sm);
   cursor: pointer;
@@ -424,22 +424,22 @@ const shortcutLabel = computed(() => {
   background: var(--color-selection-hover);
 }
 .theme-green {
-  --type-color: #059669;
+  --type-color: var(--color-type-green);
 }
 .theme-red {
-  --type-color: #dc2626;
+  --type-color: var(--color-type-red);
 }
 .theme-orange {
-  --type-color: #d97706;
+  --type-color: var(--color-type-orange);
 }
 .theme-purple {
-  --type-color: #7c3aed;
+  --type-color: var(--color-type-purple);
 }
 .theme-teal {
-  --type-color: #0891b2;
+  --type-color: var(--color-type-teal);
 }
 .theme-gray {
-  --type-color: #64748b;
+  --type-color: var(--color-type-gray);
 }
 .card-header {
   display: flex;
@@ -474,7 +474,7 @@ const shortcutLabel = computed(() => {
 }
 .time-label {
   font-size: 11px;
-  color: #64748b;
+  color: var(--color-text-secondary);
 }
 .preview-toolbar {
   display: flex;
@@ -503,7 +503,7 @@ const shortcutLabel = computed(() => {
   border: 0;
   border-radius: 4px;
   background: transparent;
-  color: #64748b;
+  color: var(--color-text-secondary);
   font-size: 11px;
   cursor: pointer;
 }
@@ -536,7 +536,7 @@ const shortcutLabel = computed(() => {
 .preview-placeholder span {
   height: 10px;
   border-radius: 3px;
-  background: #f1f5f9;
+  background: var(--color-bg-secondary);
 }
 .preview-placeholder span:last-child {
   width: 60%;
@@ -548,7 +548,7 @@ const shortcutLabel = computed(() => {
   padding: 8px 10px;
   height: 40px;
   box-sizing: border-box;
-  border-top: 1px solid #e2e8f0;
+  border-top: 1px solid var(--color-border-light);
   flex-shrink: 0;
   background: var(--color-bg-tertiary);
 }
@@ -562,17 +562,17 @@ const shortcutLabel = computed(() => {
   width: 7px;
   height: 7px;
   border-radius: 50%;
-  border: 1px solid #ffffffcc;
+  border: 1px solid var(--color-bg-primary);
 }
 .tag-overflow {
   font-size: 9px;
-  color: #64748b;
+  color: var(--color-text-secondary);
 }
 .content-summary {
   min-width: 0;
   flex: 1;
   font-size: 11px;
-  color: #64748b;
+  color: var(--color-text-secondary);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;

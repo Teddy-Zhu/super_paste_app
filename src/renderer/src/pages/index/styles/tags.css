@@ -161,7 +161,7 @@
 }
 
 .color-option.active {
-  border-color: white;
+  border-color: var(--color-bg-primary);
   outline: 2px solid var(--color-primary);
   outline-offset: 1px;
 }
@@ -319,8 +319,8 @@
 }
 
 .tag-action-button.danger:hover {
-  background: #fff1f0;
-  color: #c03935;
+  background: var(--color-danger-bg);
+  color: var(--color-danger);
 }
 
 .tag-description {

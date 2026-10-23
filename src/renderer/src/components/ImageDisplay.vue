@@ -100,9 +100,9 @@ onUnmounted(() => {
   height: 100%;
   width: 100%;
   box-sizing: border-box;
-  color: #ef4444;
+  color: var(--color-danger);
   font-size: 14px;
-  background: linear-gradient(135deg, #fef2f2 0%, #fee2e2 100%);
+  background: var(--color-danger-bg);
   border-radius: 8px;
   text-align: center;
   padding: 16px;
