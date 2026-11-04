@@ -52,7 +52,7 @@ class ClipboardHistoryCleanerManager extends BaseWorkerManager {
 if (process.platform === 'darwin' && is.dev) {
   app.disableHardwareAcceleration()
 }
-const platformReady = configurePlatform()
+configurePlatform()
 /**
  * 应用程序主类
  */
@@ -693,12 +693,10 @@ if (process.platform === 'darwin' && is.dev) {
 
 // 创建并启动应用
 const superPasteApp = new SuperPasteApp()
-if (platformReady) {
-  superPasteApp.start().catch((error) => {
-    logger.error('[主进程] 应用启动失败:', error)
-    process.exit(1)
-  })
-}
+superPasteApp.start().catch((error) => {
+  logger.error('[主进程] 应用启动失败:', error)
+  process.exit(1)
+})
 
 // 导出应用实例,供其他模块使用(如托盘管理器)
 export { superPasteApp }

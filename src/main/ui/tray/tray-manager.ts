@@ -5,6 +5,7 @@ import logger from '../../utils/logger'
 import store from '../../config/store'
 import { STORE_KEY } from '../../config/common'
 import autoStartManager from '../../system/auto-start-manager'
+import { appLifecycleManager } from '../../system/app-lifecycle-manager'
 import clipboardManager from '../../features/clipboard/manager/clipboard-manager'
 import { appEventBus } from '../../utils/app-event-bus'
 import { COLOR_MODE_OPTIONS, COLOR_MODE_TEXT } from '../../../shared/color-mode'
@@ -142,6 +143,17 @@ export class TrayManager {
       },
       {
         type: 'separator'
+      },
+      {
+        label: '重启应用',
+        click: () => {
+          logger.info('[托盘管理器] 用户点击重启应用菜单')
+          try {
+            appLifecycleManager.restart()
+          } catch (error) {
+            logger.error('[托盘管理器] 重启应用失败:', error)
+          }
+        }
       },
       {
         label: '退出',

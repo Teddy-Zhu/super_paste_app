@@ -15,6 +15,7 @@ import { mainWindowManager, overlayWindowManager } from '../ui/windows/window-ma
 import { globalShortcutManager } from '../system/global-shortcut-manager'
 import { isWayland } from '../system/platform'
 import { activeWindowService } from '../services/active-window-service'
+import { appLifecycleManager } from '../system/app-lifecycle-manager'
 import autoStartManager from '../system/auto-start-manager'
 import store from '../config/store'
 import { STORE_KEY } from '../config/common'
@@ -1216,11 +1217,7 @@ class IpcManager {
       'app:restart',
       async () => {
         logger.info('[主进程] 收到应用重启请求')
-
-        setTimeout(() => {
-          app.relaunch()
-          app.exit()
-        }, 1000)
+        appLifecycleManager.restart()
 
         return { success: true }
       },

@@ -369,7 +369,6 @@ const shortcutLabel = computed(() => {
         >{{ shortcutLabel }}</span
       >
     </div>
-    <div v-if="isSelected" class="selection-indicator"></div>
     <ClipboardPreviewDialog
       v-if="detailsOpen && preview"
       :preview="preview"
@@ -418,7 +417,7 @@ const shortcutLabel = computed(() => {
 .clipboard-card:active,
 .clipboard-card.selected:active {
   border-color: var(--color-primary-active);
-  box-shadow: inset 0 0 0 1px var(--color-primary-active);
+  box-shadow: 0 0 0 1px var(--color-primary-active);
 }
 .clipboard-card:active .card-header {
   background: var(--color-selection-hover);
@@ -602,12 +601,5 @@ const shortcutLabel = computed(() => {
   visibility: visible;
   opacity: 1;
   translate: 0 0;
-}
-.selection-indicator {
-  position: absolute;
-  inset: 0;
-  border: 1px solid var(--color-primary);
-  border-radius: inherit;
-  pointer-events: none;
 }
 </style>

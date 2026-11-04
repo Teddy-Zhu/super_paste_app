@@ -8,7 +8,6 @@ import AutoImport from 'unplugin-auto-import/vite'
 import Components from 'unplugin-vue-components/vite'
 import VueRouter from 'unplugin-vue-router/vite'
 import Icons from 'unplugin-icons/vite'
-import { useXWayland } from './src/main/system/session'
 
 function bundledLicenses(): Plugin {
   return {
@@ -63,14 +62,6 @@ const alias = {
   '@shared': resolve('src/shared'),
   '@main': resolve('src/main'),
   '@preload': resolve('src/preload')
-}
-
-// Ozone 在主进程 JS 加载前初始化，开发和预览必须在启动 Electron 前传参。
-if (useXWayland) {
-  const args: string[] = JSON.parse(process.env.ELECTRON_CLI_ARGS || '[]')
-  if (args[args.length - 1] !== '--ozone-platform=x11') {
-    process.env.ELECTRON_CLI_ARGS = JSON.stringify([...args, '--ozone-platform=x11'])
-  }
 }
 
 export default defineConfig({

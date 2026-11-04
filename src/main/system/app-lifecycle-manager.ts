@@ -1,6 +1,7 @@
 import { app } from 'electron'
 import { mainWindowManager } from '../ui/windows/window-managers'
 import logger from '../utils/logger'
+import { appEventBus } from '../utils/app-event-bus'
 
 class AppLifecycleManager {
   private static instance: AppLifecycleManager
@@ -50,6 +51,20 @@ class AppLifecycleManager {
   public handleBeforeQuit(): void {
     this.isQuitting = true
     logger.info('[AppLifecycle] Before quit event received')
+  }
+
+  public restart(): void {
+    if (this.isQuitting) return
+
+    app.relaunch({
+      // AppImage 退出后会卸载内层可执行文件所在的临时目录。
+      ...(process.platform === 'linux' && app.isPackaged && process.env.APPIMAGE
+        ? { execPath: process.env.APPIMAGE }
+        : {})
+    })
+    this.isQuitting = true
+    // 先返回可能的 IPC 响应，再通过统一退出流程保存数据并释放资源。
+    setTimeout(() => appEventBus.requestAppQuit(), 0)
   }
 
   /**

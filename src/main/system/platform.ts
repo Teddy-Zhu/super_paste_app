@@ -1,29 +1,22 @@
 import { app } from 'electron'
 
-import { isWayland, useXWayland } from './session'
+import { isWayland } from './session'
 export { isWayland } from './session'
 
-export function configurePlatform(): boolean {
-  if (process.platform !== 'linux') return true
+// Electron 默认按会话选择 Ozone 后端；显式启动参数仍可覆盖默认选择。
+const ozonePlatform = app.commandLine.getSwitchValue('ozone-platform')
+export const isNativeWayland =
+  process.platform === 'linux' &&
+  (ozonePlatform === 'wayland' || ((!ozonePlatform || ozonePlatform === 'auto') && isWayland))
 
-  // 直接启动安装包时也要在进程启动参数中选定后端；JS 中 appendSwitch 已太迟。
-  if (useXWayland && app.commandLine.getSwitchValue('ozone-platform') !== 'x11') {
-    app.relaunch({
-      args: [...process.argv.slice(1), '--ozone-platform=x11'],
-      // AppImage 退出后会卸载内层可执行文件所在的临时目录。
-      ...(app.isPackaged && process.env.APPIMAGE ? { execPath: process.env.APPIMAGE } : {})
-    })
-    app.exit(0)
-    return false
-  }
+export function configurePlatform(): void {
+  if (!isNativeWayland) return
 
-  if (isWayland) {
-    // 必须在 ready 之前开启；保留调用方传入的其他 Chromium 特性。
-    const features = new Set(
-      app.commandLine.getSwitchValue('enable-features').split(',').filter(Boolean)
-    )
-    features.add('GlobalShortcutsPortal')
-    app.commandLine.appendSwitch('enable-features', [...features].join(','))
-  }
-  return true
+  // 必须在 ready 之前开启；保留调用方传入的其他 Chromium 特性。
+  const features = new Set(
+    app.commandLine.getSwitchValue('enable-features').split(',').filter(Boolean)
+  )
+  features.add('GlobalShortcutsPortal')
+  features.add('GlobalShortcutsPortalPreferredTrigger')
+  app.commandLine.appendSwitch('enable-features', [...features].join(','))
 }

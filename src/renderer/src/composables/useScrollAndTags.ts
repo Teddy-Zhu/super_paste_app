@@ -41,6 +41,8 @@ export interface ScrollAndTagsManager {
   readonly tabs: Ref<TabData[]>
 
   // 滚动方法
+  isAtStart: () => boolean
+  scrollToStart: () => void
   scrollToSelectedItem: () => void
   handleWheel: (event: WheelEvent) => void
   ensureSelectedItemVisible: () => void
@@ -171,6 +173,17 @@ export function useScrollAndTags(
     }
   }
 
+  const scrollToStart = (): void => {
+    scrollToSelectedItem.cancel()
+    lastWheelDirection = 0
+    if (scrollbarInstance) {
+      scrollbarInstance.setMomentum(0, 0)
+      scrollbarInstance.scrollTo(0, 0, 0)
+    } else {
+      clipboardScrollRef.value?.scrollTo({ left: 0, top: 0, behavior: 'instant' })
+    }
+  }
+
   const getSelectedCardElement = (): HTMLElement | null => {
     if (!clipboardScrollRef.value || selectedIndex.value < 0) {
       return null
@@ -210,6 +223,11 @@ export function useScrollAndTags(
       contentWidth: clipboardScrollRef.value.scrollWidth,
       contentHeight: clipboardScrollRef.value.scrollHeight
     }
+  }
+
+  const isAtStart = (): boolean => {
+    const metrics = getScrollMetrics()
+    return !metrics || (isVerticalLayout.value ? metrics.scrollTop : metrics.scrollLeft) <= 1
   }
 
   const scrollToAxisPosition = (target: number, axis: 'x' | 'y'): void => {
@@ -344,6 +362,7 @@ export function useScrollAndTags(
     const scrollAmount = delta * deltaScale
     if (scrollAmount === 0) return
 
+    scrollToSelectedItem.cancel()
     hideContextMenu()
 
     // 检查 scrollbar 实例是否有效，如果无效则重新初始化
@@ -493,6 +512,8 @@ export function useScrollAndTags(
     tabs,
 
     // 滚动方法
+    isAtStart,
+    scrollToStart,
     scrollToSelectedItem,
     handleWheel,
     ensureSelectedItemVisible,

@@ -1,17 +1,18 @@
 # Maintainer: Teddy Zhu <teddyzhu15@gmail.com>
 pkgname=super-paste-git
 pkgver=1.0.0.r96.g1fdeac6
-pkgrel=1
+pkgrel=2
 pkgdesc='Clipboard manager with local OCR and synchronization (Git version)'
 arch=('x86_64')
 url='https://github.com/Teddy-Zhu/super_paste_app'
 license=('MIT')
-depends=('electron44' 'libx11' 'cairo' 'pango' 'libjpeg-turbo' 'giflib' 'librsvg' 'xdg-utils')
+depends=('electron44')
 makedepends=('git' 'nodejs>=22.14.0' 'pnpm>=11.4.0' 'python' 'rust>=1.88' 'pkgconf')
 optdepends=('kwin: active-window detection on KDE Plasma 6 Wayland'
             'xorg-xwayland: panel positioning on Wayland'
             'xdg-desktop-portal: global shortcuts on Wayland'
-            'libappindicator-gtk3: tray integration on supported desktops')
+            'libappindicator-gtk3: tray integration on supported desktops'
+            'xdg-utils: open links and files with desktop default applications')
 provides=("super-paste=${pkgver}")
 conflicts=('super-paste' 'super_paste_app' 'super-paste-app')
 options=('!debug')
@@ -30,6 +31,9 @@ prepare() {
   # 单独准备构建工具和原生模块，避免项目 postinstall 下载另一份 Electron。
   pnpm install --frozen-lockfile --ignore-scripts
   pnpm rebuild esbuild
+  # Canvas 的 Node-API 预编译包自带图像库，可直接用于系统 Electron。
+  # 直接下载，失败时中止，避免回退到依赖宿主机图像库的源码构建。
+  pnpm --dir node_modules/canvas exec prebuild-install --runtime napi
 }
 
 build() {
@@ -37,7 +41,7 @@ build() {
   local electron_version
   electron_version=$(cat /usr/lib/electron44/version)
   pnpm exec electron-rebuild --force --build-from-source --version "$electron_version" \
-    --only 'better-sqlite3,canvas,@paymoapp/active-window'
+    --only 'better-sqlite3,@paymoapp/active-window'
   pnpm run build
   pnpm exec electron-builder --linux dir \
     --config.electronDist=/usr/lib/electron44 \

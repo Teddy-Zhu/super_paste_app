@@ -185,6 +185,8 @@ const queryClipboardHistory = async (options: ClipboardHistoryQueryOptions): Pro
       )
     }
 
+    // 停在头部时跟随最新第一条；手动浏览后保留位置，不按旧选中项自动滚动。
+    const resetPosition = selectedIndex.value === 0 && scrollAndTagsManager.isAtStart()
     const selectedId = clipboardHistory.value[selectedIndex.value]?.id
     const filterChanged = appliedHistoryFilterKey !== filterKey
     const reconciled = reconcileClipboardHistory(
@@ -197,18 +199,21 @@ const queryClipboardHistory = async (options: ClipboardHistoryQueryOptions): Pro
       if (!validIds.has(id)) removeOCRStatus(id)
     }
     const preservedIndex = reconciled.items.findIndex((item) => item.id === selectedId)
-    selectedIndex.value = filterChanged
-      ? 0
-      : preservedIndex >= 0
-        ? preservedIndex
-        : Math.max(0, Math.min(selectedIndex.value, reconciled.items.length - 1))
+    selectedIndex.value =
+      filterChanged || resetPosition
+        ? 0
+        : preservedIndex >= 0
+          ? preservedIndex
+          : Math.max(0, Math.min(selectedIndex.value, reconciled.items.length - 1))
     appliedHistoryFilterKey = filterKey
-    if (reconciled.items === clipboardHistory.value && !filterChanged) return true
+    if (reconciled.items === clipboardHistory.value && !filterChanged && !resetPosition) return true
     clipboardHistory.value = reconciled.items
 
     nextTick(() => {
       scrollAndTagsManager.initializeScrollbar()
-      scrollAndTagsManager.scrollToSelectedItem()
+      if (filterChanged || resetPosition) {
+        scrollAndTagsManager.scrollToStart()
+      }
     })
     return true
   } catch (error) {
@@ -274,7 +279,12 @@ const ensureValidItemId = (itemId: string): void => {
 }
 
 const normalizeAfterAction = async (): Promise<void> => {
-  await closeWindow()
+  const id = transitionId
+  searchAndNavManager.setKeyboardNavigation(false)
+  selectedIndex.value = 0
+  scrollAndTagsManager.scrollToStart()
+  if (overlayVisible) await closeWindow()
+  if (id !== transitionId) return
   if (scrollAndTagsManager.activeTagId.value !== 'all') {
     await scrollAndTagsManager.switchTag('all')
   }
@@ -313,7 +323,7 @@ const restoreClipboard = async (itemId: string, restoreMethod: RestoreMethod): P
     if (restoreMethod === 'generateQRCode') {
       const result = await clipboard.generateQRCode(itemId)
       if (result.success) {
-        if (actionTransitionId === transitionId && overlayVisible) await normalizeAfterAction()
+        if (actionTransitionId === transitionId) await normalizeAfterAction()
       } else {
         throw new OverlayError(
           `生成二维码失败: ${result.message}`,
@@ -325,7 +335,7 @@ const restoreClipboard = async (itemId: string, restoreMethod: RestoreMethod): P
       const success = await clipboard[restoreMethod](itemId)
 
       if (success) {
-        if (actionTransitionId === transitionId && overlayVisible) await normalizeAfterAction()
+        if (actionTransitionId === transitionId) await normalizeAfterAction()
       } else {
         const { typeName, action } = getRestoreMethodMeta(restoreMethod)
         throw new OverlayError(
@@ -624,6 +634,12 @@ const prepareOpening = async (position: OverlayPosition, id: number): Promise<vo
   closingTransitionId = null
   animationManager.resetOverlayState()
   applyOverlayPosition(position)
+  if (historyDirty || appliedHistoryFilterKey !== getCurrentHistoryFilterKey()) {
+    historyDirty = false
+    void loadClipboardHistory().then((applied) => {
+      if (!applied && id === transitionId) historyDirty = true
+    })
+  }
   traceOverlay('prepare')
   await nextTick()
   if (id !== transitionId || version !== animationVersion) {

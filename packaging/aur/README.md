@@ -2,12 +2,16 @@
 
 提供两种互斥的 x86_64 包：
 
-| 包名              | 构建和运行方式                                                                                             |
-| ----------------- | ---------------------------------------------------------------------------------------------------------- |
-| `super-paste-git` | 拉取 Git 源码，编译应用、SQLite、Canvas 和活动窗口模块；运行时复用系统 `electron44`，不重复安装 Electron。 |
-| `super-paste-bin` | 下载 GitHub Release 的 deb，重新打包上游二进制及其 Electron；不编译代码，不执行 deb 的安装脚本。           |
+| 包名              | 构建和运行方式                                                                                                           |
+| ----------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| `super-paste-git` | 拉取 Git 源码，编译应用、SQLite 和活动窗口模块；运行时复用系统 `electron44`，Canvas 使用自带图像库的 Node-API 预编译包。 |
+| `super-paste-bin` | 下载 GitHub Release 的 deb，重新打包上游二进制及其 Electron；不编译代码，不执行 deb 的安装脚本。                         |
 
-Git 版需要可访问源码仓库、npm registry、crates.io、kdotool Git 仓库和 Electron headers。首次构建必须联网。Arch 衍生发行版需要在自己的仓库或 AUR 中提供 `electron44`；不以其他 Electron 主版本替代。
+Git 版需要可访问源码仓库、npm registry、crates.io、kdotool Git 仓库、Canvas 的 GitHub Release 和 Electron headers。首次构建必须联网。Arch 衍生发行版需要在自己的仓库或 AUR 中提供 `electron44`；不以其他 Electron 主版本替代。Canvas 预编译包下载失败时中止构建，不回退到引入额外系统库依赖的源码构建。
+
+运行时必需依赖：`super-paste-git` 仅声明 `electron44`；`super-paste-bin` 自带 Electron，仅声明 `alsa-lib`、`gtk3` 和 `nss`，其他所需桌面库由这些包间接安装。bin 包仍是动态链接程序，不能清空系统库依赖；精简声明不会免除底层依赖的实际安装。Git 版的 `git`、Node.js、pnpm、Python、Rust 和 pkgconf 仅为构建依赖，使用 `makepkg -sri` 可在成功构建后移除本次安装且不再需要的构建依赖。
+
+`xdg-utils` 为可选依赖，用于通过系统默认程序打开链接和文件；KWin、XWayland、桌面门户和托盘集成也保持按需安装。
 
 ## 构建
 
