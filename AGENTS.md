@@ -13,7 +13,7 @@
 - 在仓库根目录运行 `pnpm install`、`pnpm dev`。
 - `pnpm build:renderer` 执行前端类型检查和生产构建；`pnpm build` 生成当前平台安装包。
 - `pnpm build:pacman` 在 x86_64 Arch Linux 生成 DEB、Pacman 包与 AUR 元数据；`pnpm aur:prepare` 复用已有 DEB。
-- 产品版本须保持 `package.json`、`src-tauri/tauri.conf.json`、`src-tauri/Cargo.toml` 一致；脚本从项目元数据读取版本与名称。
+- 产品版本以 `package.json` 为唯一人工维护来源；`src-tauri/tauri.conf.json` 引用它，`pnpm version:sync` 同步主应用的 `Cargo.toml` 与 `Cargo.lock`。开发、打包和发布入口会自动同步；提交版本修改或创建标签前先运行该命令。
 - ORT 由 `scripts/prepare-ort.mjs` 准备，模型按需下载；勿提交 `target/`、`dist/`、`node_modules/` 或下载的运行库。
 
 ## 实现与验证

@@ -296,6 +296,7 @@ pnpm dev
 | `pnpm build --bundles deb`             | 仅构建 Debian 安装包                         |
 | `pnpm build:pacman`                    | 一次完成 DEB、Pacman 包与 AUR 元数据生成     |
 | `pnpm aur:prepare`                     | 使用已有 DEB 重新生成 Pacman 包与 AUR 元数据 |
+| `pnpm version:sync`                    | 按 package.json 同步 Rust 主应用版本        |
 | `node scripts/prepare-ort.mjs --check` | 检查已准备的 ORT 资源，不下载                |
 
 ### 打包与发布
@@ -322,9 +323,13 @@ pnpm aur:prepare --deb <file.deb> --output <directory> --repository <owner/repo>
 
 #### GitHub Release
 
+产品版本只需修改根目录 `package.json` 的 `version`。Tauri 配置通过 `../package.json` 读取同一版本；`pnpm dev`、打包和 CI 会自动同步 Rust 主应用的 `Cargo.toml` 与 `Cargo.lock`，应用内展示和产物命名均使用该版本。
+
+提交版本修改、创建标签前运行 `pnpm version:sync`，将同步后的清单和锁文件一起提交。也可用 `pnpm release:verify v<version>` 检查标签与当前版本是否匹配。已有标签指向固定提交，仅重新运行旧标签的工作流不会包含后来提交的修复。
+
 [Super Paste release](.github/workflows/release.yml) 支持两种触发方式：
 
-- **自动**：推送与 `package.json`、`src-tauri/tauri.conf.json`、`src-tauri/Cargo.toml` 一致的 `v<version>` 标签。
+- **自动**：推送与 `package.json` 版本一致的 `v<version>` 标签。
 - **手动**：进入 GitHub → Actions → **Super Paste release** → **Run workflow**。选择待发布分支，`release_tag` 留空时使用该分支的项目版本，并在发布时创建 `v<version>` 标签；填写已有标签时，构建该标签对应的代码。
 
 所有平台固定构建同一个提交。已有标签必须指向该提交，已经公开的同版本 Release 不会被覆盖；上传期间保留草稿，失败后可重新运行，完整上传后才公开发布。带 `-` 后缀的版本标记为预发布。

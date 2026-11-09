@@ -55,4 +55,6 @@ jobs:
           AUR_GIT_NAME: ${{ vars.AUR_GIT_NAME }}
           AUR_GIT_EMAIL: ${{ vars.AUR_GIT_EMAIL }}
           GIT_SSH_COMMAND: ssh -i /home/aur-builder/.ssh/id_ed25519 -o BatchMode=yes -o StrictHostKeyChecking=yes
-        run: runuser -u aur-builder -- node scripts/publish-aur.mjs
+        run: |
+          runuser -u aur-builder -- node scripts/sync-version.mjs
+          runuser -u aur-builder -- node scripts/publish-aur.mjs

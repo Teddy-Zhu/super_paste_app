@@ -19,15 +19,14 @@ export const packagesDirectory = path.join(projectRoot, 'target', 'packages')
 if (!/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(version)) {
   throw new Error(`invalid application version: ${version}`)
 }
-for (const [source, value] of [
-  ['src-tauri/tauri.conf.json', tauriConfig.version],
-  ['src-tauri/Cargo.toml', /^version\s*=\s*"([^"]+)"/m.exec(cargoManifest)?.[1]]
-]) {
-  if (value !== version) {
-    throw new Error(
-      `${source} version ${value ?? '<missing>'} does not match package.json ${version}`
-    )
-  }
+if (tauriConfig.version !== '../package.json') {
+  throw new Error('src-tauri/tauri.conf.json must reference ../package.json; run pnpm version:sync')
+}
+const cargoVersion = /^version\s*=\s*"([^"]+)"/m.exec(cargoManifest)?.[1]
+if (cargoVersion !== version) {
+  throw new Error(
+    `src-tauri/Cargo.toml version ${cargoVersion ?? '<missing>'} does not match package.json ${version}; run pnpm version:sync`
+  )
 }
 if (!packageName || !productName || !binaryName)
   throw new Error('application identity is incomplete')
