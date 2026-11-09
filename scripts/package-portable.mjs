@@ -129,11 +129,16 @@ try {
         '-NoProfile',
         '-NonInteractive',
         '-Command',
-        "Compress-Archive -Path (Join-Path $args[0] '*') -DestinationPath $args[1] -Force",
-        stage,
-        archive
+        '$entries = @(Get-ChildItem -LiteralPath $env:SUPER_PASTE_ARCHIVE_SOURCE -Force -ErrorAction Stop); Compress-Archive -LiteralPath $entries.FullName -DestinationPath $env:SUPER_PASTE_ARCHIVE_DESTINATION -Force -ErrorAction Stop'
       ],
-      { stdio: 'inherit' }
+      {
+        stdio: 'inherit',
+        env: {
+          ...process.env,
+          SUPER_PASTE_ARCHIVE_SOURCE: stage,
+          SUPER_PASTE_ARCHIVE_DESTINATION: archive
+        }
+      }
     )
   } else {
     execFileSync('tar', ['-czf', archive, '-C', stage, '.'], { stdio: 'inherit' })

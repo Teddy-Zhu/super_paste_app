@@ -222,15 +222,24 @@ async function downloadAsset(url, destination) {
 function extractArchive(archive, destination) {
   mkdirSync(destination, { recursive: true })
   if (process.platform === 'win32') {
-    run('powershell.exe', [
-      '-NoLogo',
-      '-NoProfile',
-      '-NonInteractive',
-      '-Command',
-      'Expand-Archive -LiteralPath $args[0] -DestinationPath $args[1] -Force',
-      archive,
-      destination
-    ])
+    // Native -Command arguments are parsed as code, so pass paths through the process environment.
+    run(
+      'powershell.exe',
+      [
+        '-NoLogo',
+        '-NoProfile',
+        '-NonInteractive',
+        '-Command',
+        'Expand-Archive -LiteralPath $env:SUPER_PASTE_ARCHIVE_SOURCE -DestinationPath $env:SUPER_PASTE_ARCHIVE_DESTINATION -Force -ErrorAction Stop'
+      ],
+      {
+        env: {
+          ...process.env,
+          SUPER_PASTE_ARCHIVE_SOURCE: archive,
+          SUPER_PASTE_ARCHIVE_DESTINATION: destination
+        }
+      }
+    )
   } else {
     run('tar', ['-xf', archive, '-C', destination])
   }
