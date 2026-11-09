@@ -87,6 +87,23 @@ jobs:
           corepack prepare pnpm@11.4.0 --activate
           pnpm install --frozen-lockfile
       - uses: dtolnay/rust-toolchain@stable
+      - name: Restore pinned ONNX Runtime
+        id: ort-cache
+        uses: actions/cache/restore@v5
+        with:
+          path: resources/ort/${{ matrix.target }}
+          key: ort-${{ matrix.target }}-${{ hashFiles('scripts/prepare-ort.mjs') }}
+      - name: Prepare and verify ONNX Runtime
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node scripts/prepare-ort.mjs --target '${{ matrix.target }}'
+      - name: Cache verified ONNX Runtime
+        if: steps.ort-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v5
+        with:
+          path: resources/ort/${{ matrix.target }}
+          key: ${{ steps.ort-cache.outputs.cache-primary-key }}
       - name: Build Tauri installers
         working-directory: .
         run: pnpm build

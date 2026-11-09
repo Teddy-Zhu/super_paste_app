@@ -18,6 +18,7 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { Readable } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
+import { setTimeout as delay } from 'node:timers/promises'
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url))
 const projectRoot = path.resolve(scriptDir, '..')
@@ -26,20 +27,41 @@ const runtimeVersion = '1.28.0'
 const ortApiVersion = 17
 const ortCommit = 'da9b5e364c465de65c49d91e696cd6485270757f'
 const managedBy = 'scripts/prepare-ort.mjs'
+const downloadAttempts = 5
+const downloadTimeoutMs = 5 * 60 * 1000
+const maxRetryDelayMs = 60 * 1000
+const transientNetworkCodes = new Set([
+  'ECONNRESET',
+  'ECONNREFUSED',
+  'EHOSTUNREACH',
+  'ENETUNREACH',
+  'ENOTFOUND',
+  'EAI_AGAIN',
+  'ETIMEDOUT',
+  'EPIPE',
+  'ERR_STREAM_PREMATURE_CLOSE',
+  'UND_ERR_CONNECT_TIMEOUT',
+  'UND_ERR_HEADERS_TIMEOUT',
+  'UND_ERR_BODY_TIMEOUT',
+  'UND_ERR_SOCKET'
+])
 
 const releaseAssets = {
   'x86_64-pc-windows-msvc': {
     asset: 'onnxruntime-win-x64-1.28.0.zip',
+    assetId: 489173573,
     sha256: 'abef733dacbe2f571547a7150b479b5cb9cc0df22f96c24983a42cadb1b4f8bc',
     library: 'onnxruntime.dll'
   },
   'x86_64-unknown-linux-gnu': {
     asset: 'onnxruntime-linux-x64-1.28.0.tgz',
+    assetId: 489174677,
     sha256: 'a3e1b79d7bb1bf09696ce675f49e4064e6c81f6202b8225624fff0e93f8d6407',
     library: 'libonnxruntime.so'
   },
   'aarch64-apple-darwin': {
     asset: 'onnxruntime-osx-arm64-1.28.0.tgz',
+    assetId: 489174685,
     sha256: '1268b359718099bde2cedb55787f182a130067bc4f31e8c88478c445b850d3d8',
     library: 'libonnxruntime.dylib'
   },
@@ -212,11 +234,71 @@ function copyFile(source, destination) {
   copyFileSync(source, destination)
 }
 
-async function downloadAsset(url, destination) {
-  const response = await fetch(url, { signal: AbortSignal.timeout(20 * 60 * 1000) })
-  if (!response.ok || !response.body)
-    throw new Error(`download failed (${response.status}): ${url}`)
-  await pipeline(Readable.fromWeb(response.body), createWriteStream(destination))
+function isTransientNetworkError(error) {
+  return (
+    ['AbortError', 'TimeoutError'].includes(error?.name) ||
+    transientNetworkCodes.has(error?.code) ||
+    (error?.cause && isTransientNetworkError(error.cause)) ||
+    (error instanceof AggregateError && error.errors.some(isTransientNetworkError))
+  )
+}
+
+function downloadRetryDelay(response, attempt) {
+  const backoff = response?.status === 429 ? 60_000 : 2000 * 2 ** (attempt - 1)
+  const retryAfter = response?.headers.get('retry-after')?.trim()
+  if (!retryAfter) return backoff
+  const requestedDelay = /^\d+$/.test(retryAfter)
+    ? Number(retryAfter) * 1000
+    : Date.parse(retryAfter) - Date.now()
+  return Math.max(backoff, Number.isFinite(requestedDelay) ? requestedDelay : 0)
+}
+
+async function downloadAsset(url, destination, headers) {
+  const partial = `${destination}.part`
+  for (let attempt = 1; attempt <= downloadAttempts; attempt += 1) {
+    let response
+    try {
+      console.log(`Downloading ONNX Runtime (attempt ${attempt}/${downloadAttempts}): ${url}`)
+      const signal = AbortSignal.timeout(downloadTimeoutMs)
+      response = await fetch(url, { signal, headers })
+      if (!response.ok || !response.body) {
+        await response.body?.cancel()
+        const endpoint = new URL(response.url)
+        const requestId =
+          response.headers.get('x-github-request-id') || response.headers.get('x-ms-request-id')
+        throw new Error(
+          `HTTP ${response.status}${response.body ? '' : ' (empty body)'} at ${endpoint.origin}${endpoint.pathname}${requestId ? `; request-id=${requestId}` : ''}`
+        )
+      }
+      await pipeline(Readable.fromWeb(response.body), createWriteStream(partial), { signal })
+      renameSync(partial, destination)
+      return
+    } catch (error) {
+      rmSync(partial, { force: true })
+      const retryable =
+        response && !response.ok
+          ? response.status === 408 ||
+            response.status === 429 ||
+            (response.status >= 500 && response.status < 600)
+          : isTransientNetworkError(error)
+      const detail = error.cause?.message
+        ? `${error.message}: ${error.cause.message}`
+        : error.message
+      const message = `download failed on attempt ${attempt}/${downloadAttempts}: ${url}; ${detail}`
+      if (!retryable || attempt === downloadAttempts) throw new Error(message, { cause: error })
+      const retryDelay = downloadRetryDelay(response, attempt)
+      if (retryDelay > maxRetryDelayMs) {
+        throw new Error(
+          `${message}; Retry-After exceeds the ${maxRetryDelayMs / 1000}s automatic retry limit`,
+          { cause: error }
+        )
+      }
+      console.warn(
+        `ORT download attempt ${attempt}/${downloadAttempts} failed (${detail}); retrying in ${Math.ceil(retryDelay / 1000)}s`
+      )
+      await delay(retryDelay)
+    }
+  }
 }
 
 function extractArchive(archive, destination) {
@@ -355,8 +437,16 @@ async function main() {
       source = built.source
     } else {
       const archiveUrl = `https://github.com/microsoft/onnxruntime/releases/download/v${runtimeVersion}/${release.asset}`
+      // The asset API bypasses github.com's anonymous release-download gateway.
+      const downloadUrl = `https://api.github.com/repos/microsoft/onnxruntime/releases/assets/${release.assetId}`
+      const headers = {
+        Accept: 'application/octet-stream',
+        'User-Agent': 'super-paste-ort-build'
+      }
+      const token = process.env.GITHUB_TOKEN || process.env.GH_TOKEN
+      if (token) headers.Authorization = `Bearer ${token}`
       const archive = path.join(workDirectory, release.asset)
-      await downloadAsset(archiveUrl, archive)
+      await downloadAsset(downloadUrl, archive, headers)
       const archiveSha256 = sha256(archive)
       if (archiveSha256 !== release.sha256) {
         throw new Error(
@@ -367,7 +457,7 @@ async function main() {
       extractArchive(archive, extracted)
       mainLibrary = findMainLibrary(extracted, target)
       noticeRoot = extracted
-      source = { kind: 'official-release-asset', url: archiveUrl, archiveSha256 }
+      source = { kind: 'official-release-asset', url: archiveUrl, downloadUrl, archiveSha256 }
     }
 
     const libraries = copyRuntimeLibraries(target, mainLibrary, stageDirectory)
