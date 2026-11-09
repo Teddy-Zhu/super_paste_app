@@ -38,6 +38,10 @@ export function verifyReleaseTag(tag) {
   return version
 }
 
+export function archVersion(upstreamVersion) {
+  return upstreamVersion.replace('-', 'pre').replaceAll('-', '_')
+}
+
 export function isCurrentInstaller(file) {
   const name = path.basename(file)
   // Build directories can retain installers from earlier product names or versions.

@@ -1,6 +1,12 @@
 name: Super Paste release
 
 on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: 'Existing v<version> tag; leave empty to release the selected ref and create its version tag'
+        type: string
+        required: false
   push:
     tags:
       - 'v*'
@@ -9,7 +15,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: release-${{ github.ref }}
+  group: release-${{ inputs.release_tag || github.ref_name }}
   cancel-in-progress: false
 
 jobs:
@@ -17,19 +23,23 @@ jobs:
     runs-on: ubuntu-24.04
     outputs:
       version: ${{ steps.release.outputs.version }}
+      tag: ${{ steps.release.outputs.tag }}
+      commit: ${{ steps.release.outputs.commit }}
     steps:
       - uses: actions/checkout@v7
         with:
+          ref: ${{ inputs.release_tag && format('refs/tags/{0}', inputs.release_tag) || github.ref }}
           persist-credentials: false
       - uses: actions/setup-node@v7
         with:
           node-version: '24'
           package-manager-cache: false
       - id: release
-        name: Verify the independent Tauri release version
-        working-directory: .
-        shell: bash
-        run: echo "version=$(node scripts/verify-release-tag.mjs)" >> "$GITHUB_OUTPUT"
+        name: Verify release version, tag and commit
+        env:
+          RELEASE_TAG: ${{ inputs.release_tag }}
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node scripts/prepare-release.mjs
 
   build:
     needs: prepare
@@ -52,6 +62,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
+          ref: ${{ needs.prepare.outputs.commit }}
           persist-credentials: false
       - uses: actions/setup-node@v7
         with:
@@ -103,6 +114,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
+          ref: ${{ needs.prepare.outputs.commit }}
           persist-credentials: false
       - uses: actions/download-artifact@v8
         with:
@@ -123,26 +135,31 @@ jobs:
               chown -R builder:builder /workspace
               su - builder -c "node /workspace/scripts/prepare-aur.mjs --repository $GITHUB_REPOSITORY --deb /workspace/release-assets/super-paste_${RELEASE_VERSION}_x86_64-unknown-linux-gnu.deb --output /workspace/release-assets"
             '
+          cp release-assets/aur/super-paste-bin/PKGBUILD release-assets/super-paste-bin.PKGBUILD
+          cp release-assets/aur/super-paste-bin/.SRCINFO release-assets/super-paste-bin.SRCINFO
       - uses: actions/upload-artifact@v7
         with:
           name: build-arch-x86_64
           compression-level: 0
           path: |
             release-assets/*.pkg.tar.zst
-            release-assets/aur/super-paste-bin/PKGBUILD
-            release-assets/aur/super-paste-bin/.SRCINFO
-          include-hidden-files: true
+            release-assets/super-paste-bin.PKGBUILD
+            release-assets/super-paste-bin.SRCINFO
           if-no-files-found: error
 
   publish:
     needs: [prepare, build, arch-package]
     runs-on: ubuntu-24.04
     timeout-minutes: 20
+    concurrency:
+      group: publish-${{ needs.prepare.outputs.tag }}
+      cancel-in-progress: false
     permissions:
       contents: write
     steps:
       - uses: actions/checkout@v7
         with:
+          ref: ${{ needs.prepare.outputs.commit }}
           persist-credentials: false
       - uses: actions/setup-node@v7
         with:
@@ -156,5 +173,7 @@ jobs:
       - name: Publish the v release and checksums
         working-directory: .
         env:
+          RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
+          RELEASE_COMMIT: ${{ needs.prepare.outputs.commit }}
           GITHUB_TOKEN: ${{ github.token }}
         run: node scripts/publish-release.mjs release-assets

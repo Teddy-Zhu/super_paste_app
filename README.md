@@ -320,7 +320,30 @@ pnpm build:pacman
 pnpm aur:prepare --deb <file.deb> --output <directory> --repository <owner/repo>
 ```
 
-[发布工作流](.github/workflows/release.yml) 位于仓库根目录，推送与 `package.json`、`src-tauri/tauri.conf.json`、`src-tauri/Cargo.toml` 一致的 `v<version>` 标签时运行。工作流交付 Windows NSIS / MSI / 便携 ZIP、双架构 macOS DMG、Linux DEB / RPM / AppImage / Pacman / 便携 tar.gz、独立迁移器、AUR 元数据及 SHA-256 校验文件；AUR 元数据作为附件分发，不自动推送到 AUR。
+#### GitHub Release
+
+[Super Paste release](.github/workflows/release.yml) 支持两种触发方式：
+
+- **自动**：推送与 `package.json`、`src-tauri/tauri.conf.json`、`src-tauri/Cargo.toml` 一致的 `v<version>` 标签。
+- **手动**：进入 GitHub → Actions → **Super Paste release** → **Run workflow**。选择待发布分支，`release_tag` 留空时使用该分支的项目版本，并在发布时创建 `v<version>` 标签；填写已有标签时，构建该标签对应的代码。
+
+所有平台固定构建同一个提交。已有标签必须指向该提交，已经公开的同版本 Release 不会被覆盖；上传期间保留草稿，失败后可重新运行，完整上传后才公开发布。带 `-` 后缀的版本标记为预发布。
+
+工作流交付 Windows NSIS / MSI / 便携 ZIP、双架构 macOS DMG、Linux DEB / RPM / AppImage / Pacman / 便携 tar.gz、独立迁移器、`super-paste-bin.PKGBUILD`、`super-paste-bin.SRCINFO` 及 `SHA256SUMS`。Release 使用工作流自带的 `GITHUB_TOKEN`，无需配置额外发布 Token。
+
+#### AUR 发布
+
+[Publish AUR](.github/workflows/aur.yml) 独立手动触发，将已公开 Release 的包描述发布到 **`super-paste-bin`**，不重新编译应用。先完成以下仓库配置：
+
+| 类型                   | 名称                  | 用途                                                                                         |
+| ---------------------- | --------------------- | -------------------------------------------------------------------------------------------- |
+| Actions Secret         | `AUR_SSH_PRIVATE_KEY` | AUR 账号的无口令 SSH 私钥；对应公钥需登记在 AUR，且该账号须有 `super-paste-bin` 的维护权限。 |
+| Actions Variable，可选 | `AUR_GIT_NAME`        | AUR Git 提交作者，默认 `github-actions[bot]`。                                               |
+| Actions Variable，可选 | `AUR_GIT_EMAIL`       | AUR Git 提交邮箱，默认 GitHub Actions 的 noreply 地址。                                      |
+
+进入 GitHub → Actions → **Publish AUR** → **Run workflow**，`release_tag` 留空发布最新稳定 Release，也可填写已公开的 `v<version>`。脚本下载 Release 的 DEB、AUR 元数据和校验文件，校验摘要及 PKGBUILD 源文件后，生成 `.SRCINFO` 并通过 SSH 推送至 AUR。相同内容重复运行会跳过；同版本元数据变化自动增加 `pkgrel`，版本更新重置为 `1`，版本倒退会拒绝发布。
+
+两个流程分别操作：发布 Release 后，需要手动运行 **Publish AUR**。AUR 需要公开的 GitHub 仓库和 Release 下载地址。工作流文件合入默认分支后，Actions 页面才会出现手动入口；AUR 发布脚本从默认分支读取。
 
 当前工作流未配置 Windows 签名或 macOS 签名与公证。发布前需分别验收目标平台的安装、快捷键、浮层、系统权限、凭据、本地与远程 OCR、同步和数据迁移。
 

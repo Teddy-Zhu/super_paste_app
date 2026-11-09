@@ -12,6 +12,7 @@ import {
 } from 'node:fs'
 import path from 'node:path'
 import {
+  archVersion,
   githubRepository,
   packageName,
   packagesDirectory,
@@ -74,7 +75,7 @@ const sha256 = (value) => createHash('sha256').update(value).digest('hex')
 const debHash = sha256(readFileSync(deb))
 const license = path.join(projectRoot, 'LICENSE')
 const licenseHash = sha256(readFileSync(license))
-const packageVersion = version.replace('-', 'pre').replaceAll('-', '_')
+const packageVersion = archVersion(version)
 const packageDirectory = path.join(output, 'aur', 'super-paste-bin')
 mkdirSync(packageDirectory, { recursive: true })
 const pkgbuild = template
