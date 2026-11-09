@@ -228,12 +228,8 @@ mod macos {
 
 #[cfg(target_os = "windows")]
 mod windows {
-    use super::*;
-    use std::{
-        collections::HashMap,
-        sync::{OnceLock, mpsc},
-    };
-    use windows::{
+    use super::Dispatcher;
+    use ::windows::{
         Win32::{
             Foundation::{HINSTANCE, HWND, LPARAM, LRESULT, WPARAM},
             System::LibraryLoader::GetModuleHandleW,
@@ -246,6 +242,11 @@ mod windows {
             },
         },
         core::{Error, PCWSTR, w},
+    };
+    use std::{
+        collections::HashMap,
+        sync::{Arc, Mutex, OnceLock, mpsc},
+        thread,
     };
 
     static CALLBACKS: OnceLock<Mutex<HashMap<isize, Arc<Dispatcher>>>> = OnceLock::new();
@@ -277,7 +278,7 @@ mod windows {
                 if RegisterClassW(&window_class) == 0 {
                     let _ = ready_tx.send(Err(format!(
                         "注册系统电源事件窗口失败：{}",
-                        Error::from_win32()
+                        Error::from_thread()
                     )));
                     return;
                 }

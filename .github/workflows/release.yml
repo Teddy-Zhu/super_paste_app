@@ -104,8 +104,55 @@ jobs:
         with:
           path: resources/ort/${{ matrix.target }}
           key: ${{ steps.ort-cache.outputs.cache-primary-key }}
+      - name: Restore pinned AppImage tools
+        if: runner.os == 'Linux'
+        id: appimage-tools-cache
+        uses: actions/cache/restore@v5
+        with:
+          path: target/tauri-bundler-tools
+          key: appimage-${{ runner.arch }}-${{ hashFiles('.github/workflows/release.yml', 'pnpm-lock.yaml') }}
+      - name: Prepare and verify AppImage tools
+        if: runner.os == 'Linux'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          download_dir="$GITHUB_WORKSPACE/target/tauri-bundler-tools"
+          tools_dir="${XDG_CACHE_HOME:-$HOME/.cache}/tauri"
+          mkdir -p "$download_dir" "$tools_dir"
+
+          prepare_tool() {
+            local repository="$1" asset_id="$2" name="$3" sha256="$4"
+            local archive="$download_dir/$name"
+            if [[ ! -f "$archive" ]] || ! printf '%s  %s\n' "$sha256" "$archive" | sha256sum --check --status; then
+              gh api "repos/$repository/releases/assets/$asset_id" \
+                --header 'Accept: application/octet-stream' > "$archive.part"
+              printf '%s  %s\n' "$sha256" "$archive.part" | sha256sum --check
+              mv "$archive.part" "$archive"
+            fi
+            # Tauri patches linuxdeploy in place; cache the pristine download separately.
+            install -m 755 "$archive" "$tools_dir/$name"
+          }
+
+          prepare_tool tauri-apps/binary-releases 274691722 AppRun-x86_64 \
+            f30140a43a0a59e46db21bdefdf749b9e9f2c6946e92afabbacf98b8ae73fb4f
+          prepare_tool tauri-apps/binary-releases 576945544 linuxdeploy-07333c6-x86_64.AppImage \
+            36a2d7e274d12e1050d0e9ecfe11d339ed54720b2bec464c286d53f8b07f5c62
+          prepare_tool linuxdeploy/linuxdeploy-plugin-appimage 602435573 linuxdeploy-plugin-appimage.AppImage \
+            49d6a17160675a6bd1781699aae6bdf7692d98552e02a3671d2183d10547842e
+          prepare_tool AppImage/type2-runtime 657374641 runtime-x86_64 \
+            617aa77314d57c8b8e4fae9c3f0b35af7b30d5529cb69e98f64f92510ed98a46
+      - name: Cache verified AppImage tools
+        if: runner.os == 'Linux' && steps.appimage-tools-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v5
+        with:
+          path: target/tauri-bundler-tools
+          key: ${{ steps.appimage-tools-cache.outputs.cache-primary-key }}
       - name: Build Tauri installers
         working-directory: .
+        env:
+          LDAI_RUNTIME_FILE: ${{ github.workspace }}/target/tauri-bundler-tools/runtime-x86_64
         run: pnpm build
       - name: Build the standalone migration utility
         working-directory: .
