@@ -11,6 +11,7 @@ import IconExpand from '~icons/mdi/arrow-expand'
 import { useContextMenu, type ContextMenuItem } from '@renderer/composables/useContextMenu'
 import { tags, clipboard } from '@renderer/api/renderer-api'
 import { send } from '@renderer/api'
+import { showMessage } from '@renderer/api/dialog'
 import { useDeferredPreview } from '@renderer/composables/useDeferredPreview'
 import { createClipboardPreview } from '@renderer/utils/clipboard-preview'
 import {
@@ -27,6 +28,7 @@ import { OCR_MANAGE_TEXT } from '@renderer/constants/ocr'
 interface Props {
   item: ClipboardItem
   previewsActive: boolean
+  overlayActive: boolean
   index: number
   isSelected: boolean
   isQuickSelectMode: boolean
@@ -43,7 +45,7 @@ const ocrBusy = computed(
 const ocrStatusText = computed(() => {
   if (props.ocrStatus?.state === 'queued') return OCR_MANAGE_TEXT.queued
   if (props.ocrStatus?.state === 'running') return OCR_MANAGE_TEXT.running
-  if (props.ocrStatus?.state === 'error') return OCR_MANAGE_TEXT.error
+  if (props.ocrStatus?.state === 'error') return props.ocrStatus.error || OCR_MANAGE_TEXT.error
   return ''
 })
 const cardRef = ref<HTMLElement>()
@@ -91,9 +93,9 @@ const handleImageLoad = (event: Event): void => {
 }
 
 watch(
-  () => props.previewsActive,
-  (active) => {
-    if (!active) detailsOpen.value = false
+  [() => props.previewsActive, () => props.overlayActive],
+  ([previewsActive, overlayActive]) => {
+    if (!previewsActive || !overlayActive) detailsOpen.value = false
   }
 )
 
@@ -250,11 +252,11 @@ const handleDeleteItem = async (): Promise<void> => {
     if (success) {
       emit('delete', props.item.id)
     } else {
-      alert('删除失败')
+      await showMessage('删除失败')
     }
   } catch (error) {
     console.error('删除剪贴板项目失败:', error)
-    alert('删除失败: ' + (error as Error).message)
+    await showMessage('删除失败: ' + (error as Error).message)
   }
 }
 
@@ -263,7 +265,7 @@ const handleAddTag = async (tagId: string): Promise<void> => {
     await tags.bindTagToRecord(props.item.id, tagId)
   } catch (error) {
     console.error('绑定标签失败:', error)
-    alert('绑定标签失败: ' + (error as Error).message)
+    await showMessage('绑定标签失败: ' + (error as Error).message)
   }
 }
 
@@ -272,7 +274,7 @@ const handleRemoveTag = async (tagId: string): Promise<void> => {
     await tags.unbindTagFromRecord(props.item.id, tagId)
   } catch (error) {
     console.error('解绑标签失败:', error)
-    alert('解绑标签失败: ' + (error as Error).message)
+    await showMessage('解绑标签失败: ' + (error as Error).message)
   }
 }
 
@@ -285,7 +287,7 @@ const handleRemoveCurrentTag = async (): Promise<void> => {
     await tags.unbindTagFromRecord(props.item.id, props.activeTagId)
   } catch (error) {
     console.error('解绑当前标签失败:', error)
-    alert('解绑当前标签失败: ' + (error as Error).message)
+    await showMessage('解绑当前标签失败: ' + (error as Error).message)
   }
 }
 
@@ -311,9 +313,14 @@ const shortcutLabel = computed(() => {
     <div class="card-header">
       <div class="header-left">
         <span class="type-label">{{ presentation.label }}</span>
-        <span v-if="ocrStatusText" class="time-label" :title="ocrStatus?.error" role="status">{{
-          ocrStatusText
-        }}</span>
+        <span
+          v-if="ocrStatusText"
+          class="time-label"
+          :class="{ 'ocr-error': ocrStatus?.state === 'error' }"
+          :title="ocrStatus?.error"
+          role="status"
+          >{{ ocrStatusText }}</span
+        >
         <time class="time-label" :title="new Date(item.timestamp).toLocaleString('zh-CN')">{{
           formatTime(item.timestamp)
         }}</time>
@@ -370,7 +377,7 @@ const shortcutLabel = computed(() => {
       >
     </div>
     <ClipboardPreviewDialog
-      v-if="detailsOpen && preview"
+      v-if="detailsOpen && preview && overlayActive"
       :preview="preview"
       :source="sourceAppInfo"
       :summary="summary"
@@ -397,7 +404,7 @@ const shortcutLabel = computed(() => {
   height: var(--clipboard-card-height, calc(100vh - 66px));
   flex-shrink: 0;
   border: 1px solid var(--color-control-border);
-  contain: layout style paint;
+  contain: layout style;
 }
 .clipboard-card:hover {
   border-color: var(--color-primary);
@@ -405,11 +412,11 @@ const shortcutLabel = computed(() => {
 }
 .clipboard-card.selected {
   border-color: var(--color-primary);
-  box-shadow: 0 0 0 1px var(--color-primary);
+  box-shadow: var(--shadow-soft-xs);
 }
 .clipboard-card.selected:hover {
   border-color: var(--color-primary-hover);
-  box-shadow: 0 0 0 1px var(--color-primary-hover);
+  box-shadow: var(--shadow-soft-sm);
 }
 .clipboard-card:hover .card-header {
   background: var(--color-selection);
@@ -417,7 +424,7 @@ const shortcutLabel = computed(() => {
 .clipboard-card:active,
 .clipboard-card.selected:active {
   border-color: var(--color-primary-active);
-  box-shadow: 0 0 0 1px var(--color-primary-active);
+  box-shadow: var(--shadow-soft-xs);
 }
 .clipboard-card:active .card-header {
   background: var(--color-selection-hover);
@@ -454,6 +461,15 @@ const shortcutLabel = computed(() => {
   align-items: flex-start;
   gap: 5px;
   min-width: 0;
+}
+.time-label.ocr-error {
+  color: var(--color-danger);
+  white-space: normal;
+  overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 .type-label {
   font-size: 11px;

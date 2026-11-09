@@ -11,6 +11,12 @@ export const OVERLAY_RENDERER_EVENTS = [
   'error'
 ] as const
 
+export interface OverlayModifiers {
+  control: boolean
+  meta: boolean
+  sequence: number
+}
+
 export interface OverlayRendererTrace {
   event: (typeof OVERLAY_RENDERER_EVENTS)[number]
   transitionId: number

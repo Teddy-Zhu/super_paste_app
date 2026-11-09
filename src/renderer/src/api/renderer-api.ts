@@ -10,15 +10,16 @@ import {
   onceSimple,
   send,
   invoke,
-  sendSync,
   removeListener,
   removeAllListeners
 } from './ipc'
+import { OCR_MANAGE_TEXT } from '@renderer/constants/ocr'
 
 import type {
   RendererAPI,
   ClipboardOperations,
   ClipboardItem,
+  ClipboardItemDto,
   ClipboardStatus,
   ClipboardManagerConfig,
   ClipboardIpcResponse,
@@ -31,6 +32,14 @@ import type {
   AppOperations
 } from './types'
 
+function decodeClipboardItem(item: ClipboardItemDto): ClipboardItem {
+  const { image, ...content } = item.content
+  return {
+    ...item,
+    content: image === undefined ? content : { ...content, image: new Uint8Array(image) }
+  }
+}
+
 /**
  * 剪贴板操作封装
  */
@@ -41,13 +50,13 @@ export const clipboard: ClipboardOperations = {
     // 向后兼容：如果传入的是数字，转换为 limit 参数
     const queryOptions = typeof options === 'number' ? { limit: options } : options
 
-    const result: ClipboardIpcResponse<ClipboardItem[]> = await invoke(
+    const result: ClipboardIpcResponse<ClipboardItemDto[]> = await invoke(
       'clipboard-get-history',
       queryOptions
     )
     if (result.success) {
       return {
-        items: result.data || [],
+        items: (result.data || []).map(decodeClipboardItem),
         apps: result.apps || {}
       }
     }
@@ -76,7 +85,8 @@ export const clipboard: ClipboardOperations = {
 
   async parseOcr(itemId: string): Promise<boolean> {
     const result: ClipboardIpcResponse = await invoke('clipboard-parse-ocr', itemId)
-    return result.success
+    if (!result.success) throw new Error(result.error || OCR_MANAGE_TEXT.error)
+    return true
   },
 
   async parseQRCode(itemId: string): Promise<boolean> {
@@ -293,7 +303,6 @@ export const rendererAPI: RendererAPI = {
     onceSimple,
     send,
     invoke,
-    sendSync,
     removeListener,
     removeAllListeners
   }

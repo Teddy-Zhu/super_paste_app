@@ -189,10 +189,11 @@ export function useSearchAndNavigation({
   }
 
   const handleKeyNavigation = (event: KeyboardEvent): void => {
+    const isCtrlOrCmd = event.ctrlKey || event.metaKey
     if (
       event.defaultPrevented ||
       event.isComposing ||
-      event.keyCode === 229 ||
+      (event.keyCode === 229 && !isCtrlOrCmd) ||
       isComposing.value ||
       !isActive()
     )
@@ -208,7 +209,6 @@ export function useSearchAndNavigation({
     )
       return
 
-    const isCtrlOrCmd = event.ctrlKey || event.metaKey
     if (inputFocused && event.shiftKey && event.key.startsWith('Arrow')) return
 
     switch (event.key) {

@@ -1,8 +1,11 @@
 <script setup lang="ts">
 import IconTag from '~icons/mdi/tag-outline'
+import ColorPicker from '@renderer/components/ColorPicker.vue'
+import { FORM_CONTROL_TEXT } from '@renderer/constants/form-controls'
 import { SETTINGS_LABELS } from '@renderer/constants/desktop-ui'
 import { ref, onMounted } from 'vue'
 import { tags } from '@renderer/api/renderer-api'
+import { confirmAction, showMessage } from '@renderer/api/dialog'
 import type { TagGroup } from '@renderer/api/types'
 
 // 标签管理相关状态
@@ -78,7 +81,7 @@ const startEditTag = (tag: TagGroup): void => {
 // 保存标签（创建或更新）
 const saveTag = async (): Promise<void> => {
   if (!tagForm.value.name.trim()) {
-    alert('请输入标签名称')
+    await showMessage('请输入标签名称')
     return
   }
 
@@ -104,13 +107,13 @@ const saveTag = async (): Promise<void> => {
     resetTagForm()
   } catch (error) {
     console.error('保存标签失败:', error)
-    alert('保存标签失败: ' + (error as Error).message)
+    await showMessage('保存标签失败: ' + (error as Error).message)
   }
 }
 
 // 删除标签
 const deleteTag = async (tag: TagGroup): Promise<void> => {
-  if (!confirm(`确定要删除标签"${tag.name}"吗？这将同时移除所有相关的标签绑定。`)) {
+  if (!(await confirmAction(`确定要删除标签"${tag.name}"吗？这将同时移除所有相关的标签绑定。`))) {
     return
   }
 
@@ -119,7 +122,7 @@ const deleteTag = async (tag: TagGroup): Promise<void> => {
     await loadAllTags()
   } catch (error) {
     console.error('删除标签失败:', error)
-    alert('删除标签失败: ' + (error as Error).message)
+    await showMessage('删除标签失败: ' + (error as Error).message)
   }
 }
 
@@ -205,7 +208,7 @@ onMounted(() => {
                   @click="tagForm.color = color"
                 ></button>
               </div>
-              <input v-model="tagForm.color" type="color" class="color-input" />
+              <ColorPicker v-model="tagForm.color" :aria-label="FORM_CONTROL_TEXT.customColor" />
             </div>
           </div>
 

@@ -4,17 +4,21 @@ import eslintPluginVue from 'eslint-plugin-vue'
 import vueParser from 'vue-eslint-parser'
 
 export default tseslint.config(
-  { ignores: ['**/node_modules', '**/dist', '**/out', 'packages/*/target/**'] },
+  { ignores: ['**/node_modules', '**/dist', '**/out', '**/target'] },
   tseslint.configs.recommended,
+  {
+    files: ['**/*.{js,mjs,cjs}'],
+    rules: {
+      '@typescript-eslint/explicit-function-return-type': 'off'
+    }
+  },
   eslintPluginVue.configs['flat/recommended'],
   {
     files: ['**/*.vue'],
     languageOptions: {
       parser: vueParser,
       parserOptions: {
-        ecmaFeatures: {
-          jsx: true
-        },
+        ecmaFeatures: { jsx: true },
         extraFileExtensions: ['.vue'],
         parser: tseslint.parser
       }
@@ -25,23 +29,7 @@ export default tseslint.config(
     rules: {
       'vue/require-default-prop': 'off',
       'vue/multi-word-component-names': 'off',
-      'vue/block-lang': [
-        'error',
-        {
-          script: {
-            lang: 'ts'
-          }
-        }
-      ]
-    }
-  },
-  {
-    files: ['packages/active-window-kwin/**/*.cjs'],
-    // The standalone CommonJS entry loads a native addon; its public types live
-    // in index.d.ts, since JavaScript cannot contain TS return annotations.
-    rules: {
-      '@typescript-eslint/no-require-imports': 'off',
-      '@typescript-eslint/explicit-function-return-type': 'off'
+      'vue/block-lang': ['error', { script: { lang: 'ts' } }]
     }
   },
   eslintConfigPrettier

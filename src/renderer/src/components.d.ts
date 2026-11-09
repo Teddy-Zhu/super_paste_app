@@ -12,10 +12,14 @@ declare module 'vue' {
     ClipboardPreviewContent: typeof import('./components/ClipboardPreviewContent.vue')['default']
     ClipboardPreviewDialog: typeof import('./components/ClipboardPreviewDialog.vue')['default']
     ClipboardSourceApp: typeof import('./components/ClipboardSourceApp.vue')['default']
+    ColorPicker: typeof import('./components/ColorPicker.vue')['default']
     ContextMenu: typeof import('./components/ContextMenu.vue')['default']
+    DatePicker: typeof import('./components/DatePicker.vue')['default']
     ImageDisplay: typeof import('./components/ImageDisplay.vue')['default']
+    NumberInput: typeof import('./components/NumberInput.vue')['default']
     RouterLink: typeof import('vue-router')['RouterLink']
     RouterView: typeof import('vue-router')['RouterView']
+    SelectControl: typeof import('./components/SelectControl.vue')['default']
     StatisticsLineChart: typeof import('./components/StatisticsLineChart.vue')['default']
   }
 }

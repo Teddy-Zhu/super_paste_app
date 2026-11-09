@@ -5,10 +5,16 @@ import { OCR_USAGE_TEXT as text } from '@renderer/constants/ocr'
 import { STATISTICS_TEXT } from '@renderer/constants/statistics'
 import { createTokenTrend } from '@renderer/utils/statistics'
 import StatisticsLineChart from '@renderer/components/StatisticsLineChart.vue'
+import SelectControl from '@renderer/components/SelectControl.vue'
 import type { AIOCRUsageStats } from '@shared/ai-ocr'
 
 const stats = ref<AIOCRUsageStats>()
 const period = ref('all')
+const periodOptions = [
+  { value: 'all', label: text.all },
+  { value: 'week', label: text.week },
+  { value: 'month', label: text.month }
+] as const
 const loading = ref(false)
 const clearing = ref(false)
 const confirmingClear = ref(false)
@@ -102,11 +108,12 @@ onBeforeUnmount(() => {
       <h4 class="setting-title">{{ text.title }}</h4>
       <p class="setting-description">{{ text.description }}</p>
       <div class="usage-actions">
-        <select v-model="period" :disabled="clearing" :aria-label="text.time">
-          <option value="all">{{ text.all }}</option>
-          <option value="week">{{ text.week }}</option>
-          <option value="month">{{ text.month }}</option>
-        </select>
+        <SelectControl
+          v-model="period"
+          :options="periodOptions"
+          :disabled="clearing"
+          :aria-label="text.time"
+        />
         <button class="shortcut-button secondary" :disabled="loading || clearing" @click="load">
           {{ text.refresh }}
         </button>
@@ -269,12 +276,6 @@ onBeforeUnmount(() => {
   flex-wrap: wrap;
   gap: 8px;
   margin-top: 12px;
-}
-select {
-  padding: 5px 9px;
-  border: 1px solid var(--color-control-border);
-  border-radius: var(--radius-xs);
-  background: var(--color-bg-primary);
 }
 .usage-metrics {
   display: grid;

@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { useSettingsStore } from '@renderer/stores/common'
 import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { getDesktopPlatform } from '@renderer/api/desktop'
+import { confirmAction } from '@renderer/api/dialog'
 import {
   getSystemAccessStatus,
   SYSTEM_ACCESS_TEXT,
@@ -24,6 +26,7 @@ const refreshAccess = async (retry = false): Promise<void> => {
 onMounted(() => refreshAccess())
 
 const settingsStore = useSettingsStore()
+const isMac = getDesktopPlatform().platform === 'darwin'
 
 // 快捷键设置相关状态
 const isListeningForShortcut = ref(false)
@@ -103,7 +106,7 @@ const parseShortcutFromEvent = (event: KeyboardEvent): string => {
     newValue = `${newValue}${newValue.length > 0 ? '+' : ''}Shift`
   }
   if (event.metaKey) {
-    newValue = `${newValue}${newValue.length > 0 ? '+' : ''}${window.electron.process.platform === 'darwin' ? 'Command' : 'Super'}`
+    newValue = `${newValue}${newValue.length > 0 ? '+' : ''}${isMac ? 'Command' : 'Super'}`
   }
   if (event.altKey) {
     newValue = `${newValue}${newValue.length > 0 ? '+' : ''}Alt`
@@ -141,12 +144,12 @@ const convertElectronAcceleratorToDisplay = (accelerator: string): string => {
   if (!accelerator) return ''
 
   const electronToDisplayMap: Record<string, string> = {
-    CommandOrControl: window.electron.process.platform === 'darwin' ? 'Cmd' : 'Ctrl',
+    CommandOrControl: isMac ? 'Cmd' : 'Ctrl',
     Ctrl: 'Ctrl',
     Command: 'Cmd',
     Super: 'Win',
     Control: 'Ctrl',
-    Meta: window.electron.process.platform === 'darwin' ? 'Cmd' : 'Ctrl',
+    Meta: isMac ? 'Cmd' : 'Ctrl',
     Alt: 'Alt',
     Shift: 'Shift',
     Space: 'Space',
@@ -170,8 +173,7 @@ const convertElectronAcceleratorToDisplay = (accelerator: string): string => {
 // 设置全局快捷键（存储 Electron Accelerator 格式）
 const setGlobalShortcut = async (electronAccelerator: string): Promise<boolean> => {
   try {
-    settingsStore.globalShortcut = electronAccelerator
-    await settingsStore.$whenSynced()
+    await settingsStore.$commit({ globalShortcut: electronAccelerator })
     await refreshAccess()
     return true
   } catch (error) {
@@ -320,7 +322,7 @@ const cancelShortcutSetting = (): void => {
 
 // 清除快捷键
 const clearShortcut = async (): Promise<void> => {
-  if (confirm('确定要清除当前快捷键设置吗？')) {
+  if (await confirmAction('确定要清除当前快捷键设置吗？')) {
     await setGlobalShortcut('')
   }
 }
@@ -459,6 +461,7 @@ onUnmounted(() => {
 .system-shortcut-command {
   display: block;
   overflow-wrap: anywhere;
+  -webkit-user-select: text;
   user-select: text;
 }
 </style>

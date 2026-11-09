@@ -27,8 +27,11 @@
 }
 
 .overlay-content {
+  --clipboard-card-height: 100%;
+
   width: 100%;
-  height: 100vh;
+  height: 100%;
+  min-height: 0;
   background: var(--color-window);
   border: 1px solid var(--color-border-strong);
   display: flex;
@@ -86,6 +89,13 @@
 }
 
 .toolbar-icon:hover {
+  background: var(--color-control-hover);
+  color: var(--color-text-primary);
+}
+
+.toolbar-icon:focus-visible {
+  outline: none;
+  border-color: var(--color-primary);
   background: var(--color-control-hover);
   color: var(--color-text-primary);
 }
@@ -187,15 +197,17 @@
 }
 
 .search-input {
+  appearance: none;
   width: 100%;
   height: 28px;
+  min-height: 0;
   padding: 4px 9px;
   border: 1px solid var(--color-control-border);
   border-radius: var(--radius-xs);
   background: var(--color-bg-primary);
   font-size: 12px;
   outline: none;
-  box-shadow: var(--shadow-inset-sm);
+  box-shadow: none;
   transition:
     border-color var(--duration-fast),
     box-shadow var(--duration-fast);
@@ -212,7 +224,7 @@
 
 .search-input:focus {
   border-color: var(--color-primary);
-  box-shadow: inset 0 0 0 1px var(--color-primary);
+  box-shadow: none;
 }
 
 .search-input::placeholder {
@@ -389,6 +401,11 @@
   display: flex;
   gap: 10px;
   width: max-content;
+  height: 100%;
+}
+
+.clipboard-scroll-container:not(.clipboard-scroll-container--side) :deep(.scroll-content) {
+  height: 100%;
 }
 
 .overlay-content--side {
@@ -408,6 +425,7 @@
   flex-direction: column;
   align-items: center;
   width: 100%;
+  height: auto;
 }
 
 .clipboard-list-wrapper::after {

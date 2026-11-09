@@ -151,8 +151,7 @@ const compactText = computed(() => text.value.length <= 80 && !/[\r\n]/.test(tex
         class="text-preview"
         :class="{ 'code-preview': preview.kind === 'code', 'compact-text': compactText }"
         dir="auto"
-        >{{ displayedText }}</pre
-      >
+        >{{ displayedText }}</pre>
       <span v-if="!expanded && text.length > PREVIEW_LIMITS.text" class="preview-notice">{{
         PREVIEW_LABELS.previewExcerpt
       }}</span>

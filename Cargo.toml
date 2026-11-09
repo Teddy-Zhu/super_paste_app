@@ -1,0 +1,14 @@
+[workspace]
+members = ["src-tauri", "crates/data-format", "tools/migrate-electron"]
+exclude = ["src-tauri/vendor/clipboard-core", "src-tauri/vendor/oar-ocr-core"]
+resolver = "3"
+
+[patch.crates-io]
+oar-ocr-core = { path = "src-tauri/vendor/oar-ocr-core" }
+
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = 3
+panic = "abort"
+strip = true

@@ -1,27 +1,5 @@
 packages:
-  - packages/*
-
+  - .
 allowBuilds:
-  '@paymoapp/active-window': true
-  '@teddyzhu/clipboard': true
-  better-sqlite3: true
-  canvas: true
-  core-js: true
-  electron: true
-  electron-winstaller: true
+  core-js: false
   esbuild: true
-  get-windows: true
-  lzma-native: true
-  onnxruntime-node: true
-  vue-demi: true
-
-minimumReleaseAgeExclude:
-  - electron@44.8.0
-  - '@teddyzhu/clipboard-darwin-arm64@0.0.12'
-  - '@teddyzhu/clipboard-darwin-x64@0.0.12'
-  - '@teddyzhu/clipboard-linux-arm64-gnu@0.0.12'
-  - '@teddyzhu/clipboard-linux-x64-gnu@0.0.12'
-  - '@teddyzhu/clipboard-win32-arm64-msvc@0.0.12'
-  - '@teddyzhu/clipboard-win32-x64-msvc@0.0.12'
-  - '@teddyzhu/clipboard@0.0.12'
-  - '@teddyzhu/auto-launch@6.0.1'

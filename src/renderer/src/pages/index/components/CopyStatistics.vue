@@ -5,6 +5,8 @@ import { STATISTICS_TEXT as text } from '@renderer/constants/statistics'
 import { PREVIEW_TYPES } from '@renderer/constants/clipboard-preview'
 import { formatStatisticsBytes } from '@renderer/utils/statistics'
 import StatisticsLineChart from '@renderer/components/StatisticsLineChart.vue'
+import SelectControl from '@renderer/components/SelectControl.vue'
+import DatePicker from '@renderer/components/DatePicker.vue'
 import {
   COPY_STATISTICS_TYPES,
   type CopyStatistics,
@@ -40,6 +42,31 @@ const availableSources = computed(() => [
     ...(source.value === undefined ? [] : [source.value])
   ])
 ])
+const periodOptions = [
+  { value: 'today', label: text.today },
+  { value: 'week', label: text.week },
+  { value: 'month', label: text.month },
+  { value: 'all', label: text.all },
+  { value: 'custom', label: text.custom }
+] as const
+const typeOptions = computed(() => [
+  { value: '' as const, label: text.allTypes },
+  ...COPY_STATISTICS_TYPES.map((value) => ({ value, label: typeLabel(value) }))
+])
+const sourceOptions = computed(() => [
+  { value: undefined, label: text.allSources },
+  ...availableSources.value.map((value) => ({ value, label: sourceLabel(value) }))
+])
+const intervalOptions = [
+  { value: 'hour', label: text.hour },
+  { value: 'day', label: text.day },
+  { value: 'month', label: text.byMonth }
+] as const
+const metricOptions = [
+  { value: 'copies', label: text.copies },
+  { value: 'bytes', label: text.bytes },
+  { value: 'files', label: text.files }
+] as const
 const trend = computed(
   () =>
     stats.value?.series.map((point) => ({
@@ -159,45 +186,28 @@ onBeforeUnmount(() => {
     <div class="statistics-filters">
       <label
         >{{ text.time }}
-        <select v-model="period" :disabled="clearing">
-          <option value="today">{{ text.today }}</option>
-          <option value="week">{{ text.week }}</option>
-          <option value="month">{{ text.month }}</option>
-          <option value="all">{{ text.all }}</option>
-          <option value="custom">{{ text.custom }}</option>
-        </select>
+        <SelectControl v-model="period" :options="periodOptions" :disabled="clearing" />
       </label>
       <template v-if="period === 'custom'">
         <label
-          >{{ text.start }}<input v-model="startDate" type="date" :disabled="clearing"
+          >{{ text.start
+          }}<DatePicker v-model="startDate" :aria-label="text.start" :disabled="clearing"
         /></label>
-        <label>{{ text.end }}<input v-model="endDate" type="date" :disabled="clearing" /></label>
+        <label
+          >{{ text.end }}<DatePicker v-model="endDate" :aria-label="text.end" :disabled="clearing"
+        /></label>
       </template>
       <label
         >{{ text.type }}
-        <select v-model="type" :disabled="clearing">
-          <option value="">{{ text.allTypes }}</option>
-          <option v-for="item in COPY_STATISTICS_TYPES" :key="item" :value="item">
-            {{ typeLabel(item) }}
-          </option>
-        </select>
+        <SelectControl v-model="type" :options="typeOptions" :disabled="clearing" />
       </label>
       <label
         >{{ text.source }}
-        <select v-model="source" :disabled="clearing">
-          <option :value="undefined">{{ text.allSources }}</option>
-          <option v-for="item in availableSources" :key="item" :value="item">
-            {{ sourceLabel(item) }}
-          </option>
-        </select>
+        <SelectControl v-model="source" :options="sourceOptions" :disabled="clearing" />
       </label>
       <label
         >{{ text.interval }}
-        <select v-model="interval" :disabled="clearing">
-          <option value="hour">{{ text.hour }}</option>
-          <option value="day">{{ text.day }}</option>
-          <option value="month">{{ text.byMonth }}</option>
-        </select>
+        <SelectControl v-model="interval" :options="intervalOptions" :disabled="clearing" />
       </label>
       <button class="shortcut-button secondary" :disabled="loading || clearing" @click="load">
         {{ loading ? text.loading : text.refresh }}
@@ -243,11 +253,7 @@ onBeforeUnmount(() => {
       </p>
       <div class="trend-heading">
         <h5>{{ text.trend }}</h5>
-        <select v-model="metric" :aria-label="text.metric">
-          <option value="copies">{{ text.copies }}</option>
-          <option value="bytes">{{ text.bytes }}</option>
-          <option value="files">{{ text.files }}</option>
-        </select>
+        <SelectControl v-model="metric" :options="metricOptions" :aria-label="text.metric" />
       </div>
       <StatisticsLineChart
         :points="trend"
@@ -308,13 +314,8 @@ label {
   color: var(--color-text-secondary);
   font-size: 12px;
 }
-select,
-input {
-  padding: 6px 9px;
-  border: 1px solid var(--color-control-border);
-  border-radius: var(--radius-xs);
-  background: var(--color-bg-primary);
-  color: var(--color-text-primary);
+.statistics-filters .select-control,
+.statistics-filters .date-picker {
   max-width: 220px;
 }
 .statistics-metrics {

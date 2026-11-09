@@ -1,17 +1,20 @@
 <script setup lang="ts">
 import { useSettingsStore } from '@renderer/stores/common'
-import { invoke, onSimple } from '@renderer/api/ipc'
+import { getConfigReadResult, invoke, onSimple } from '@renderer/api/ipc'
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { onClickOutside } from '@vueuse/core'
 import IconChevronDown from '~icons/mdi/chevron-down'
+import SelectControl from '@renderer/components/SelectControl.vue'
 import { AI_OCR_TEXT, OCR_MANAGE_TEXT } from '@renderer/constants/ocr'
 import {
   createDefaultAIOCRConfigs,
   isAIOCRProvider,
   validateAIOCRConfig,
+  type AIOCRConfig,
   type AIOCRConfigs,
   type AIOCRModelOption,
-  type AIOCRAPIRequest
+  type AIOCRAPIRequest,
+  type AIOCRProvider
 } from '@shared/ai-ocr'
 import {
   DEFAULT_OCR_MODEL_ID,
@@ -21,6 +24,7 @@ import {
   type OCRModelStatus,
   type OCRSettings
 } from '@shared/ocr-models'
+import type { CredentialChanges } from '@shared/store-sync'
 
 const settingsStore = useSettingsStore()
 
@@ -61,6 +65,8 @@ const normalize = (config: OCRSettings): OCRSettings => ({
   ocrAIConfigs: normalizeAIConfigs(config.ocrAIConfigs)
 })
 const form = reactive<OCRSettings>(readStoreConfig())
+const clearKeyRequested = reactive(new Set<'openai' | 'claude'>())
+const credentialRevision = ref(0)
 const saveMessage = ref('')
 const saveError = ref('')
 const isSaving = ref(false)
@@ -84,7 +90,17 @@ const modelStatuses = ref<Partial<Record<OCRModelId, OCRModelStatus>>>({})
 const savedSnapshot = ref(JSON.stringify(normalize(form)))
 let unsubscribe: (() => void) | undefined
 
-const hasUnsavedChanges = computed(() => JSON.stringify(normalize(form)) !== savedSnapshot.value)
+const hasUnsavedChanges = computed(
+  () => clearKeyRequested.size > 0 || JSON.stringify(normalize(form)) !== savedSnapshot.value
+)
+const hasSavedAIKey = computed(() => {
+  void credentialRevision.value
+  if (!isAIOCRProvider(form.ocrMode)) return false
+  if (clearKeyRequested.has(form.ocrMode)) return false
+  const path = `settings.ocrAIConfigs.${form.ocrMode}.apiKey`
+  const status = getConfigReadResult('settings').credentialFields[path]
+  return status === 'available' || status === 'configured'
+})
 const selectedModel = computed(
   () => OCR_MODELS.find((model) => model.id === form.ocrLocalModel) || OCR_MODELS[0]
 )
@@ -153,7 +169,26 @@ const handleModelFocusOut = (event: FocusEvent): void => {
 }
 onClickOutside(modelPicker, closeModelList)
 watch(isSaving, closeModelList)
-const modelGroups = [...new Set(OCR_MODELS.map((model) => model.group))]
+const formatSize = (bytes: number): string => (bytes / 1024 / 1024).toFixed(1) + ' MB'
+const ocrModeOptions = [
+  { value: 'local', label: '本地模型' },
+  { value: 'remote', label: '远程接口' },
+  { value: 'openai', label: AI_OCR_TEXT.openai },
+  { value: 'claude', label: AI_OCR_TEXT.claude }
+] as const
+const localModelOptions = OCR_MODELS.map((model) => ({
+  value: model.id,
+  group: model.group,
+  label: `${model.name} · ${formatSize(model.size)}`
+}))
+const openaiApiOptions = [
+  { value: 'chat', label: OCR_MANAGE_TEXT.chat },
+  { value: 'responses', label: OCR_MANAGE_TEXT.responses }
+] as const
+const requestFormatOptions = [
+  { value: 'json', label: 'JSON' },
+  { value: 'form', label: '表单 (multipart/form-data)' }
+] as const
 const isDownloading = computed(() => selectedStatus.value?.state === 'downloading')
 const localBusy = computed(() => !!downloadingId.value || maintaining.value)
 const downloadProgress = computed(() => {
@@ -169,11 +204,55 @@ const modelStatusText = computed(() => {
   if (status?.state === 'downloading') return OCR_MODEL_STAGE_LABELS[status.stage || 'downloading']
   return '尚未下载'
 })
-const formatSize = (bytes: number): string => (bytes / 1024 / 1024).toFixed(1) + ' MB'
-
 const loadFromStore = (): void => {
   Object.assign(form, readStoreConfig())
+  clearKeyRequested.clear()
+  credentialRevision.value++
   savedSnapshot.value = JSON.stringify(normalize(form))
+}
+
+const clearActiveAIKey = (): void => {
+  if (!isAIOCRProvider(form.ocrMode)) return
+  form.ocrAIConfigs[form.ocrMode].apiKey = ''
+  clearKeyRequested.add(form.ocrMode)
+}
+
+const commitAIProfileBeforeRequest = async (requireModel: boolean): Promise<void> => {
+  if (!isAIOCRProvider(form.ocrMode)) throw new Error('AI OCR 配置无效')
+  const provider = form.ocrMode
+  const draft = normalizeAIConfigs(form.ocrAIConfigs)[provider]
+  const stored = settingsStore.ocrAIConfigs[provider]
+  const configs = normalizeAIConfigs(settingsStore.ocrAIConfigs)
+  configs[provider] = { ...draft, apiKey: '' }
+
+  const credentialChanges: CredentialChanges = {}
+  const credentialPath = `settings.ocrAIConfigs.${provider}.apiKey` as const
+  const key = draft.apiKey.trim()
+  if (clearKeyRequested.has(provider)) {
+    credentialChanges[credentialPath] = 'unset'
+  } else if (key && key !== (stored.apiKey || '')) {
+    credentialChanges[credentialPath] = 'set'
+    configs[provider].apiKey = key
+  }
+
+  validateAIOCRConfig(
+    provider,
+    draft,
+    true,
+    requireModel,
+    hasSavedAIKey.value && !clearKeyRequested.has(provider)
+  )
+  await settingsStore.$commit({ ocrAIConfigs: configs }, { credentialChanges })
+  await settingsStore.$whenSynced()
+  if (credentialChanges[credentialPath]) {
+    form.ocrAIConfigs[provider].apiKey = ''
+    clearKeyRequested.delete(provider)
+  }
+  credentialRevision.value++
+  const credentialState = getConfigReadResult('settings').credentialFields[credentialPath]
+  if (credentialState !== 'available' && credentialState !== 'configured') {
+    throw new Error('请先设置 AI OCR 密钥')
+  }
 }
 
 const extraParamsError = computed(() => {
@@ -252,17 +331,25 @@ const maintainModel = async (action: 'delete' | 'redownload'): Promise<void> => 
 
 const apiRequest = (): AIOCRAPIRequest => {
   if (!isAIOCRProvider(form.ocrMode)) throw new Error('AI OCR 配置无效')
-  return { provider: form.ocrMode, config: { ...form.ocrAIConfigs[form.ocrMode] } }
+  const config = form.ocrAIConfigs[form.ocrMode]
+  return {
+    provider: form.ocrMode,
+    config: { baseUrl: config.baseUrl, model: config.model, api: config.api }
+  }
 }
 
 const fetchModels = async (): Promise<void> => {
-  const version = profileVersion
+  if (fetchingModels.value) return
   fetchingModels.value = true
   apiError.value = ''
   apiMessage.value = ''
+  let requestVersion: number | undefined
   try {
+    await commitAIProfileBeforeRequest(false)
+    requestVersion = profileVersion
+    fetchingModels.value = true
     const result = await invoke('ocr:ai-list-models', apiRequest())
-    if (disposed || version !== profileVersion) return
+    if (disposed || requestVersion !== profileVersion) return
     if (!result.success || !result.data) throw new Error(result.error || OCR_MANAGE_TEXT.listFailed)
     models.value = result.data
     if (result.data.length) openModelList()
@@ -271,28 +358,32 @@ const fetchModels = async (): Promise<void> => {
       apiMessage.value = OCR_MANAGE_TEXT.noModels
     }
   } catch (error) {
-    if (!disposed && version === profileVersion)
+    if (!disposed && (requestVersion === undefined || requestVersion === profileVersion))
       apiError.value = error instanceof Error ? error.message : String(error)
   } finally {
-    if (version === profileVersion) fetchingModels.value = false
+    fetchingModels.value = false
   }
 }
 
 const testConnection = async (): Promise<void> => {
-  const version = testVersion
+  if (testingConnection.value) return
   testingConnection.value = true
   apiError.value = ''
   apiMessage.value = ''
+  let requestVersion: number | undefined
   try {
+    await commitAIProfileBeforeRequest(true)
+    requestVersion = testVersion
+    testingConnection.value = true
     const result = await invoke('ocr:ai-test-connection', apiRequest())
-    if (disposed || version !== testVersion) return
+    if (disposed || requestVersion !== testVersion) return
     if (!result.success || !result.data) throw new Error(result.error || OCR_MANAGE_TEXT.testFailed)
     apiMessage.value = `${OCR_MANAGE_TEXT.connected} · ${result.data.model} · ${result.data.latencyMs} ms`
   } catch (error) {
-    if (!disposed && version === testVersion)
+    if (!disposed && (requestVersion === undefined || requestVersion === testVersion))
       apiError.value = error instanceof Error ? error.message : String(error)
   } finally {
-    if (version === testVersion) testingConnection.value = false
+    testingConnection.value = false
   }
 }
 
@@ -342,7 +433,13 @@ const saveConfig = async (): Promise<void> => {
   }
   if (isAIOCRProvider(form.ocrMode)) {
     try {
-      validateAIOCRConfig(form.ocrMode, form.ocrAIConfigs[form.ocrMode], form.enableLocalOCR)
+      validateAIOCRConfig(
+        form.ocrMode,
+        form.ocrAIConfigs[form.ocrMode],
+        form.enableLocalOCR,
+        true,
+        hasSavedAIKey.value && !clearKeyRequested.has(form.ocrMode)
+      )
     } catch (error) {
       saveError.value = error instanceof Error ? error.message : String(error)
       return
@@ -350,8 +447,26 @@ const saveConfig = async (): Promise<void> => {
   }
   isSaving.value = true
   try {
-    settingsStore.$patch(normalize(form))
-    await settingsStore.$whenSynced()
+    const normalized = normalize(form)
+    type AIOCRConfigPatch = Omit<AIOCRConfig, 'apiKey'> & { apiKey?: string }
+    const ocrAIConfigs: Record<AIOCRProvider, AIOCRConfigPatch> = {
+      openai: { ...normalized.ocrAIConfigs.openai },
+      claude: { ...normalized.ocrAIConfigs.claude }
+    }
+    const credentialChanges: CredentialChanges = {}
+    for (const provider of ['openai', 'claude'] as const) {
+      const credentialPath = `settings.ocrAIConfigs.${provider}.apiKey` as const
+      const { apiKey, ...config } = normalized.ocrAIConfigs[provider]
+      const currentKey = settingsStore.ocrAIConfigs[provider].apiKey || ''
+      if (clearKeyRequested.has(provider) || apiKey !== currentKey) {
+        credentialChanges[credentialPath] = apiKey ? 'set' : 'unset'
+        ocrAIConfigs[provider] = apiKey ? { ...config, apiKey } : config
+      } else {
+        ocrAIConfigs[provider] = config
+      }
+    }
+    const patch = { ...normalized, ocrAIConfigs }
+    await settingsStore.$commit(patch, { credentialChanges })
     loadFromStore()
     saveMessage.value = 'OCR 配置已保存'
   } catch (error) {
@@ -417,12 +532,13 @@ watch(readStoreConfig, () => {
           <p class="setting-description">{{ AI_OCR_TEXT.modeDescription }}</p>
         </div>
         <div class="setting-control ocr-mode-control">
-          <select v-model="form.ocrMode" class="select-input" :disabled="isSaving || localBusy">
-            <option value="local">本地模型</option>
-            <option value="remote">远程接口</option>
-            <option value="openai">{{ AI_OCR_TEXT.openai }}</option>
-            <option value="claude">{{ AI_OCR_TEXT.claude }}</option>
-          </select>
+          <SelectControl
+            v-model="form.ocrMode"
+            :options="ocrModeOptions"
+            class="select-input"
+            aria-label="OCR 方式"
+            :disabled="isSaving || localBusy"
+          />
         </div>
       </div>
 
@@ -432,21 +548,13 @@ watch(readStoreConfig, () => {
           <p class="setting-description">
             启用自动 OCR 或首次手动识别时下载所选模型，下载后可离线使用。
           </p>
-          <select
+          <SelectControl
             v-model="form.ocrLocalModel"
+            :options="localModelOptions"
             class="select-input"
+            aria-label="本地 OCR 模型"
             :disabled="isSaving || localBusy"
-          >
-            <optgroup v-for="group in modelGroups" :key="group" :label="group">
-              <option
-                v-for="model in OCR_MODELS.filter((item) => item.group === group)"
-                :key="model.id"
-                :value="model.id"
-              >
-                {{ model.name }} · {{ formatSize(model.size) }}
-              </option>
-            </optgroup>
-          </select>
+          />
           <p class="model-description">
             {{ selectedModel.description }} · 下载大小 {{ formatSize(selectedModel.size) }}
           </p>
@@ -518,15 +626,13 @@ watch(readStoreConfig, () => {
             <p class="setting-description">{{ OCR_MANAGE_TEXT.apiDescription }}</p>
           </div>
           <div class="setting-control ocr-mode-control">
-            <select
+            <SelectControl
               id="ocr-openai-api"
               v-model="selectedAIConfig.api"
+              :options="openaiApiOptions"
               :disabled="isSaving"
               class="select-input"
-            >
-              <option value="chat">{{ OCR_MANAGE_TEXT.chat }}</option>
-              <option value="responses">{{ OCR_MANAGE_TEXT.responses }}</option>
-            </select>
+            />
           </div>
         </div>
         <div class="setting-card multi-line-card">
@@ -558,8 +664,18 @@ watch(readStoreConfig, () => {
               type="password"
               autocomplete="off"
               spellcheck="false"
-              :placeholder="AI_OCR_TEXT.apiKeyPlaceholder"
+              :placeholder="
+                hasSavedAIKey ? '已保存的密钥留空即可继续使用' : AI_OCR_TEXT.apiKeyPlaceholder
+              "
             />
+            <button
+              class="shortcut-button secondary"
+              type="button"
+              :disabled="isSaving"
+              @click="clearActiveAIKey"
+            >
+              清除密钥
+            </button>
           </div>
         </div>
         <div class="setting-card multi-line-card">
@@ -572,7 +688,7 @@ watch(readStoreConfig, () => {
                 :disabled="
                   isSaving ||
                   fetchingModels ||
-                  !selectedAIConfig.apiKey ||
+                  (!selectedAIConfig.apiKey && !hasSavedAIKey) ||
                   !selectedAIConfig.baseUrl
                 "
                 @click="fetchModels"
@@ -653,7 +769,7 @@ watch(readStoreConfig, () => {
                 :disabled="
                   isSaving ||
                   testingConnection ||
-                  !selectedAIConfig.apiKey ||
+                  (!selectedAIConfig.apiKey && !hasSavedAIKey) ||
                   !selectedAIConfig.baseUrl ||
                   !selectedAIConfig.model
                 "
@@ -689,10 +805,13 @@ watch(readStoreConfig, () => {
             <p class="setting-description">json: base64 字段；form: 文件字段上传</p>
           </div>
           <div class="setting-control ocr-mode-control">
-            <select v-model="form.ocrRemoteRequestFormat" :disabled="isSaving" class="select-input">
-              <option value="json">JSON</option>
-              <option value="form">表单 (multipart/form-data)</option>
-            </select>
+            <SelectControl
+              v-model="form.ocrRemoteRequestFormat"
+              :options="requestFormatOptions"
+              :disabled="isSaving"
+              class="select-input"
+              aria-label="请求格式"
+            />
           </div>
         </div>
 
@@ -786,22 +905,25 @@ watch(readStoreConfig, () => {
   min-width: 220px;
 }
 
-.select-input,
 .text-input,
 .text-area {
   width: 100%;
   min-width: 0;
   max-width: 100%;
   margin-top: 12px;
-  padding: 5px 9px;
   border: 1px solid var(--color-control-border);
   border-radius: var(--radius-xs);
   font-size: 13px;
   background: var(--color-bg-primary);
-  transition:
-    border-color var(--duration-fast),
-    box-shadow var(--duration-fast);
+  transition: border-color var(--duration-fast);
   box-sizing: border-box;
+}
+
+.select-input {
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  margin-top: 12px;
 }
 
 .ocr-mode-control .select-input {
@@ -840,8 +962,9 @@ watch(readStoreConfig, () => {
 }
 
 .model-picker-toggle:focus-visible {
-  outline: 2px solid var(--color-primary);
-  outline-offset: -2px;
+  outline: none;
+  background: var(--color-selection);
+  color: var(--color-primary);
 }
 
 .model-options {
@@ -899,12 +1022,10 @@ watch(readStoreConfig, () => {
   line-height: 1.4;
 }
 
-.select-input:focus,
 .text-input:focus,
 .text-area:focus {
   outline: none;
   border-color: var(--color-primary);
-  box-shadow: var(--shadow-focus-primary);
 }
 
 .field-error {

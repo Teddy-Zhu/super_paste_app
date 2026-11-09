@@ -18,7 +18,7 @@ export interface AIOCRModelOption {
 
 export interface AIOCRAPIRequest {
   provider: AIOCRProvider
-  config: AIOCRConfig
+  config: Omit<AIOCRConfig, 'apiKey'>
 }
 
 export interface AIOCRUsageEntry {
@@ -106,13 +106,15 @@ export function validateAIOCRConfig(
   provider: AIOCRProvider,
   config: AIOCRConfig,
   required = true,
-  requireModel = true
+  requireModel = true,
+  hasStoredApiKey = false
 ): void {
   if (config.api !== undefined && config.api !== 'chat' && config.api !== 'responses')
     throw new Error('OpenAI API 类型无效')
   if (config.baseUrl.trim()) normalizeAIOCRBaseURL(provider, config.baseUrl)
   else if (required) throw new Error('AI OCR Base URL 不能为空')
-  if (required && !config.apiKey.trim()) throw new Error('AI OCR API Key 不能为空')
+  if (required && !config.apiKey.trim() && !hasStoredApiKey)
+    throw new Error('AI OCR API Key 不能为空')
   if (required && requireModel && !config.model.trim()) throw new Error('AI OCR 模型名称不能为空')
 }
 
@@ -122,16 +124,15 @@ export function parseAIOCRAPIRequest(value: unknown, requireModel = true): AIOCR
   if (!isAIOCRProvider(provider) || !config || typeof config !== 'object')
     throw new Error('AI OCR 请求配置无效')
   const fields = config as Record<string, unknown>
-  if (['baseUrl', 'apiKey', 'model'].some((key) => typeof fields[key] !== 'string'))
+  if (['baseUrl', 'model'].some((key) => typeof fields[key] !== 'string'))
     throw new Error('AI OCR 请求配置字段无效')
   if (fields.api !== undefined && fields.api !== 'chat' && fields.api !== 'responses')
     throw new Error('OpenAI API 类型无效')
-  const parsed = {
+  const parsed: Omit<AIOCRConfig, 'apiKey'> = {
     baseUrl: (fields.baseUrl as string).trim(),
-    apiKey: (fields.apiKey as string).trim(),
     model: (fields.model as string).trim(),
     api: fields.api === 'responses' ? ('responses' as const) : ('chat' as const)
   }
-  validateAIOCRConfig(provider, parsed, true, requireModel)
+  validateAIOCRConfig(provider, { ...parsed, apiKey: '' }, true, requireModel, true)
   return { provider, config: parsed }
 }

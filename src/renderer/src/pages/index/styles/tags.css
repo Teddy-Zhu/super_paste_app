@@ -116,17 +116,13 @@
   border-radius: var(--radius-xs);
   padding: 6px 9px;
   font-size: 13px;
-  box-shadow: var(--shadow-inset-sm);
-  transition:
-    border-color var(--duration-fast),
-    box-shadow var(--duration-fast);
+  transition: border-color var(--duration-fast);
 }
 
 .form-input:focus,
 .form-textarea:focus {
   outline: none;
   border-color: var(--color-primary);
-  box-shadow: var(--shadow-focus-primary);
 }
 
 .form-textarea {
@@ -160,25 +156,20 @@
   outline-offset: 1px;
 }
 
+.color-option:focus-visible {
+  outline: none;
+  border-color: var(--color-primary);
+}
+
+.color-option.active:focus-visible {
+  border-color: var(--color-primary);
+  outline: none;
+}
+
 .color-option.active {
   border-color: var(--color-bg-primary);
   outline: 2px solid var(--color-primary);
   outline-offset: 1px;
-}
-
-.color-input:hover {
-  border-color: var(--color-primary);
-}
-
-.color-input {
-  flex-shrink: 0;
-  width: 32px;
-  height: 26px;
-  padding: 2px;
-  border: 1px solid var(--color-control-border);
-  border-radius: var(--radius-xs);
-  cursor: pointer;
-  background: var(--color-bg-primary);
 }
 
 .form-actions {

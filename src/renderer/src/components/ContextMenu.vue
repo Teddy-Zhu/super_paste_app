@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onUnmounted, ref, type CSSProperties } from 'vue'
+import { computed, onUnmounted, ref, watch, type CSSProperties } from 'vue'
 import { useContextMenu, type ContextMenuItem } from '@renderer/composables/useContextMenu'
 import IconChevronRight from '~icons/mdi/chevron-right'
 
@@ -78,6 +78,13 @@ const closeAllMenus = (): void => {
   hideSubmenu()
   hideContextMenu()
 }
+
+watch(
+  () => contextMenuState.visible,
+  (visible) => {
+    if (!visible) hideSubmenu()
+  }
+)
 
 const handleItemClick = (item: ContextMenuItem): void => {
   if (item.disabled) return
@@ -246,6 +253,7 @@ onUnmounted(clearCloseMenuTimer)
   width: 160px;
   padding: 4px;
   font-size: 12px;
+  -webkit-user-select: none;
   user-select: none;
 }
 

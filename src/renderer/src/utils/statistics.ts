@@ -26,7 +26,7 @@ export const createTokenTrend = (
     values.set(key(day.day), (values.get(key(day.day)) ?? 0) + day.totalTokens)
   if (interval === 'month') start.setDate(1)
   const points: StatisticsChartPoint[] = []
-  for (const cursor = start; cursor.getTime() <= Date.now(); ) {
+  for (const cursor = start; cursor.getTime() <= Date.now();) {
     const dateKey = `${cursor.getFullYear()}-${String(cursor.getMonth() + 1).padStart(2, '0')}-${String(cursor.getDate()).padStart(2, '0')}`
     points.push({ timestamp: cursor.getTime(), value: values.get(key(dateKey)) ?? 0 })
     if (interval === 'month') cursor.setMonth(cursor.getMonth() + 1)

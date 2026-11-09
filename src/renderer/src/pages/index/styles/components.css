@@ -644,21 +644,18 @@
     border-color var(--duration-fast);
   cursor: default;
   font-weight: var(--font-weight-medium);
-  box-shadow: var(--shadow-inset-sm);
   letter-spacing: var(--letter-spacing-wide);
 }
 
 .shortcut-field:focus {
   outline: none;
   border-color: var(--color-primary);
-  box-shadow: var(--shadow-focus-primary), var(--shadow-inset-sm);
   background: var(--color-bg-primary);
 }
 
 .shortcut-field.listening {
   border-color: var(--color-warning);
   background: var(--color-warning-bg);
-  box-shadow: var(--shadow-focus-error), var(--shadow-inset-sm);
 }
 
 .shortcut-field.preview {

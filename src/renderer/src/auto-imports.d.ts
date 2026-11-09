@@ -10,7 +10,6 @@ declare global {
   const acceptHMRUpdate: typeof import('pinia')['acceptHMRUpdate']
   const asyncComputed: typeof import('@vueuse/core')['asyncComputed']
   const autoResetRef: typeof import('@vueuse/core')['autoResetRef']
-  const cloneStateValue: typeof import('./stores/fieldChangePlugin')['cloneStateValue']
   const computed: typeof import('vue')['computed']
   const computedAsync: typeof import('@vueuse/core')['computedAsync']
   const computedEager: typeof import('@vueuse/core')['computedEager']
@@ -20,7 +19,6 @@ declare global {
   const controlledRef: typeof import('@vueuse/core')['controlledRef']
   const createApp: typeof import('vue')['createApp']
   const createEventHook: typeof import('@vueuse/core')['createEventHook']
-  const createFieldChangePlugin: typeof import('./stores/fieldChangePlugin')['createFieldChangePlugin']
   const createGlobalState: typeof import('@vueuse/core')['createGlobalState']
   const createInjectionState: typeof import('@vueuse/core')['createInjectionState']
   const createPinia: typeof import('pinia')['createPinia']
@@ -322,8 +320,8 @@ declare global {
   export type { SettingsStore } from './stores/common'
   import('./stores/common')
   // @ts-ignore
-  export type { StoreSyncStatus, PiniaCustomProperties, FieldChange } from './stores/fieldChangePlugin'
-  import('./stores/fieldChangePlugin')
+  export type { StoreCommitOptions, StoreSyncStatus, PiniaCustomProperties } from './stores/syncBridge'
+  import('./stores/syncBridge')
 }
 
 // for vue template auto import
@@ -335,7 +333,6 @@ declare module 'vue' {
     readonly acceptHMRUpdate: UnwrapRef<typeof import('pinia')['acceptHMRUpdate']>
     readonly asyncComputed: UnwrapRef<typeof import('@vueuse/core')['asyncComputed']>
     readonly autoResetRef: UnwrapRef<typeof import('@vueuse/core')['autoResetRef']>
-    readonly cloneStateValue: UnwrapRef<typeof import('./stores/fieldChangePlugin')['cloneStateValue']>
     readonly computed: UnwrapRef<typeof import('vue')['computed']>
     readonly computedAsync: UnwrapRef<typeof import('@vueuse/core')['computedAsync']>
     readonly computedEager: UnwrapRef<typeof import('@vueuse/core')['computedEager']>
@@ -345,7 +342,6 @@ declare module 'vue' {
     readonly controlledRef: UnwrapRef<typeof import('@vueuse/core')['controlledRef']>
     readonly createApp: UnwrapRef<typeof import('vue')['createApp']>
     readonly createEventHook: UnwrapRef<typeof import('@vueuse/core')['createEventHook']>
-    readonly createFieldChangePlugin: UnwrapRef<typeof import('./stores/fieldChangePlugin')['createFieldChangePlugin']>
     readonly createGlobalState: UnwrapRef<typeof import('@vueuse/core')['createGlobalState']>
     readonly createInjectionState: UnwrapRef<typeof import('@vueuse/core')['createInjectionState']>
     readonly createPinia: UnwrapRef<typeof import('pinia')['createPinia']>

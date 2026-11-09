@@ -1,0 +1,100 @@
+[package]
+name = "super_paste"
+version = "0.1.0"
+description = "Super Paste clipboard manager"
+authors = ["v2dawn"]
+license = "MIT"
+edition = "2024"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[lib]
+# The `_lib` suffix may seem redundant but it is necessary
+# to make the lib name unique and wouldn't conflict with the bin name.
+# This seems to be only an issue on Windows, see https://github.com/rust-lang/cargo/issues/8519
+name = "super_paste_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "=2.12.5", features = ["tray-icon", "unstable", "macos-private-api"] }
+tauri-plugin-opener = "2"
+tauri-plugin-single-instance = "2"
+tauri-plugin-global-shortcut = "2"
+tauri-plugin-autostart = "2"
+tauri-plugin-dialog = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+data_format = { package = "data-format", path = "../crates/data-format" }
+clipboard-core = { path = "vendor/clipboard-core" }
+tokio-rusqlite = { version = "=0.8.0", features = ["bundled"] }
+rusqlite = { version = "0.40", features = ["bundled"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time", "fs", "io-util", "net", "process", "signal"] }
+tokio-util = { version = "0.7", features = ["rt"] }
+futures-util = "0.3"
+anyhow = "1"
+thiserror = "2"
+base64 = "0.22"
+sha2 = "0.10"
+hex = "0.4"
+uuid = { version = "1", features = ["v4", "v5", "serde"] }
+chrono = { version = "0.4", features = ["serde"] }
+regex = "1"
+url = "2"
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "webp", "bmp", "tiff"] }
+global-hotkey = "0.8"
+x-win = "=5.8.0"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+tracing-appender = "0.2"
+keyring-core = "1.0.1"
+async-trait = "0.1"
+tempfile = "3"
+sysinfo = { version = "0.40", default-features = false, features = ["system"] }
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json", "multipart", "stream"] }
+oar-ocr = { version = "=0.10.2", default-features = false, features = ["simd"] }
+ort = { version = "=2.0.0-rc.13", default-features = false, features = ["std", "load-dynamic", "api-17"] }
+oar-ocr-core = { version = "=0.10.2", default-features = false }
+qrcode = { version = "0.14", default-features = false, features = ["image"] }
+rqrr = "0.10"
+zip = { version = "8.6", default-features = false, features = ["deflate-flate2"] }
+rmcp = { version = "3.8.0", default-features = false, features = ["server", "transport-streamable-http-server", "transport-streamable-http-server-session"] }
+axum = "0.8.9"
+hyper = { version = "1.12.0", features = ["server", "http1"] }
+hyper-util = { version = "0.1", features = ["tokio", "service"] }
+tower = { version = "0.5", features = ["util"] }
+subtle = "2.6"
+
+[target.'cfg(target_os = "linux")'.dependencies]
+gtk = "0.18"
+gdk = "0.18"
+gdkx11 = "0.18"
+glib = "0.18"
+gio = "0.18"
+cairo-rs = { version = "0.18", features = ["png"] }
+webkit2gtk = { version = "2.0", features = ["v2_40"] }
+gtk-layer-shell = { version = "0.8.2", features = ["v0_6"] }
+ashpd = { version = "=0.13.13", default-features = false, features = ["tokio", "global_shortcuts"] }
+dbus = { version = "0.9", features = ["vendored"] }
+kdotool = { git = "https://github.com/jinliu/kdotool", rev = "be03ce90c09350898556436bac74ed35fe928617", default-features = false }
+freedesktop-desktop-entry = { version = "=0.8.4", default-features = false }
+xcb = "1.7"
+zbus-secret-service-keyring-store = { version = "1.0.1", features = ["rt-tokio-crypto-rust"] }
+
+[target.'cfg(any(target_os = "windows", target_os = "macos"))'.dependencies]
+file_icon_provider = "=1.0.2"
+
+[target.'cfg(target_os = "windows")'.dependencies]
+windows-native-keyring-store = "1.1.0"
+webview2-com = "0.39"
+windows = { version = "0.62", features = ["Win32_Foundation", "Win32_System_Com", "Win32_System_Com_StructuredStorage", "Win32_System_LibraryLoader", "Win32_UI_WindowsAndMessaging", "Win32_Graphics_Gdi"] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+apple-native-keyring-store = { version = "1.0.2", features = ["keychain"] }
+objc2 = "0.6"
+objc2-app-kit = { version = "0.3", features = ["NSWindow", "NSImage", "NSBitmapImageRep", "NSWorkspace"] }
+objc2-web-kit = { version = "0.3", features = ["WKWebView", "WKSnapshotConfiguration"] }
+objc2-foundation = { version = "0.3", features = ["NSData", "NSError", "NSString", "NSOperation", "block2"] }
+block2 = "0.6"

@@ -9,6 +9,7 @@ import { tags } from '@renderer/api/renderer-api'
 import { useRafThrottle, useStateManager } from './useUtils'
 import { AnimationState } from './useAnimation'
 import { useContextMenu } from './useContextMenu'
+import { getWheelScrollAmount } from '@renderer/utils/wheel'
 import Scrollbar from 'smooth-scrollbar'
 import type { ScrollbarOptions } from 'smooth-scrollbar/interfaces'
 
@@ -59,10 +60,9 @@ export interface ScrollAndTagsManager {
 // ==================== 常量定义 ====================
 
 const SCROLL_MARGIN = 40 // 滚动时的边距，确保选中项不会紧贴边缘
-const WHEEL_LINE_HEIGHT = 28
 
 const SCROLLBAR_OPTIONS: Partial<ScrollbarOptions> = {
-  damping: 0.1,
+  damping: 0.24,
   renderByPixels: false,
   alwaysShowTracks: false,
   continuousScrolling: true
@@ -84,6 +84,7 @@ export function useScrollAndTags(
   const isScrolling = ref(false)
   let scrollbarInstance: Scrollbar | null = null
   let lastWheelDirection = 0
+  let lastWheelAxis: 'x' | 'y' | undefined
 
   // 获取上下文菜单管理器
   const { hideContextMenu } = useContextMenu()
@@ -139,6 +140,7 @@ export function useScrollAndTags(
     }
 
     lastWheelDirection = 0
+    lastWheelAxis = undefined
     // 容器被 v-if 替换后才重建；普通数据更新保留滚动位置。
     // 如果已有实例，先销毁再重新创建
     if (scrollbarInstance) {
@@ -163,6 +165,7 @@ export function useScrollAndTags(
 
   const destroyScrollbar = (): void => {
     lastWheelDirection = 0
+    lastWheelAxis = undefined
     if (scrollbarInstance) {
       try {
         scrollbarInstance.destroy()
@@ -350,16 +353,10 @@ export function useScrollAndTags(
     if (currentAnimationState.value !== AnimationState.ACTIVE) return
 
     const verticalLayout = isVerticalLayout.value
-    const delta = Math.abs(event.deltaX) > Math.abs(event.deltaY) ? event.deltaX : event.deltaY
-    const deltaScale =
-      event.deltaMode === WheelEvent.DOM_DELTA_LINE
-        ? WHEEL_LINE_HEIGHT
-        : event.deltaMode === WheelEvent.DOM_DELTA_PAGE
-          ? verticalLayout
-            ? container.clientHeight
-            : container.clientWidth
-          : 1
-    const scrollAmount = delta * deltaScale
+    const scrollAmount = getWheelScrollAmount(
+      event,
+      verticalLayout ? container.clientHeight : container.clientWidth
+    )
     if (scrollAmount === 0) return
 
     scrollToSelectedItem.cancel()
@@ -376,13 +373,15 @@ export function useScrollAndTags(
 
     if (scrollbarInstance) {
       try {
-        // 取消键盘定位的滚动动画，当前位置保持不变，后续位移交给库逐帧衰减。
+        // 取消键盘定位动画，但保留同向滚动的剩余位移，让连续滚轮完整累积。
         scrollbarInstance.scrollTo(scrollbarInstance.scrollLeft, scrollbarInstance.scrollTop, 0)
         const direction = Math.sign(scrollAmount)
-        if (direction !== lastWheelDirection) {
+        const axis = verticalLayout ? 'y' : 'x'
+        if (direction !== lastWheelDirection || axis !== lastWheelAxis) {
           scrollbarInstance.setMomentum(0, 0)
         }
         lastWheelDirection = direction
+        lastWheelAxis = axis
         scrollbarInstance.addMomentum(
           verticalLayout ? 0 : scrollAmount,
           verticalLayout ? scrollAmount : 0

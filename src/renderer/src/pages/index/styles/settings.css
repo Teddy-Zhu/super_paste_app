@@ -356,55 +356,20 @@ h4.section-title {
   gap: 8px;
 }
 
-.number-input {
-  width: 80px;
-  height: 28px;
-  padding: 3px 8px;
-  border: 1px solid var(--color-control-border);
-  border-radius: var(--radius-xs);
-  background: var(--color-bg-primary);
-  font-size: 12px;
-  font-variant-numeric: tabular-nums;
-  text-align: right;
-  box-shadow: var(--shadow-inset-sm);
-  transition:
-    border-color var(--duration-fast),
-    box-shadow var(--duration-fast);
-}
-
-.number-input.small {
-  width: 70px;
-}
-
-.select-input {
-  min-height: 28px;
-  padding: 4px 9px;
-  border: 1px solid var(--color-control-border);
-  border-radius: var(--radius-xs);
-  background: var(--color-bg-primary);
-}
-
-.number-input:focus {
-  outline: none;
-  border-color: var(--color-primary);
-  box-shadow: var(--shadow-focus-primary);
-}
-
 .settings-shell
-  :is(.number-input, .text-input, .select-input, .text-area, .form-input, .form-textarea):hover:not(
-    :disabled
-  ):not(:focus) {
+  :is(.text-input, .text-area, .form-input, .form-textarea):hover:not(:disabled):not(:focus) {
   border-color: var(--color-primary);
   background: var(--color-bg-tertiary);
 }
 
-.number-input:disabled {
-  color: var(--color-text-tertiary);
-  background: var(--color-bg-secondary);
-  box-shadow: none;
+.settings-shell
+  .number-input:hover:not(.is-disabled):not(.is-invalid):not(:has(input:disabled)):not(
+    :focus-within
+  ) {
+  border-color: var(--color-primary);
+  background: var(--color-bg-tertiary);
 }
 
-.number-input::placeholder,
 .number-unit {
   font-size: 12px;
   color: var(--color-text-secondary);

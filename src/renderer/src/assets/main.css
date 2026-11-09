@@ -18,28 +18,63 @@ body {
   color: var(--color-text-primary);
   cursor: default;
   overflow: hidden;
+  -webkit-user-select: none;
   user-select: none;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
 
+body * {
+  -webkit-user-select: none;
+  user-select: none;
+}
+
 button,
 input,
-select,
 textarea {
   font: inherit;
   color: inherit;
 }
 
-input,
-select,
-textarea {
+button {
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+:where(
+  input[type='text'],
+  input[type='password'],
+  input[type='email'],
+  input[type='url'],
+  input[type='search'],
+  input[type='tel'],
+  textarea
+) {
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+:where(
+  input[type='text'],
+  input[type='password'],
+  input[type='email'],
+  input[type='url'],
+  input[type='search'],
+  input[type='tel'],
+  textarea
+):where(:not(.number-input__field, .date-picker__input)) {
+  min-height: 30px;
+  padding: 5px 9px;
+  border: 1px solid var(--color-control-border);
+  border-radius: var(--radius-xs);
   background-color: var(--color-bg-primary);
-  accent-color: var(--color-primary);
+  color: var(--color-text-primary);
+  transition:
+    border-color var(--duration-fast),
+    background-color var(--duration-fast);
 }
 
 button,
-select,
 input[type='checkbox'],
 input[type='radio'],
 input[type='range'],
@@ -49,19 +84,177 @@ input[type='color'] {
 
 input,
 textarea {
+  -webkit-user-select: text;
   user-select: text;
+}
+
+.clipboard-preview-dialog .dialog-body,
+.clipboard-preview-dialog .dialog-body * {
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+:where(
+    input[type='text'],
+    input[type='password'],
+    input[type='email'],
+    input[type='url'],
+    input[type='search'],
+    input[type='tel'],
+    textarea
+  ):where(:not(.number-input__field, .date-picker__input)):focus-visible {
+  outline: none;
+  border-color: var(--color-primary);
+}
+
+:where(
+    input[type='text'],
+    input[type='password'],
+    input[type='email'],
+    input[type='url'],
+    input[type='search'],
+    input[type='tel'],
+    textarea
+  ):where(:not(.number-input__field, .date-picker__input)):disabled {
+  background: var(--color-bg-secondary);
+  color: var(--color-text-tertiary);
+  opacity: var(--opacity-disabled);
+}
+
+input[type='checkbox']:not(.toggle-switch input) {
+  display: inline-grid;
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  place-items: center;
+  border: 1px solid var(--color-control-border);
+  border-radius: var(--radius-xs);
+  background: var(--color-bg-primary);
+  accent-color: var(--color-primary);
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+input[type='checkbox']:not(.toggle-switch input)::after {
+  width: 4px;
+  height: 8px;
+  border-right: 2px solid transparent;
+  border-bottom: 2px solid transparent;
+  content: '';
+  transform: translateY(-1px) rotate(45deg);
+}
+
+input[type='checkbox']:not(.toggle-switch input):checked {
+  border-color: var(--color-primary);
+  background: var(--color-primary);
+}
+
+input[type='checkbox']:not(.toggle-switch input):checked::after {
+  border-color: white;
+}
+
+input[type='checkbox']:not(.toggle-switch input):focus-visible,
+input[type='radio']:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+
+.radio-input {
+  display: inline-grid;
+  width: 16px;
+  height: 16px;
+  flex: none;
+  margin: 2px 0 0;
+  place-items: center;
+  border: 1px solid var(--color-control-border);
+  border-radius: 50%;
+  background: var(--color-bg-primary);
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+.radio-input::after {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: transparent;
+  content: '';
+}
+
+.radio-input:checked {
+  border-color: var(--color-primary);
+}
+
+.radio-input:checked::after {
+  background: var(--color-primary);
+}
+
+.radio-input:disabled,
+input[type='checkbox']:disabled:not(.toggle-switch input) {
+  opacity: var(--opacity-disabled);
+  cursor: not-allowed;
 }
 
 button:disabled,
 input:disabled,
-select:disabled,
 textarea:disabled {
   cursor: not-allowed;
 }
 
-:where(button, [tabindex='0'], input, select, textarea):focus-visible {
+:where(
+  button,
+  [tabindex='0'],
+  input[type='checkbox'],
+  input[type='radio'],
+  input[type='range']
+):focus-visible {
   outline: 2px solid var(--color-primary);
   outline-offset: 2px;
+}
+
+.settings-shell .tab:focus-visible {
+  outline: none;
+  border-color: var(--color-primary);
+}
+
+/* Teleported panels share the same scrollbars as the settings surface. */
+:where(.select-control__popover, .date-picker__panel, .color-picker-control__panel) {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-scrollbar) transparent;
+}
+
+:where(
+  .select-control__popover,
+  .date-picker__panel,
+  .color-picker-control__panel
+)::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+:where(
+  .select-control__popover,
+  .date-picker__panel,
+  .color-picker-control__panel
+)::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+:where(
+  .select-control__popover,
+  .date-picker__panel,
+  .color-picker-control__panel
+)::-webkit-scrollbar-thumb {
+  border-radius: var(--radius-full);
+  background: var(--color-scrollbar);
+}
+
+:where(
+    .select-control__popover,
+    .date-picker__panel,
+    .color-picker-control__panel
+  )::-webkit-scrollbar-thumb:hover {
+  background: var(--color-scrollbar-hover);
 }
 
 /* 按压反馈使用位移，不参与布局计算。 */

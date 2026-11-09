@@ -14,9 +14,19 @@ import type {
  * 为 IPC 频道和消息提供类型安全
  */
 
-import type { IpcRendererEvent } from 'electron'
-import type { ScheduledSyncStatus } from '@main/sync/types'
-export type { IpcRendererListener } from '@preload/index.d'
+import type { ScheduledSyncStatus } from '@shared/scheduled-sync'
+import type { DesktopBootstrapResponse } from '@shared/desktop'
+import type { OverlayModifiers } from '@shared/overlay-events'
+
+export interface IpcRendererEvent {
+  channel: string
+  payload: unknown[]
+}
+
+export type IpcRendererListener<Args extends unknown[] = unknown[]> = (
+  event: IpcRendererEvent,
+  ...args: Args
+) => void
 
 // 基础类型
 export type SimpleListener<Args extends unknown[] = unknown[]> = (...args: Args) => void
@@ -49,6 +59,7 @@ export interface IpcChannels {
   'open-overlay-window': void
   'close-overlay-window': void
   'open-overlay-finished': void
+  'overlay-modifiers-changed': OverlayModifiers
 
   // 动画相关
   'trigger-slide-in-animation': OverlayPosition
@@ -96,6 +107,7 @@ export interface IpcChannels {
 
 // IPC 响应类型
 export interface IpcResponses {
+  desktop_bootstrap: DesktopBootstrapResponse
   'mcp:get-state': { success: boolean; data?: MCPState; error?: string }
   'mcp:save-settings': { success: boolean; data?: MCPState; error?: string }
   'mcp:generate-key': { success: boolean; data?: string; error?: string }
@@ -123,7 +135,7 @@ export interface IpcResponses {
   'store:patch': StoreWriteResult
 
   // 剪贴板相关响应
-  'clipboard-get-history': { success: boolean; data?: ClipboardItem[]; error?: string }
+  'clipboard-get-history': ClipboardIpcResponse<ClipboardItemDto[]>
   'clipboard-restore': { success: boolean; message?: string; error?: string }
   'clipboard-restore-as-text': { success: boolean; message?: string; error?: string }
   'clipboard-restore-ocr-text': { success: boolean; message?: string; error?: string }
@@ -160,47 +172,17 @@ export interface IpcResponses {
 
 // 类型安全的 IPC 方法接口
 export interface TypedIpcRenderer {
-  // 监听方法
-  on<K extends keyof IpcChannels>(
-    channel: K,
-    listener: (event: IpcRendererEvent, data: IpcChannels[K]) => void
-  ): () => void
-
-  onSimple<K extends keyof IpcChannels>(
-    channel: K,
-    listener: (data: IpcChannels[K]) => void
-  ): () => void
-
-  once<K extends keyof IpcChannels>(
-    channel: K,
-    listener: (event: IpcRendererEvent, data: IpcChannels[K]) => void
-  ): () => void
-
-  onceSimple<K extends keyof IpcChannels>(
-    channel: K,
-    listener: (data: IpcChannels[K]) => void
-  ): () => void
-
-  // 发送方法
-  send<K extends keyof IpcChannels>(channel: K, data: IpcChannels[K]): void
-
-  // 调用方法
-  invoke<K extends keyof IpcResponses>(
-    channel: K,
-    data: K extends keyof IpcChannels ? IpcChannels[K] : unknown
-  ): Promise<IpcResponses[K]>
-
-  // 同步调用
-  sendSync<K extends keyof IpcResponses>(
-    channel: K,
-    data: K extends keyof IpcChannels ? IpcChannels[K] : unknown
-  ): IpcResponses[K]
-
-  // 移除监听器
-  removeListener(
-    channel: string,
-    listener: (event: IpcRendererEvent, ...args: unknown[]) => void
-  ): void
+  on<Args extends unknown[]>(channel: string, listener: IpcRendererListener<Args>): () => void
+  onSimple<Args extends unknown[]>(channel: string, listener: SimpleListener<Args>): () => void
+  once<Args extends unknown[]>(channel: string, listener: IpcRendererListener<Args>): () => void
+  onceSimple<Args extends unknown[]>(channel: string, listener: SimpleListener<Args>): () => void
+  send(channel: string, ...args: unknown[]): void
+  invoke<Channel extends keyof IpcResponses>(
+    channel: Channel,
+    ...args: unknown[]
+  ): Promise<IpcResponses[Channel]>
+  invoke<T = unknown>(channel: string, ...args: unknown[]): Promise<T>
+  removeListener(channel: string, listener: IpcRendererListener): void
   removeAllListeners(channel: string): void
 }
 
@@ -268,6 +250,11 @@ export interface ClipboardItem {
   lastUsed: number
   tags?: TagGroup[] // 绑定的标签列表
   source_app?: string // 原始的来源应用ID字段
+}
+
+// Tauri JSON 响应中的图片是普通字节数组，由 API 统一转换为渲染层使用的 Uint8Array。
+export type ClipboardItemDto = Omit<ClipboardItem, 'content'> & {
+  content: Omit<ClipboardContent, 'image'> & { image?: number[] }
 }
 
 // 剪贴板历史查询选项

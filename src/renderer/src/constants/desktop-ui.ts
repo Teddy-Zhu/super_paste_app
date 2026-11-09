@@ -2,6 +2,8 @@ export const SETTINGS_LABELS = {
   navigation: '设置分类',
   preferences: '偏好设置',
   minimize: '最小化',
+  maximize: '最大化',
+  restore: '还原',
   close: '关闭',
   editTag: '编辑标签',
   deleteTag: '删除标签',

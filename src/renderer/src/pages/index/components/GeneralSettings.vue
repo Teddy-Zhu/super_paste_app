@@ -1,7 +1,10 @@
 <script setup lang="ts">
 import { useSettingsStore } from '@renderer/stores/common'
 import { clipboard } from '@renderer/api/renderer-api'
-import { COLOR_MODE_OPTIONS, COLOR_MODE_TEXT } from '@shared/color-mode'
+import { confirmAction, showMessage } from '@renderer/api/dialog'
+import { COLOR_MODE_OPTIONS, COLOR_MODE_TEXT, isColorMode } from '@shared/color-mode'
+import SelectControl from '@renderer/components/SelectControl.vue'
+import NumberInput from '@renderer/components/NumberInput.vue'
 import {
   KEEP_TIME_RANGE,
   OVERLAY_POSITION_OPTIONS,
@@ -66,10 +69,15 @@ const getKeepTimePercentage = (value: number): number =>
   ((value - KEEP_TIME_RANGE.min) / (KEEP_TIME_RANGE.max - KEEP_TIME_RANGE.min)) * 100
 
 // 更新最大历史记录数量
-const updateMaxHistorySize = (value: number): void => {
+const updateMaxHistorySize = (value: number | undefined): void => {
+  if (value === undefined) return
   // 确保值在合理范围内
   const clampedValue = Math.max(10, Math.min(1000, value))
   settingsStore.$patch({ maxHistorySize: clampedValue })
+}
+
+const updateKeepTimeInput = (value: number | undefined): void => {
+  updateMaxKeepTime(value ?? -1)
 }
 
 // 更新最大保存时间
@@ -103,6 +111,14 @@ const overlayPositionIndex = computed(() =>
   OVERLAY_POSITION_OPTIONS.findIndex((option) => option.value === getCurrentOverlayPosition())
 )
 
+const updateColorMode = (value: string): void => {
+  if (isColorMode(value)) settingsStore.$patch({ colorMode: value })
+}
+
+const updateAutoStart = (value: boolean): void => {
+  settingsStore.$patch({ autoStart: value })
+}
+
 const updateOverlayPosition = (value: OverlayPosition): void => {
   const normalized = normalizeOverlayPosition(value)
   settingsStore.$patch({ overlayPosition: normalized })
@@ -112,21 +128,21 @@ settingsStore.$patch({ overlayPosition: getCurrentOverlayPosition() })
 
 // 清除历史记录
 const clearHistory = async (): Promise<void> => {
-  if (!confirm('确定要清除所有剪贴板历史记录吗？此操作不可撤销。')) {
+  if (!(await confirmAction('确定要清除所有剪贴板历史记录吗？此操作不可撤销。'))) {
     return
   }
 
   try {
     const success = await clipboard.clearHistory()
     if (success) {
-      alert('历史记录已清除')
+      await showMessage('历史记录已清除')
     } else {
-      alert('清除历史记录失败')
+      await showMessage('清除历史记录失败')
       console.error('清除历史记录失败')
     }
   } catch (error) {
     console.error('清除历史记录失败:', error)
-    alert('清除历史记录失败: ' + (error as Error).message)
+    await showMessage('清除历史记录失败: ' + (error as Error).message)
   }
 }
 </script>
@@ -145,15 +161,13 @@ const clearHistory = async (): Promise<void> => {
           <p class="setting-description">{{ COLOR_MODE_TEXT.description }}</p>
         </div>
         <div class="setting-control">
-          <select
-            v-model="settingsStore.colorMode"
+          <SelectControl
+            :model-value="settingsStore.colorMode"
+            :options="COLOR_MODE_OPTIONS"
             class="select-input"
             :aria-label="COLOR_MODE_TEXT.title"
-          >
-            <option v-for="option in COLOR_MODE_OPTIONS" :key="option.value" :value="option.value">
-              {{ option.label }}
-            </option>
-          </select>
+            @update:model-value="updateColorMode"
+          />
         </div>
       </div>
       <!-- 开机自启 -->
@@ -164,7 +178,11 @@ const clearHistory = async (): Promise<void> => {
         </div>
         <div class="setting-control">
           <label class="toggle-switch">
-            <input v-model="settingsStore.autoStart" type="checkbox" />
+            <input
+              :checked="settingsStore.autoStart"
+              type="checkbox"
+              @change="updateAutoStart(($event.target as HTMLInputElement).checked)"
+            />
             <span class="toggle-slider"></span>
           </label>
         </div>
@@ -223,16 +241,15 @@ const clearHistory = async (): Promise<void> => {
         </div>
         <div class="setting-control">
           <div class="number-input-container">
-            <input
-              type="number"
-              :value="settingsStore.maxHistorySize"
-              min="10"
-              max="1000"
-              step="10"
+            <NumberInput
+              :model-value="settingsStore.maxHistorySize"
+              :min="10"
+              :max="1000"
+              :step="10"
+              :empty-value="100"
               class="number-input"
-              @input="
-                updateMaxHistorySize(parseInt(($event.target as HTMLInputElement).value) || 100)
-              "
+              aria-label="最大历史记录数量"
+              @update:model-value="updateMaxHistorySize"
             />
             <span class="number-unit">条</span>
           </div>
@@ -266,18 +283,19 @@ const clearHistory = async (): Promise<void> => {
 
             <!-- 输入框在右边 -->
             <div class="number-input-container">
-              <input
-                type="number"
-                :value="settingsStore.maxKeepTime === -1 ? '' : settingsStore.maxKeepTime"
+              <NumberInput
+                :model-value="
+                  settingsStore.maxKeepTime === -1 ? undefined : settingsStore.maxKeepTime
+                "
                 :placeholder="settingsStore.maxKeepTime === -1 ? '不限制' : '输入天数'"
                 :min="KEEP_TIME_RANGE.min"
                 :max="KEEP_TIME_RANGE.max"
-                step="1"
+                :step="1"
+                :empty-value="-1"
                 class="number-input"
+                :aria-label="SETTINGS_LABELS.keepTime"
                 :disabled="settingsStore.maxKeepTime === -1"
-                @input="
-                  updateMaxKeepTime(parseInt(($event.target as HTMLInputElement).value) || -1)
-                "
+                @update:model-value="updateKeepTimeInput"
               />
               <span class="number-unit">{{
                 settingsStore.maxKeepTime === -1 ? '不限制' : '天'

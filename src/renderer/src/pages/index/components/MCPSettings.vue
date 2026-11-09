@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from 'vue'
-import { invoke, onSimple } from '@renderer/api/ipc'
+import { invoke, onSimple, send } from '@renderer/api/ipc'
+import NumberInput from '@renderer/components/NumberInput.vue'
 import {
   createDefaultMCPSettings,
   getMCPEndpoint,
@@ -28,6 +29,10 @@ const client = computed(() => MCP_CLIENTS.find((item) => item.id === clientId.va
 const config = computed(() => createMCPClientConfig(clientId.value, saved.value, showKey.value))
 const busy = computed(() => loading.value || saving.value)
 let unsubscribe: (() => void) | undefined
+
+const updatePort = (value: number | undefined): void => {
+  if (value !== undefined) form.value.port = value
+}
 
 async function refresh(): Promise<void> {
   error.value = ''
@@ -117,15 +122,16 @@ onUnmounted(() => unsubscribe?.())
             <label for="mcp-port" class="setting-title">{{ MCP_TEXT.port }}</label>
             <p class="setting-description">{{ MCP_TEXT.portDescription }}</p>
           </div>
-          <input
+          <NumberInput
             id="mcp-port"
-            v-model.number="form.port"
-            class="number-input"
-            type="number"
-            min="1024"
-            max="65535"
-            step="1"
+            :model-value="form.port"
+            :min="1024"
+            :max="65535"
+            :step="1"
+            :clamp-on-commit="false"
             required
+            class="number-input"
+            @update:model-value="updatePort"
           />
         </div>
         <div class="setting-card">
@@ -249,7 +255,14 @@ onUnmounted(() => unsubscribe?.())
         <p class="setting-description">{{ client.help }}</p>
         <pre><code>{{ config }}</code></pre>
         <div class="mcp-toolbar">
-          <a :href="client.docs" target="_blank" rel="noreferrer">{{ MCP_TEXT.docs }}</a>
+          <a
+            :href="client.docs"
+            target="_blank"
+            rel="noreferrer"
+            @click.prevent="send('open-external-url', client.docs)"
+          >
+            {{ MCP_TEXT.docs }}
+          </a>
           <button
             type="button"
             class="test-button"
@@ -408,6 +421,7 @@ pre {
   overflow-x: auto;
   font-size: 12px;
   line-height: 1.6;
+  -webkit-user-select: text;
   user-select: text;
 }
 .client-panel .mcp-toolbar {

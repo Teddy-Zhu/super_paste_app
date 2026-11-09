@@ -148,8 +148,9 @@ onBeforeUnmount(() => dialog.value?.close())
   background: var(--color-control-hover);
 }
 .dialog-header button:focus-visible {
-  outline: 2px solid var(--color-primary);
-  outline-offset: 2px;
+  outline: none;
+  border-color: var(--color-primary);
+  background: var(--color-selection);
 }
 .dialog-body {
   flex: 1;
@@ -157,6 +158,7 @@ onBeforeUnmount(() => dialog.value?.close())
   overflow: auto;
   padding: 16px;
   overscroll-behavior: contain;
+  -webkit-user-select: text;
   user-select: text;
 }
 </style>

@@ -28,19 +28,13 @@ import MCPSettings from './components/MCPSettings.vue'
 
 // 导入API
 import { onSimple } from '@renderer/api/ipc'
+import { showMessage } from '@renderer/api/dialog'
 import { app } from '@renderer/api/renderer-api'
+import { getCurrentWindow } from '@tauri-apps/api/window'
 import { ref, computed, watch, onMounted, onUnmounted, type Component } from 'vue'
 
 type SectionId =
-  | 'general'
-  | 'sync'
-  | 'ocr'
-  | 'mcp'
-  | 'statistics'
-  | 'tags'
-  | 'shortcuts'
-  | 'debug'
-  | 'about'
+  'general' | 'sync' | 'ocr' | 'mcp' | 'statistics' | 'tags' | 'shortcuts' | 'debug' | 'about'
 
 interface SectionConfig {
   id: SectionId
@@ -58,6 +52,19 @@ const settingsStore = useSettingsStore()
 const syncStore = useSyncStore()
 const syncError = computed(() => settingsStore.$syncStatus.error || syncStore.$syncStatus.error)
 const isWindowFocused = ref(document.hasFocus())
+const isWindowMaximized = ref(false)
+const desktopWindow = getCurrentWindow()
+type ResizeDirection = Parameters<typeof desktopWindow.startResizeDragging>[0]
+const resizeDirections: ResizeDirection[] = [
+  'North',
+  'South',
+  'East',
+  'West',
+  'NorthEast',
+  'NorthWest',
+  'SouthEast',
+  'SouthWest'
+]
 const restartDialog = ref<HTMLDialogElement>()
 
 const showRestartDialog = ref(false)
@@ -211,16 +218,47 @@ const closeWindow = async (): Promise<void> => {
   await runWindowAction(() => app.closeWindow(), '关闭窗口')
 }
 
+let windowDisposed = false
+let maximizeQuery = 0
+let stopWindowResize: (() => void) | undefined
+
+const updateMaximizedState = async (): Promise<void> => {
+  const query = ++maximizeQuery
+  try {
+    const maximized = await desktopWindow.isMaximized()
+    if (!windowDisposed && query === maximizeQuery) isWindowMaximized.value = maximized
+  } catch (error) {
+    console.error('读取窗口状态失败:', error)
+  }
+}
+
+const toggleMaximize = async (): Promise<void> => {
+  try {
+    await desktopWindow.toggleMaximize()
+    await updateMaximizedState()
+  } catch (error) {
+    console.error('切换窗口最大化状态失败:', error)
+  }
+}
+
+const resizeWindow = async (direction: ResizeDirection): Promise<void> => {
+  try {
+    await desktopWindow.startResizeDragging(direction)
+  } catch (error) {
+    console.error('调整窗口大小失败:', error)
+  }
+}
+
 const handleSyncRequiresRestart = (data: { downloadedFiles: string[]; message: string }): void => {
   restartDialogData.value = data
   showRestartDialog.value = true
 }
 
-const handleRestartFailure = (error?: unknown): void => {
+const handleRestartFailure = async (error?: unknown): Promise<void> => {
   if (error) {
     console.error('重启应用失败:', error)
   }
-  alert(RESTART_FAIL_MESSAGE)
+  await showMessage(RESTART_FAIL_MESSAGE)
 }
 
 const confirmRestart = async (): Promise<void> => {
@@ -228,10 +266,10 @@ const confirmRestart = async (): Promise<void> => {
     showRestartDialog.value = false
     const success = await app.restart()
     if (!success) {
-      handleRestartFailure()
+      await handleRestartFailure()
     }
   } catch (error) {
-    handleRestartFailure(error)
+    await handleRestartFailure(error)
   }
 }
 
@@ -246,9 +284,22 @@ onMounted(() => {
   restartRequiredUnsubscribe = onSimple('sync-requires-restart', handleSyncRequiresRestart)
   window.addEventListener('focus', handleWindowFocus)
   window.addEventListener('blur', handleWindowBlur)
+  // Listen before reading state so native titlebar gestures and window-manager actions stay in sync.
+  void desktopWindow
+    .onResized(() => void updateMaximizedState())
+    .then((unlisten) => {
+      if (windowDisposed) unlisten()
+      else {
+        stopWindowResize = unlisten
+        void updateMaximizedState()
+      }
+    })
+    .catch((error: unknown) => console.error('订阅窗口大小变化失败:', error))
 })
 
 onUnmounted(() => {
+  windowDisposed = true
+  stopWindowResize?.()
   window.removeEventListener('focus', handleWindowFocus)
   window.removeEventListener('blur', handleWindowBlur)
   restartDialog.value?.close()
@@ -258,9 +309,26 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="settings-shell" :class="{ 'settings-shell--inactive': !isWindowFocused }">
+  <div
+    class="settings-shell"
+    :class="{
+      'settings-shell--inactive': !isWindowFocused,
+      'settings-shell--maximized': isWindowMaximized
+    }"
+  >
+    <!-- Frameless child webviews cover the native resize border, so forward edge drags to the OS. -->
+    <template v-if="!isWindowMaximized">
+      <div
+        v-for="direction in resizeDirections"
+        :key="direction"
+        class="window-resize-handle"
+        :class="`window-resize-handle--${direction}`"
+        aria-hidden="true"
+        @mousedown.left.prevent.stop="resizeWindow(direction)"
+      />
+    </template>
     <header class="custom-titlebar">
-      <div class="titlebar-drag-area">
+      <div class="titlebar-drag-area" data-tauri-drag-region="deep">
         <div class="titlebar-brand">
           <IconClipboard class="titlebar-mark" />
           <span class="titlebar-app-name">Super Paste</span>
@@ -278,6 +346,18 @@ onUnmounted(() => {
           @click="minimizeWindow"
         >
           <span class="window-control-icon minimize-icon" />
+        </button>
+        <button
+          type="button"
+          class="window-control-btn"
+          :aria-label="isWindowMaximized ? SETTINGS_LABELS.restore : SETTINGS_LABELS.maximize"
+          :title="isWindowMaximized ? SETTINGS_LABELS.restore : SETTINGS_LABELS.maximize"
+          @click="toggleMaximize"
+        >
+          <span
+            class="window-control-icon"
+            :class="isWindowMaximized ? 'restore-icon' : 'maximize-icon'"
+          />
         </button>
         <button
           type="button"
@@ -388,11 +468,14 @@ onUnmounted(() => {
 }
 
 .settings-shell {
+  position: relative;
   height: 100vh;
   width: 100vw;
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  /* Reserve the resize border so it cannot intercept the content scrollbar. */
+  padding: 0 5px 5px;
   border: 1px solid var(--color-border-strong);
   background: var(--color-window);
 }
@@ -403,13 +486,24 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding-left: 14px;
+  margin-inline: -5px;
   background: var(--color-titlebar);
   border-bottom: 1px solid var(--color-border-medium);
-  -webkit-app-region: drag;
+}
+
+.settings-shell--maximized {
+  padding: 0;
+}
+
+.settings-shell--maximized .custom-titlebar {
+  margin-inline: 0;
 }
 
 .titlebar-drag-area {
+  height: 100%;
+  display: flex;
+  align-items: center;
+  padding-left: 14px;
   min-width: 0;
   flex: 1;
 }
@@ -455,7 +549,6 @@ onUnmounted(() => {
 .window-controls {
   display: flex;
   align-self: stretch;
-  -webkit-app-region: no-drag;
 }
 
 .window-control-btn {
@@ -503,6 +596,96 @@ onUnmounted(() => {
   width: 10px;
   height: 1px;
   background: currentColor;
+}
+
+.maximize-icon,
+.restore-icon {
+  width: 10px;
+  height: 10px;
+  border: 1px solid currentColor;
+}
+
+.restore-icon {
+  width: 8px;
+  height: 8px;
+  margin-top: 3px;
+  margin-right: 3px;
+}
+
+.restore-icon::before {
+  content: '';
+  position: absolute;
+  width: 7px;
+  height: 7px;
+  top: -4px;
+  right: -4px;
+  border-top: 1px solid currentColor;
+  border-right: 1px solid currentColor;
+}
+
+.window-resize-handle {
+  position: absolute;
+  z-index: 100;
+  touch-action: none;
+}
+
+.window-resize-handle--North,
+.window-resize-handle--South {
+  right: 8px;
+  left: 8px;
+  height: 5px;
+  cursor: ns-resize;
+}
+
+.window-resize-handle--North {
+  top: 0;
+}
+.window-resize-handle--South {
+  bottom: 0;
+}
+
+.window-resize-handle--East,
+.window-resize-handle--West {
+  top: 8px;
+  bottom: 8px;
+  width: 5px;
+  cursor: ew-resize;
+}
+
+.window-resize-handle--East {
+  right: 0;
+}
+.window-resize-handle--West {
+  left: 0;
+}
+
+.window-resize-handle--NorthEast,
+.window-resize-handle--NorthWest,
+.window-resize-handle--SouthEast,
+.window-resize-handle--SouthWest {
+  width: 8px;
+  height: 8px;
+}
+
+.window-resize-handle--NorthEast {
+  top: 0;
+  right: 0;
+  cursor: nesw-resize;
+}
+.window-resize-handle--NorthWest {
+  top: 0;
+  left: 0;
+  cursor: nwse-resize;
+}
+.window-resize-handle--SouthEast {
+  bottom: 0;
+  right: 0;
+  cursor: nwse-resize;
+}
+.window-resize-handle--SouthWest {
+  bottom: 0;
+  left: 0;
+  cursor: nesw-resize;
 }
 
 .close-icon {

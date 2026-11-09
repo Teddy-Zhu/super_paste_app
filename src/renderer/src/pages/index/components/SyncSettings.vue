@@ -2,8 +2,12 @@
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useSyncStore } from '@renderer/stores/sync'
 import { SETTINGS_LABELS } from '@renderer/constants/desktop-ui'
-import { invoke, onSimple } from '@renderer/api/ipc'
-import type { ScheduledSyncStatus, SyncResult } from '@main/sync/types'
+import { getConfigReadResult, invoke, onSimple } from '@renderer/api/ipc'
+import { showMessage } from '@renderer/api/dialog'
+import SelectControl from '@renderer/components/SelectControl.vue'
+import NumberInput from '@renderer/components/NumberInput.vue'
+import type { ScheduledSyncStatus, SyncResult } from '@shared/scheduled-sync'
+import type { CredentialChanges } from '@shared/store-sync'
 
 // 使用同步 store
 const syncStore = useSyncStore()
@@ -35,6 +39,12 @@ const saveMessage = ref('')
 const syncStatus = ref<ScheduledSyncStatus | null>(null)
 const lastSyncTime = ref<string>('')
 const hasUnsavedChanges = ref(false)
+const clearPasswordRequested = ref(false)
+const storedPasswordAvailable = ref(
+  ['available', 'configured'].includes(
+    getConfigReadResult('sync').credentialFields['sync.params.webdav.password']
+  )
+)
 const currentSyncStatus = ref<string>('idle') // 当前同步状态：idle, syncing, success, error
 const syncStatusMessage = ref<string>('') // 同步状态消息
 let disposed = false
@@ -52,6 +62,10 @@ const intervalOptions = [
   { label: '6小时', value: 360 },
   { label: '12小时', value: 720 },
   { label: '24小时', value: 1440 }
+]
+const providerOptions = [
+  { label: '请选择同步提供者', value: '' },
+  { label: 'WebDAV', value: 'webdav' }
 ]
 
 // 同步方向选项
@@ -73,6 +87,10 @@ const initializeLocalConfig = (): void => {
     }
   }
   hasUnsavedChanges.value = false
+  clearPasswordRequested.value = false
+  storedPasswordAvailable.value = ['available', 'configured'].includes(
+    getConfigReadResult('sync').credentialFields['sync.params.webdav.password']
+  )
 }
 
 // 计算属性
@@ -114,10 +132,22 @@ const updateWebDAVConfig = <K extends keyof WebDAVFields>(
 ): void => {
   if (localConfig.value.params.webdav) {
     localConfig.value.params.webdav[field] = value
+    if (field === 'password') clearPasswordRequested.value = false
     hasUnsavedChanges.value = true
     // 清除之前的连接测试结果
     connectionTestResult.value = null
   }
+}
+
+const updateWebDAVTimeout = (value: number | undefined): void => {
+  updateWebDAVConfig('timeout', value ?? 30000)
+}
+
+const clearWebDAVPassword = (): void => {
+  localConfig.value.params.webdav.password = ''
+  clearPasswordRequested.value = true
+  hasUnsavedChanges.value = true
+  connectionTestResult.value = null
 }
 
 // 验证 URL 格式
@@ -130,14 +160,14 @@ const isValidUrl = (url: string): boolean => {
   }
 }
 
-// 验证配置完整性
-const isConfigValid = computed(() => {
-  if (!localConfig.value.enabled) return true
+const isWebDAVConfigValid = computed(() => {
   if (!isWebDAVProvider.value) return false
-
   const webdav = localConfig.value.params.webdav
-  return !!(webdav.serverUrl && isValidUrl(webdav.serverUrl) && webdav.username && webdav.password)
+  const hasPassword =
+    !!webdav.password || (storedPasswordAvailable.value && !clearPasswordRequested.value)
+  return !!(webdav.serverUrl && isValidUrl(webdav.serverUrl) && webdav.username && hasPassword)
 })
+const isConfigValid = computed(() => !localConfig.value.enabled || isWebDAVConfigValid.value)
 
 /**
  * 构建同步配置对象
@@ -151,7 +181,6 @@ const buildSyncConfig = (): {
     syncDirection: string
     serverUrl: string
     username: string
-    password: string
     remotePath: string
     timeout: number
     useHttps: boolean
@@ -171,7 +200,6 @@ const buildSyncConfig = (): {
       syncDirection: localConfig.value.direction,
       serverUrl: webdav.serverUrl.trim(),
       username: webdav.username.trim(),
-      password: webdav.password,
       remotePath: webdav.remotePath?.trim() || '/',
       timeout: webdav.timeout || 30000,
       useHttps: webdav.serverUrl?.trim().startsWith('https') || false
@@ -179,15 +207,49 @@ const buildSyncConfig = (): {
   }
 }
 
-// 测试连接（使用传入配置的方式）
+const commitLocalConfig = async (): Promise<void> => {
+  const { password, ...webdavSettings } = localConfig.value.params.webdav
+  const shouldChangePassword =
+    clearPasswordRequested.value || password !== syncStore.params.webdav.password
+  const webdavPatch: Omit<WebDAVFields, 'password'> & { password?: string } = {
+    ...webdavSettings,
+    ...(shouldChangePassword && password ? { password } : {})
+  }
+  const patch = {
+    enabled: localConfig.value.enabled,
+    provider: localConfig.value.provider,
+    interval: localConfig.value.interval * 60000,
+    direction: localConfig.value.direction,
+    params: { webdav: webdavPatch }
+  }
+  const credentialChanges: CredentialChanges = {}
+  if (shouldChangePassword) {
+    credentialChanges['sync.params.webdav.password'] = password ? 'set' : 'unset'
+  }
+  await syncStore.$commit(patch, { credentialChanges })
+  await syncStore.$whenSynced()
+  initializeLocalConfig()
+}
+
+const testSavedConnection = async (): Promise<boolean> => {
+  await syncStore.$whenSynced()
+  const result = await invoke('scheduled-sync:test-connection', buildSyncConfig())
+  connectionTestResult.value = {
+    success: result === true,
+    message:
+      result === true
+        ? '连接测试成功！服务器配置正确'
+        : '连接失败，请检查服务器地址、用户名和密码是否正确'
+  }
+  return result === true
+}
+
 const testConnection = async (): Promise<void> => {
-  // 预检查
   if (!isWebDAVProvider.value) {
     connectionTestResult.value = { success: false, message: '请先选择同步提供者' }
     return
   }
-
-  if (!isConfigValid.value) {
+  if (!isWebDAVConfigValid.value) {
     connectionTestResult.value = {
       success: false,
       message: '请填写完整的服务器信息并确保 URL 格式正确'
@@ -197,21 +259,9 @@ const testConnection = async (): Promise<void> => {
 
   isTestingConnection.value = true
   connectionTestResult.value = null
-
   try {
-    // 构建测试配置并直接传入进行测试
-    const testConfig = buildSyncConfig()
-
-    // 调用优化后的测试连接 API，直接传入配置
-    const result = await invoke('scheduled-sync:test-connection', testConfig)
-
-    connectionTestResult.value = {
-      success: result === true,
-      message:
-        result === true
-          ? '连接测试成功！服务器配置正确'
-          : '连接失败，请检查服务器地址、用户名和密码是否正确'
-    }
+    if (hasUnsavedChanges.value) await commitLocalConfig()
+    await testSavedConnection()
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : '未知错误'
     connectionTestResult.value = {
@@ -240,42 +290,19 @@ const saveConfig = async (): Promise<void> => {
   connectionTestResult.value = null
 
   try {
-    // 如果启用同步，先测试连通性
-    if (localConfig.value.enabled) {
-      if (!isConfigValid.value) {
-        showSaveMessage('配置不完整，请填写完整的服务器信息并确保 URL 格式正确')
-        return
-      }
+    if (localConfig.value.enabled && !isWebDAVConfigValid.value) {
+      showSaveMessage('配置不完整，请填写完整的服务器信息并确保 URL 格式正确')
+      return
+    }
 
-      // 测试连通性
+    await commitLocalConfig()
+    if (syncStore.enabled) {
       showSaveMessage('正在测试连接...')
-
-      try {
-        // 使用统一的配置构建函数并直接传入进行测试
-        const testConfig = buildSyncConfig()
-        const connectionResult = await invoke('scheduled-sync:test-connection', testConfig)
-
-        if (connectionResult !== true) {
-          showSaveMessage('连接测试失败，请检查服务器地址、用户名和密码是否正确')
-          return
-        }
-      } catch (error) {
-        const errorMessage = error instanceof Error ? error.message : '未知错误'
-        showSaveMessage(`连接测试失败: ${errorMessage}`)
+      if (!(await testSavedConnection())) {
+        showSaveMessage('配置已保存，但连接测试失败')
         return
       }
     }
-
-    // 保存到 store
-    syncStore.$patch({
-      enabled: localConfig.value.enabled,
-      provider: localConfig.value.provider,
-      interval: localConfig.value.interval * 60000,
-      direction: localConfig.value.direction,
-      params: { webdav: { ...localConfig.value.params.webdav } }
-    })
-    await syncStore.$whenSynced()
-    initializeLocalConfig()
     showSaveMessage('配置保存成功')
 
     // 刷新同步状态
@@ -301,25 +328,27 @@ const manualSync = async (): Promise<void> => {
 
   // 检查配置是否有效，而不是检查同步是否启用
   if (!isWebDAVProvider.value) {
-    alert('请先选择同步提供者')
+    await showMessage('请先选择同步提供者')
     return
   }
 
   // 使用本地配置检查，因为可能还没有保存到 store
   const webdavConfig = localConfig.value.params.webdav
-  if (!webdavConfig.serverUrl || !webdavConfig.username || !webdavConfig.password) {
-    alert('请先配置完整的同步服务器信息')
+  if (!isWebDAVConfigValid.value) {
+    await showMessage('请先配置完整的同步服务器信息')
     return
   }
 
   if (!isValidUrl(webdavConfig.serverUrl)) {
-    alert('请输入有效的服务器地址')
+    await showMessage('请输入有效的服务器地址')
     return
   }
 
   isManualSyncing.value = true
 
   try {
+    if (hasUnsavedChanges.value) await commitLocalConfig()
+    await syncStore.$whenSynced()
     let result: { success: boolean; message?: string; error?: string }
     if (syncStore.enabled) {
       // 如果同步已启用，直接使用现有配置
@@ -331,14 +360,14 @@ const manualSync = async (): Promise<void> => {
     }
 
     if (result.success) {
-      alert('手动同步完成: ' + result.message)
+      await showMessage('手动同步完成: ' + result.message)
       // 刷新同步状态
       await getSyncStatus()
     } else {
-      alert('手动同步失败: ' + (result.message || result.error || '未知错误'))
+      await showMessage('手动同步失败: ' + (result.message || result.error || '未知错误'))
     }
   } catch (error) {
-    alert('手动同步失败: ' + (error as Error).message)
+    await showMessage('手动同步失败: ' + (error as Error).message)
   } finally {
     isManualSyncing.value = false
   }
@@ -479,14 +508,13 @@ onUnmounted(() => {
           <p class="setting-description">选择用于同步的云存储服务</p>
         </div>
         <div class="setting-control">
-          <select
-            :value="localConfig.provider"
+          <SelectControl
+            :model-value="localConfig.provider"
+            :options="providerOptions"
             class="select-input"
-            @change="updateProvider(($event.target as HTMLSelectElement).value)"
-          >
-            <option value="">请选择同步提供者</option>
-            <option value="webdav">WebDAV</option>
-          </select>
+            aria-label="同步提供者"
+            @update:model-value="updateProvider"
+          />
         </div>
       </div>
 
@@ -497,15 +525,13 @@ onUnmounted(() => {
           <p class="setting-description">设置自动同步的时间间隔</p>
         </div>
         <div class="setting-control">
-          <select
-            :value="localConfig.interval"
+          <SelectControl
+            :model-value="localConfig.interval"
+            :options="intervalOptions"
             class="select-input"
-            @change="updateInterval(parseInt(($event.target as HTMLSelectElement).value))"
-          >
-            <option v-for="option in intervalOptions" :key="option.value" :value="option.value">
-              {{ option.label }}
-            </option>
-          </select>
+            aria-label="同步间隔"
+            @update:model-value="updateInterval"
+          />
         </div>
       </div>
 
@@ -520,6 +546,7 @@ onUnmounted(() => {
             <label v-for="option in directionOptions" :key="option.value" class="radio-option">
               <input
                 type="radio"
+                name="sync-direction"
                 :value="option.value"
                 :checked="localConfig.direction === option.value"
                 class="radio-input"
@@ -587,10 +614,13 @@ onUnmounted(() => {
             <input
               type="password"
               :value="localConfig.params.webdav.password"
-              placeholder="输入密码"
+              :placeholder="storedPasswordAvailable ? '已保存的密码留空即可继续使用' : '输入密码'"
               class="text-input"
               @input="updateWebDAVConfig('password', ($event.target as HTMLInputElement).value)"
             />
+            <button class="shortcut-button secondary" type="button" @click="clearWebDAVPassword">
+              清除密码
+            </button>
           </div>
         </div>
 
@@ -619,19 +649,15 @@ onUnmounted(() => {
           </div>
           <div class="setting-control">
             <div class="number-input-container">
-              <input
-                type="number"
-                :value="localConfig.params.webdav.timeout"
-                min="5000"
-                max="120000"
-                step="1000"
+              <NumberInput
+                :model-value="localConfig.params.webdav.timeout"
+                :min="5000"
+                :max="120000"
+                :step="1000"
+                :empty-value="30000"
                 class="number-input"
-                @input="
-                  updateWebDAVConfig(
-                    'timeout',
-                    parseInt(($event.target as HTMLInputElement).value) || 30000
-                  )
-                "
+                aria-label="超时时间"
+                @update:model-value="updateWebDAVTimeout"
               />
               <span class="number-unit">毫秒</span>
             </div>
@@ -854,21 +880,8 @@ onUnmounted(() => {
 
 /* 选择框样式 */
 .select-input {
+  display: flex;
   width: 100%;
-  padding: 5px 9px;
-  border: 1px solid var(--color-control-border);
-  border-radius: var(--radius-xs);
-  font-size: 13px;
-  background: var(--color-bg-primary);
-  transition:
-    border-color var(--duration-fast),
-    box-shadow var(--duration-fast);
-}
-
-.select-input:focus {
-  outline: none;
-  border-color: var(--color-primary);
-  box-shadow: var(--shadow-focus-primary);
 }
 
 /* 文本输入框样式 */
@@ -878,15 +891,12 @@ onUnmounted(() => {
   border: 1px solid var(--color-control-border);
   border-radius: var(--radius-xs);
   font-size: 13px;
-  transition:
-    border-color var(--duration-fast),
-    box-shadow var(--duration-fast);
+  transition: border-color var(--duration-fast);
 }
 
 .text-input:focus {
   outline: none;
   border-color: var(--color-primary);
-  box-shadow: var(--shadow-focus-primary);
 }
 
 /* 单选按钮组样式 */

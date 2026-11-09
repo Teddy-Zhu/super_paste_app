@@ -1,0 +1,31 @@
+[package]
+name = "migrate-electron"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+aes = "0.8"
+anyhow = "1"
+chrono = { version = "0.4", features = ["clock"] }
+cbc = { version = "0.1", features = ["alloc", "block-padding"] }
+data_format = { package = "data-format", path = "../../crates/data-format" }
+pbkdf2 = "0.12"
+rusqlite = { version = "0.40", features = ["backup", "bundled"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+sysinfo = { version = "0.40.1", default-features = false, features = ["system"] }
+tempfile = "3"
+uuid = { version = "1", features = ["v4"] }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+keyring-core = "1.0.1"
+zbus-secret-service-keyring-store = { version = "1.0.1", features = ["rt-tokio-crypto-rust"] }
+
+[target.'cfg(target_os = "windows")'.dependencies]
+keyring-core = "1.0.1"
+windows-native-keyring-store = "1.1.0"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+keyring-core = "1.0.1"
+apple-native-keyring-store = { version = "1.0.2", features = ["keychain"] }

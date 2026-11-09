@@ -1,0 +1,14 @@
+[package]
+name = "clipboard-core"
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+publish = false
+
+[dependencies]
+clipboard-rs = { version = "0.3.5", features = ["wayland"] }
+url = "2.5"
+tracing = "0.1"
+
+[target.'cfg(target_os = "linux")'.dependencies]
+wl-clipboard-rs = "0.9.4"

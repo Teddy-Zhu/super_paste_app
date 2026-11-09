@@ -1,11 +1,13 @@
 <script setup lang="ts">
 import { ref, shallowRef, computed, nextTick, watch, onMounted, onUnmounted } from 'vue'
-import { send, onSimple } from '@renderer/api'
+import { invoke, send, onSimple } from '@renderer/api'
 import { clipboard } from '@renderer/api/renderer-api'
+import { confirmAction } from '@renderer/api/dialog'
 import { useSettingsStore } from '@renderer/stores/common'
 import type { ClipboardItem, ClipboardHistoryQueryOptions, AppInfo } from '@renderer/api/types'
 import { OverlayError, OverlayErrorCode, isClipboardItem } from '@renderer/types/overlay'
 import { reconcileClipboardHistory } from '@renderer/utils/clipboard-history'
+import { getWheelScrollAmount } from '@renderer/utils/wheel'
 import type { OCRTaskStatus } from '@shared/ai-ocr'
 
 // 导入优化后的 composables
@@ -14,7 +16,7 @@ import {
   AnimationState,
   type AnimationControls
 } from '@renderer/composables/useAnimation'
-import type { OverlayRendererTrace } from '@shared/overlay-events'
+import type { OverlayModifiers, OverlayRendererTrace } from '@shared/overlay-events'
 import { useSearchAndNavigation } from '@renderer/composables/useSearchAndNavigation'
 import { useScrollAndTags, type ScrollAndTagsManager } from '@renderer/composables/useScrollAndTags'
 import { useEventManager, useThrottle } from '@renderer/composables/useUtils'
@@ -30,6 +32,7 @@ import IconSettings from '~icons/mdi/cog'
 import IconDelete from '~icons/mdi/delete'
 import IconClipboard from '~icons/mdi/clipboard-text-outline'
 import { OVERLAY_LABELS } from '@renderer/constants/desktop-ui'
+import { OCR_MANAGE_TEXT } from '@renderer/constants/ocr'
 
 // ==================== DOM 引用 ====================
 const overlayContentRef = ref<HTMLElement>()
@@ -58,6 +61,19 @@ const pruneOCRStatuses = (): void => {
     if (!ids.has(id) || (ocrErrorsExpireAt.get(id) ?? Infinity) <= Date.now()) removeOCRStatus(id)
   }
 }
+const applyOCRStatus = (status: OCRTaskStatus): void => {
+  if (status.state === 'completed' || status.state === 'cancelled') {
+    removeOCRStatus(status.contentId)
+    return
+  }
+  if (status.state === 'error') {
+    if (!clipboardHistory.value.some((item) => item.id === status.contentId)) return
+    ocrErrorsExpireAt.set(status.contentId, Date.now() + 2 * 60000)
+  } else ocrErrorsExpireAt.delete(status.contentId)
+  ocrStatuses.value[status.contentId] = status
+  const ids = Object.keys(ocrStatuses.value)
+  for (const id of ids.slice(0, Math.max(0, ids.length - 500))) removeOCRStatus(id)
+}
 const retainPreviews = (): void => {
   clearTimeout(previewIdleTimer)
   previewIdleTimer = undefined
@@ -72,6 +88,8 @@ const schedulePreviewRelease = (): void => {
 
 // ==================== 快捷选择状态 ====================
 const isQuickSelectMode = ref(false)
+let nativeModifiers: OverlayModifiers | undefined
+const pressedModifiers = new Map<string, 'control' | 'meta'>()
 
 // ==================== 下拉菜单状态 ====================
 const isDropdownVisible = ref(false)
@@ -115,11 +133,7 @@ const traceOverlay = (
 }
 
 type RestoreMethod =
-  | 'restore'
-  | 'restoreAsText'
-  | 'restoreOcrText'
-  | 'parseQRCode'
-  | 'generateQRCode'
+  'restore' | 'restoreAsText' | 'restoreOcrText' | 'parseQRCode' | 'generateQRCode'
 type OverlayPosition = 'top' | 'bottom' | 'left' | 'right'
 
 const settingsStore = useSettingsStore()
@@ -377,11 +391,18 @@ const parseOcrFromClipboardItem = async (itemId: string): Promise<void> => {
   try {
     ensureValidItemId(itemId)
 
-    const success = await clipboard.parseOcr(itemId)
-    if (!success) {
-      console.error('[前端] 解析OCR失败')
-    }
+    await clipboard.parseOcr(itemId)
   } catch (error) {
+    applyOCRStatus({
+      contentId: itemId,
+      state: 'error',
+      error:
+        error instanceof Error
+          ? error.message
+          : typeof error === 'string'
+            ? error
+            : OCR_MANAGE_TEXT.error
+    })
     console.error('[前端] 解析OCR失败:', error)
   }
 }
@@ -447,7 +468,7 @@ const clearClipboardHistory = async (): Promise<void> => {
   try {
     hideDropdownMenu()
     // 添加确认对话框
-    if (confirm('确定要清空所有剪贴板历史记录吗？此操作不可撤销。')) {
+    if (await confirmAction('确定要清空所有剪贴板历史记录吗？此操作不可撤销。')) {
       await clipboard.clearHistory()
       // await loadClipboardHistory()
     }
@@ -599,7 +620,9 @@ const searchAndNavManager = useSearchAndNavigation({
   performSearch: performSearchCallback,
   onRestoreClipboard: restoreClipboardContent,
   onOpenSearch: showSearchBox,
-  onDismiss: () => handleCloseWindow()
+  onDismiss: async () => {
+    await invoke('app:window-close')
+  }
 })
 
 // ==================== 初始化滚动和标签管理 ====================
@@ -628,6 +651,9 @@ const prepareOpening = async (position: OverlayPosition, id: number): Promise<vo
   const version = ++animationVersion
   const startedAt = performance.now()
   overlayVisible = false
+  resetQuickSelectMode()
+  hideContextMenu()
+  hideDropdownMenu()
   searchAndNavManager.resetSearchState()
   ++historyRequestId
   pendingHistoryLoad = undefined
@@ -673,6 +699,7 @@ const triggerSlideInAnimation = async (id: number): Promise<void> => {
   }
   transitionId = id
   overlayVisible = true
+  applyNativeModifiers()
   retainPreviews()
   closingTransitionId = null
   const version = ++animationVersion
@@ -692,6 +719,8 @@ const triggerSlideInAnimation = async (id: number): Promise<void> => {
     return
   }
   animationManager.setAnimationState(AnimationState.ACTIVE)
+  // WebKit 中滑入前的变换可能阻止输入框获得焦点，布局就绪后再确认一次。
+  searchAndNavManager.focusSearchInput()
   traceOverlay('opened', { elapsedMs: Math.round(performance.now() - startedAt) })
   send('open-overlay-finished', id)
   if (historyDirty) throttledLoadClipboardHistory()
@@ -721,15 +750,46 @@ const handleCloseWindow = async (force = false, id = transitionId): Promise<void
 
 // ==================== 快捷选择功能 ====================
 
+const applyNativeModifiers = (): void => {
+  if (nativeModifiers) {
+    isQuickSelectMode.value =
+      overlayVisible && !document.hidden && (nativeModifiers.control || nativeModifiers.meta)
+  }
+}
+
+const syncQuickSelectMode = (event: KeyboardEvent): void => {
+  // Linux 的原生状态覆盖按键释放、双侧修饰键及输入法吞键，DOM 不再竞争写入。
+  if (!overlayVisible || nativeModifiers) return
+  const controlKey = event.key === 'Control' || /^Control(?:Left|Right)$/.test(event.code)
+  const metaKey = event.key === 'Meta' || /^Meta(?:Left|Right)$/.test(event.code)
+  if (controlKey || metaKey) {
+    const code = event.code || event.key
+    if (event.type === 'keydown') pressedModifiers.set(code, controlKey ? 'control' : 'meta')
+    else pressedModifiers.delete(code)
+  } else {
+    for (const [code, modifier] of pressedModifiers) {
+      if (modifier === 'control' ? !event.ctrlKey : !event.metaKey) pressedModifiers.delete(code)
+    }
+  }
+  isQuickSelectMode.value =
+    pressedModifiers.size > 0 || (!controlKey && event.ctrlKey) || (!metaKey && event.metaKey)
+}
+
+const resetQuickSelectMode = (): void => {
+  pressedModifiers.clear()
+  isQuickSelectMode.value = false
+}
+
 /**
  * 处理键盘按下事件
  */
 const handleKeyboardEvent = (event: KeyboardEvent): void => {
+  const isCtrlOrCmd = event.ctrlKey || event.metaKey
   // 输入法组词时，方向键、回车和 Escape 由输入法处理。
   if (
     event.defaultPrevented ||
     event.isComposing ||
-    event.keyCode === 229 ||
+    (event.keyCode === 229 && !isCtrlOrCmd) ||
     searchAndNavManager.isComposing.value
   )
     return
@@ -746,32 +806,17 @@ const handleKeyboardEvent = (event: KeyboardEvent): void => {
     hideDropdownMenu()
     return
   }
-  const isCtrlOrCmd = event.ctrlKey || event.metaKey
-
   if (isCtrlOrCmd) {
-    const numberKey = Number(event.key)
+    const digit = /^[1-9]$/.test(event.key) ? event.key : /^Digit([1-9])$/.exec(event.code)?.[1]
 
-    if (!isNaN(numberKey) && numberKey >= 1 && numberKey <= 9) {
+    if (digit) {
       event.preventDefault()
-      if (!event.repeat) searchAndNavManager.restoreSelectedItem(numberKey - 1)
+      if (!event.repeat) searchAndNavManager.restoreSelectedItem(Number(digit) - 1)
       return
-    }
-
-    if (!isQuickSelectMode.value) {
-      isQuickSelectMode.value = true
     }
   }
 
   searchAndNavManager.handleKeyNavigation(event)
-}
-
-/**
- * 处理键盘释放事件
- */
-const handleKeyboardUpEvent = (event: KeyboardEvent): void => {
-  if (!event.ctrlKey && !event.metaKey && isQuickSelectMode.value) {
-    isQuickSelectMode.value = false
-  }
 }
 
 const handleTabsContainerWheel = (event: WheelEvent): boolean => {
@@ -786,11 +831,7 @@ const handleTabsContainerWheel = (event: WheelEvent): boolean => {
     return false
   }
 
-  const delta = Math.abs(event.deltaX) > Math.abs(event.deltaY) ? event.deltaX : event.deltaY
-  if (Math.abs(delta) < 1) {
-    return true
-  }
-
+  const delta = getWheelScrollAmount(event, tabsElement.clientWidth)
   event.preventDefault()
   tabsElement.scrollLeft += delta
   return true
@@ -853,8 +894,9 @@ onMounted(async () => {
         pendingHistoryLoad = undefined
         historyDirty = true
         throttledLoadClipboardHistory.cancel()
-        isQuickSelectMode.value = false
+        resetQuickSelectMode()
         hideDropdownMenu()
+        hideContextMenu()
         searchAndNavManager.resetSearchState()
         animationManager.resetOverlayState()
         schedulePreviewRelease()
@@ -890,13 +932,51 @@ onMounted(async () => {
       }
     )
     ipcUnsubscribers.push(removeOverlayPositionUpdatedListener)
+    ipcUnsubscribers.push(
+      onSimple('overlay-modifiers-changed', (state: OverlayModifiers) => {
+        if (nativeModifiers && state.sequence <= nativeModifiers.sequence) return
+        nativeModifiers = state
+        pressedModifiers.clear()
+        applyNativeModifiers()
+      })
+    )
+
+    // 在输入法或子组件拦截事件前同步修饰键，操作本身仍由冒泡监听器处理。
+    for (const type of ['keydown', 'keyup']) {
+      eventManager.addEventListener(
+        document,
+        type,
+        (event: Event) => syncQuickSelectMode(event as KeyboardEvent),
+        { capture: true }
+      )
+    }
+    eventManager.addEventListener(window, 'blur', () => {
+      // 原生修饰键状态独立于 WebView 的焦点，不能因 DOM 失焦清空后等待下一次按键。
+      if (!nativeModifiers) resetQuickSelectMode()
+    })
+    eventManager.addEventListener(window, 'focus', () => {
+      applyNativeModifiers()
+      // 原生窗口激活异步完成，抵达 WebView 后补齐快速搜索的输入焦点。
+      // 保留菜单、按钮及预览对话框中用户已经选择的控件。
+      const activeElement = document.activeElement
+      if (
+        overlayVisible &&
+        closingTransitionId === null &&
+        (!activeElement ||
+          activeElement === document.body ||
+          activeElement === document.documentElement ||
+          activeElement === searchInputRef.value)
+      ) {
+        searchAndNavManager.focusSearchInput()
+      }
+    })
+    eventManager.addEventListener(document, 'visibilitychange', () => {
+      if (document.hidden) resetQuickSelectMode()
+      else applyNativeModifiers()
+    })
 
     eventManager.addEventListener(document, 'keydown', (event: Event) => {
       handleKeyboardEvent(event as KeyboardEvent)
-    })
-
-    eventManager.addEventListener(document, 'keyup', (event: Event) => {
-      handleKeyboardUpEvent(event as KeyboardEvent)
     })
 
     eventManager.addEventListener(document, 'click', (event: Event) => {
@@ -951,21 +1031,7 @@ onMounted(async () => {
       }
     )
     ipcUnsubscribers.push(removeOCRUpdateListener)
-    ipcUnsubscribers.push(
-      onSimple('ocr:task-status', (status: OCRTaskStatus) => {
-        if (status.state === 'completed' || status.state === 'cancelled') {
-          removeOCRStatus(status.contentId)
-          return
-        }
-        if (status.state === 'error') {
-          if (!clipboardHistory.value.some((item) => item.id === status.contentId)) return
-          ocrErrorsExpireAt.set(status.contentId, Date.now() + 2 * 60000)
-        } else ocrErrorsExpireAt.delete(status.contentId)
-        ocrStatuses.value[status.contentId] = status
-        const ids = Object.keys(ocrStatuses.value)
-        for (const id of ids.slice(0, Math.max(0, ids.length - 500))) removeOCRStatus(id)
-      })
-    )
+    ipcUnsubscribers.push(onSimple('ocr:task-status', applyOCRStatus))
 
     ocrExpiryTimer = setInterval(pruneOCRStatuses, 60000)
     schedulePreviewRelease()
@@ -1187,6 +1253,7 @@ const isFilteredHistory = computed(
               v-memo="[
                 item,
                 previewsActive,
+                animationManager.isSlideInComplete.value,
                 ocrStatuses[item.id],
                 index,
                 index === selectedIndex,
@@ -1196,6 +1263,7 @@ const isFilteredHistory = computed(
                 item.source_app ? clipboardApps[item.source_app] : undefined
               ]"
               :previews-active="previewsActive"
+              :overlay-active="animationManager.isSlideInComplete.value"
               :item="item"
               :ocr-status="ocrStatuses[item.id]"
               :index="index"

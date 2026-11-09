@@ -1,6 +1,6 @@
 # Super Paste
 
-一款基于 Electron、Vue 3 和 TypeScript 的桌面剪贴板管理工具。保存复制历史，通过快捷面板搜索、分类和恢复内容，支持本地／远程／AI 图片 OCR、复制与 Token 用量统计、WebDAV 同步，以及供 AI 工具调用的本地 MCP 服务。
+一款基于 Tauri 2、Rust、Vue 3 和 TypeScript 的桌面剪贴板管理工具。保存复制历史，通过快捷面板搜索、分类和恢复内容，支持本地／远程／AI 图片 OCR、复制与 Token 用量统计、WebDAV 同步，以及供 AI 工具调用的本地 MCP 服务。
 
 [发布版本](https://github.com/Teddy-Zhu/super_paste_app/releases) · [界面预览](#界面预览) · [MCP 接入](#mcp-服务) · [问题反馈](https://github.com/Teddy-Zhu/super_paste_app/issues) · [参与贡献](#参与贡献)
 
@@ -13,13 +13,13 @@
 - **AI OCR 配置**：自定义 Base URL、API Key 和模型，支持拉取模型列表与连通性测试；OpenAI 可选择 Chat Completions 或 Responses 接口。
 - **本地模型管理**：按需下载、取消下载、删除模型或强制重新下载。
 - **统计**：按时间、内容类型、来源应用查看复制次数、数据量和趋势；按模型查看 AI 请求与 Token 用量，两类统计可分别清空。
-- **WebDAV 同步**：支持手动与定时同步、上传／下载／双向同步，以及仅同步配置。
+- **WebDAV 配置同步**：支持手动与定时同步、上传／下载／双向同步；仅同步非敏感设置，并发冲突保留双方版本并报告。
 - **MCP 服务**：通过本地 Streamable HTTP 接口向 AI 工具开放剪贴板读写、历史搜索和 OCR；支持可选 API Key 验证，以及基于 SSE 的剪贴板变化实时推送。
-- **桌面设置窗口**：支持调整窗口宽高，最小尺寸为 720 × 520，内容随可用空间换行和滚动。
+- **桌面集成**：托盘、开机启动、可拖拽和缩放的设置窗口；支持标题栏最大化与恢复，粘贴面板按屏幕可用空间调整布局。
 
 ## 界面预览
 
-以下截图来自应用实际界面，使用独立的演示数据；模型名称、统计数值与文件路径仅用于展示。
+以下沿用 Electron 版的界面截图，展示 Tauri 版复用的 Vue 页面与交互布局；窗口外观和平台行为以当前版本为准。截图使用独立演示数据，模型名称、统计数值与文件路径仅用于展示。
 
 ### 粘贴面板
 
@@ -106,17 +106,19 @@ AI 模式下，点击「拉取模型」可展开接口返回的完整模型列�
 
 统计从功能启用后开始累计，不从历史记录反推；删除或清理历史不会减少已有统计。两类统计可分别清空，清空作用于该类全部统计，不仅是当前筛选范围。
 
-统计在内存中合并后延迟批量落库；AI 用量按小时汇总，保留最近 50 条请求明细，减少逐条记录带来的存储开销。
+AI 用量按小时汇总，并保留最近 50 条请求明细。
 
 ### WebDAV 同步
 
-在「同步设置」中填写服务器地址、用户名、密码与远程目录，可先测试连接，再保存配置。支持手动同步、定时同步和仅同步配置；下载数据后按应用提示重启以生效。
+在「同步设置」中填写服务器地址、用户名、密码与远程目录，测试连接并保存配置。支持手动同步、定时同步，以及上传／下载／双向同步；下载后按页面提示重启。
 
-同步以数据库和配置文件为单位。双向同步根据文件修改时间选择上传或下载，不会逐条合并两台设备的历史记录；多设备同时修改时，请留意文件覆盖。
+同步文档保存在所配置远程目录下的 `super_paste/v1/config.json`，使用带版本、修订号和内容摘要的新格式。同步范围仅包含可跨设备复用的非敏感设置，不同步历史、图片、标签、统计或数据库，也不与 Electron 版 WebDAV 格式互通。
+
+API Key、WebDAV 口令、MCP 密钥、远程 OCR 地址与自由额外参数，以及本机路径、权限状态和 MCP 连接信息不会同步。新设备需重新填写本机凭据与连接设置。双向同步时，若本机与远端都发生修改，会保留双方并报告冲突；手动上传或下载可明确选择覆盖方向。
 
 ### MCP 服务
 
-在设置窗口进入「MCP 服务」，将 Super Paste 的能力连接到同一台电脑上的 AI 工具。服务默认关闭，仅监听 `127.0.0.1`，默认地址为 `http://127.0.0.1:19527/mcp`，使用 MCP Streamable HTTP 协议。
+在设置窗口进入「MCP 服务」，将 Super Paste 的能力连接到同一台电脑上的 AI 工具。服务默认关闭，仅监听 `127.0.0.1`，默认地址为 `http://127.0.0.1:19528/mcp`，使用 MCP Streamable HTTP 协议。
 
 1. 开启「开启 MCP」，按需修改端口（1024–65535）。
 2. API Key 验证默认开启，点击「生成密钥」或填写自己的密钥；请求需携带 `Authorization: Bearer <API_KEY>`。
@@ -150,7 +152,7 @@ AI 工具须能访问运行 Super Paste 的本机地址；云端连接器无法�
 {
   "mcpServers": {
     "super-paste": {
-      "url": "http://127.0.0.1:19527/mcp",
+      "url": "http://127.0.0.1:19528/mcp",
       "headers": {
         "Authorization": "Bearer YOUR_API_KEY"
       }
@@ -166,7 +168,7 @@ AI 工具须能访问运行 Super Paste 的本机地址；云端连接器无法�
   "mcpServers": {
     "super-paste": {
       "type": "http",
-      "url": "http://127.0.0.1:19527/mcp",
+      "url": "http://127.0.0.1:19528/mcp",
       "headers": {
         "Authorization": "Bearer YOUR_API_KEY"
       }
@@ -179,7 +181,7 @@ AI 工具须能访问运行 Super Paste 的本机地址；云端连接器无法�
 
 ```toml
 [mcp_servers.super-paste]
-url = "http://127.0.0.1:19527/mcp"
+url = "http://127.0.0.1:19528/mcp"
 bearer_token_env_var = "SUPER_PASTE_MCP_KEY"
 tool_timeout_sec = 180
 ```
@@ -193,7 +195,7 @@ tool_timeout_sec = 180
   "servers": {
     "super-paste": {
       "type": "http",
-      "url": "http://127.0.0.1:19527/mcp",
+      "url": "http://127.0.0.1:19528/mcp",
       "headers": {
         "Authorization": "Bearer YOUR_API_KEY"
       }
@@ -245,98 +247,134 @@ AI 工具对资源通知的处理方式不同，接收推送不代表会自动�
 
 ## 平台说明
 
-项目提供 Windows、macOS 和 Linux 的打包配置。平台相关能力受系统权限、桌面环境和原生依赖支持范围影响。
+发行目标为 Windows x64、macOS Intel x64 / Apple Silicon，以及 Linux x64。能力受系统权限和桌面环境影响，构建成功不代表已经完成所有平台的运行验收。
 
-| 平台或环境      | 说明                                                                                           |
-| --------------- | ---------------------------------------------------------------------------------------------- |
-| Windows / macOS | 提供对应打包命令；macOS 来源应用识别可能需要屏幕录制权限。                                     |
-| Linux X11       | 使用原生活动窗口后端识别来源应用。                                                             |
-| Linux Wayland   | 来源应用识别使用 KWin 后端，当前支持 KDE Plasma 6；该后端不支持 GNOME、其他合成器或 Plasma 5。 |
+| 平台或环境           | 说明                                                                           |
+| -------------------- | ------------------------------------------------------------------------------ |
+| Windows              | 使用系统 WebView2；便携版也需要安装 WebView2 Runtime。                         |
+| macOS                | 最低版本为 13.3；按系统提示授权来源识别与桌面交互能力。                        |
+| Linux X11            | 支持原生活动窗口识别、全局快捷键与粘贴面板。                                   |
+| KDE Plasma 6 Wayland | 使用 Shortcut Portal、data-control、KWin 和 GTK Layer Shell 接入桌面能力。     |
+| 其他 Wayland 桌面    | 不保证完整支持；x-win 的 GNOME 后端需要其上游 Shell 扩展，应用不负责安装扩展。 |
 
-Wayland 下的全局快捷键可能需要桌面门户授权，可在「快捷键」页面查看状态并重试。如果桌面环境无法注册，可在系统快捷键设置中绑定应用可执行文件并附加 `--toggle-overlay` 参数；页面会显示当前可执行文件的完整命令。
+Wayland 全局快捷键可能需要桌面门户授权，可在设置中查看状态并重试；也可在系统快捷键中绑定 `super_paste --toggle-overlay`。图标使用系统高分辨率资源，缺失时按平台能力回退。
 
-KWin 后端的构建要求与支持范围见 [原生模块说明](packages/active-window-kwin/README.md)。
+凭据使用 Windows Credential Manager、macOS Keychain 或 Linux Secret Service。Linux 需要可用的 Secret Service 提供者；不可用时凭据操作会报告错误，本地历史仍可使用。Linux 便携包内含 AppImage，需要 FUSE 2 或兼容的 AppImage 运行环境。
 
 ## 从源码运行
 
 ### 环境要求
 
-- Node.js **22.14.0 或更高版本**。
-- pnpm **11.4.0**，与 `package.json` 的 `packageManager` 保持一致。
-- 原生模块需要与当前操作系统和架构匹配；没有可用预编译产物时，需要相应的 C/C++ 编译环境。
-- Linux 首次构建缺失的 KWin 原生模块时，还需要 **Rust / Cargo 1.88+** 与 C 编译工具链，并能访问 crates.io 和 GitHub。
+- Node.js **24**、pnpm **11.4.0**，与 `package.json` 保持一致。
+- Rust stable 工具链。
+- Linux：WebKitGTK 4.1、GTK 3、Ayatana AppIndicator、GTK Layer Shell、Wayland、OpenSSL、librsvg 和 X11 的开发依赖。
+- Windows：MSVC C++ 构建工具与 WebView2 Runtime。
+- macOS：Xcode 命令行工具。
 
 在仓库根目录执行：
 
 ```sh
 git clone https://github.com/Teddy-Zhu/super_paste_app.git
 cd super_paste_app
+corepack enable pnpm
 pnpm install
 pnpm dev
 ```
 
-安装依赖会执行 Electron 原生依赖准备。开发模式支持热更新，并开放 `9222` 调试端口。Linux 上，`pnpm dev` 和 `pnpm build` 会在缺失目标原生产物时构建 KWin 模块；修改该模块的 Rust 源码后，请显式运行 `pnpm run build:native` 重建。
+`pnpm dev` 和 `pnpm build` 会自动准备固定版本的 CPU ONNX Runtime，再启动 Tauri。前端使用 Vite 热更新，后端由 Tauri / Cargo 构建；运行安装包不需要 Node.js 或 Electron。
 
 ### 常用命令
 
-| 命令                    | 用途                                     |
-| ----------------------- | ---------------------------------------- |
-| `pnpm dev`              | 启动 Electron 开发模式                   |
-| `pnpm lint`             | 运行 ESLint                              |
-| `pnpm typecheck`        | 检查主进程、预加载与渲染进程类型         |
-| `pnpm format`           | 格式化项目文件，会写入文件               |
-| `pnpm build`            | 准备原生模块、检查类型并生成应用构建产物 |
-| `pnpm start`            | 预览已有构建产物，需先运行 `pnpm build`  |
-| `pnpm run build:native` | 重建 KWin 原生模块                       |
-| `pnpm run build:unpack` | 构建并生成未封装的应用目录               |
+| 命令                                   | 用途                                         |
+| -------------------------------------- | -------------------------------------------- |
+| `pnpm dev`                             | 启动 Tauri 开发模式                          |
+| `pnpm dev:renderer`                    | 仅启动 Vite 前端，不能独立使用桌面功能       |
+| `pnpm build:renderer`                  | 前端类型检查与生产构建                       |
+| `pnpm lint`                            | 运行 ESLint                                  |
+| `pnpm format`                          | 格式化文件，会写入文件                       |
+| `pnpm build`                           | 构建当前平台安装包                           |
+| `pnpm build --bundles deb`             | 仅构建 Debian 安装包                         |
+| `pnpm build:pacman`                    | 一次完成 DEB、Pacman 包与 AUR 元数据生成     |
+| `pnpm aur:prepare`                     | 使用已有 DEB 重新生成 Pacman 包与 AUR 元数据 |
+| `node scripts/prepare-ort.mjs --check` | 检查已准备的 ORT 资源，不下载                |
 
-### 打包
+### 打包与发布
 
-建议在对应目标系统上准备原生依赖并打包：
+在对应目标系统运行 `pnpm build`。Tauri 原生安装包位于 `target/release/bundle/`；前端静态构建位于 `dist/`。
+
+在 x86_64 Arch Linux 上安装 `base-devel` 与 `libarchive` 后，可以直接生成本地 Pacman 包：
 
 ```sh
-# Windows
-pnpm build:win
-
-# macOS
-pnpm build:mac
-
-# Linux
-pnpm build:linux
+pnpm build:pacman
 ```
 
-应用构建产物位于 `out/`，安装包与打包目录位于 `dist/`。Linux 默认生成 x64 的 `.deb`、pacman 和 AppImage；发布时使用 `pnpm build:linux:portable` 在隔离环境构建，避免引入宿主机的新版本 glibc。目标配置见 [electron-builder.yml](electron-builder.yml)，手动触发的 GitHub Release 和 AUR 工作流见 [发布说明](packaging/aur/README.md)。
+版本和仓库信息自动从项目清单、`GITHUB_REPOSITORY` 或 Git `origin` 读取，无需手动复制 DEB、填写版本或提前发布 GitHub Release。产物包括：
+
+- `target/packages/super-paste_<version>_x86_64.pkg.tar.zst`，安装后的包名为 `super-paste-bin`。
+- `target/packages/super-paste_<version>_x86_64-unknown-linux-gnu.deb`。
+- `target/packages/aur/super-paste-bin/PKGBUILD` 和 `.SRCINFO`。
+
+复用外部 DEB 或指定输出位置时，可使用：
+
+```sh
+pnpm aur:prepare --deb <file.deb> --output <directory> --repository <owner/repo>
+```
+
+[发布工作流](.github/workflows/release.yml) 位于仓库根目录，推送与 `package.json`、`src-tauri/tauri.conf.json`、`src-tauri/Cargo.toml` 一致的 `v<version>` 标签时运行。工作流交付 Windows NSIS / MSI / 便携 ZIP、双架构 macOS DMG、Linux DEB / RPM / AppImage / Pacman / 便携 tar.gz、独立迁移器、AUR 元数据及 SHA-256 校验文件；AUR 元数据作为附件分发，不自动推送到 AUR。
+
+当前工作流未配置 Windows 签名或 macOS 签名与公证。发布前需分别验收目标平台的安装、快捷键、浮层、系统权限、凭据、本地与远程 OCR、同步和数据迁移。
+
+### OCR 运行库与模型
+
+CPU ONNX Runtime 固定为 **1.28.0**，由 `scripts/prepare-ort.mjs` 准备到 `resources/ort/<target>/` 并随安装包分发。Windows x64、Linux x64 和 macOS arm64 使用校验 SHA-256 的官方归档；macOS Intel 从固定官方源码构建。运行库附带许可证、第三方声明与来源 / 摘要清单。
+
+仓库不包含 OCR 模型权重，模型清单为 `resources/ocr-models.json`，使用时按需下载。ORT 缺失或加载失败会报告本地 OCR 不可用，不阻止其他服务启动。
 
 ## 数据与隐私
 
-历史记录与配置保存在 Electron 的用户数据目录，即 `app.getPath('userData')`：
+应用标识为 `com.v2dawn.superpaste`，数据使用 Tauri 的 `app_local_data_dir()`：
 
-| 文件或目录                | 内容                                |
-| ------------------------- | ----------------------------------- |
-| `clipboard-history.db`    | 剪贴板历史、标签和来源应用信息      |
-| `config.json`             | 应用设置与同步配置                  |
-| `mcp.json`                | 本机 MCP 开关、端口和加密保存的密钥 |
-| `clipboard-statistics.db` | 按时间、类型和来源聚合的复制统计    |
-| `ai-ocr-usage.db`         | AI OCR 用量汇总与最近请求明细       |
-| `ocr-models/`             | 下载的本地 OCR 模型                 |
+| 平台    | 默认目录                                                                                  |
+| ------- | ----------------------------------------------------------------------------------------- |
+| Windows | `%LOCALAPPDATA%/com.v2dawn.superpaste`                                                    |
+| macOS   | `~/Library/Application Support/com.v2dawn.superpaste`                                     |
+| Linux   | `$XDG_DATA_HOME/com.v2dawn.superpaste`，未设置时为 `~/.local/share/com.v2dawn.superpaste` |
 
-本地 OCR 的模型下载需要联网，识别本身在本机执行。远程 HTTP、OpenAI 和 Claude OCR 会向所配置的接口提交图片；连通性测试也会发送测试图片。AI API Key 随配置保存，启用 WebDAV 配置同步后也会随配置文件传输。WebDAV 还会传输同步范围内的历史数据库；复制与 AI 用量统计保存在独立数据库中。剪贴板内容与配置可能包含敏感信息，请妥善保护本地数据与同步账户。当前历史数据库未启用数据库加密。
+`app.db` 保存历史、标签、来源、设置与统计，已下载模型保存在 `ocr-models/`；缓存和日志使用对应的系统目录。API Key、WebDAV 口令与 MCP 密钥存系统凭据库，不进入普通配置、WebDAV 文档、迁移报告或诊断包。历史数据库未启用数据库加密。
 
-MCP 配置单独保存在 `mcp.json`，不参与 WebDAV 配置同步。MCP API Key 通过 Electron `safeStorage` 加密保存，系统密钥存储不可用时会报告错误。启用 MCP 后，获准连接的 AI 工具可访问剪贴板与历史内容；这些工具如何处理数据取决于其自身配置。
+本地 OCR 的模型下载需要联网，识别在本机执行。远程 HTTP、OpenAI 与 Claude OCR 会向所配置接口提交图片，连通性测试也会发送测试图片。MCP 开启后，获准连接的本机客户端可读取剪贴板与历史；客户端如何处理内容取决于其自身配置。
+
+正常启动只读取当前应用的数据，不读取 Electron 或早期实验版 Tauri 的数据目录。
+
+### 从 Electron 一次性迁移
+
+关闭新旧应用，在首次启动新版前，用单独分发的 `migrate-electron` 工具执行预检查和迁移：
+
+```sh
+migrate-electron --from <electron-user-data-directory> --to <tauri-app-local-data-directory> --dry-run
+migrate-electron --from <electron-user-data-directory> --to <tauri-app-local-data-directory>
+```
+
+`--from` 为旧 Electron 用户数据目录，`--to` 为上述新版数据目录，目标必须不存在或为空。源目录保持只读，成功后在目标目录生成 `migration-report.json`。无法解密的凭据会报告并要求重新配置；MCP 使用新端口和新密钥，客户端需更新连接信息。
+
+本地开发也可使用 `scripts/migrate-electron` 或 `scripts/migrate-electron.ps1`，脚本会构建同一独立 Rust 工具。早期实验版 Tauri 的身份与数据不提供迁移或兼容层。
 
 ## 项目结构
 
 ```text
-src/
-  main/          # Electron 主进程、窗口、剪贴板、数据库、OCR 与同步
-  preload/       # 渲染进程可调用的受控桥接 API
-  renderer/src/  # Vue 界面、组件、状态与交互
-  shared/        # 跨进程共享类型和常量
-packages/
-  active-window-kwin/  # KDE Plasma 6 活动窗口原生模块
-resources/       # 应用资源
-scripts/         # 打包钩子等脚本
+src/renderer/src/        # 复用的 Vue 页面、组件、状态与交互
+src/shared/              # 前后端契约、类型与常量
+src-tauri/src/           # Rust 桌面服务、窗口、剪贴板、OCR、同步与 MCP
+src-tauri/vendor/        # 自包含的底层封装与必要补丁
+crates/data-format/      # 主应用与迁移工具共享的数据格式
+tools/migrate-electron/  # 独立 Electron 数据迁移工具
+resources/              # OCR 模型清单与按目标准备的 ORT
+scripts/                # 开发、构建、打包与发布入口
+packaging/              # AUR 模板与便携包说明
+docs/                   # 截图、重写设计与能力核对记录
 ```
+
+Tauri 工程直接位于仓库根目录，独立维护 Rust / pnpm 锁文件；构建和运行不依赖旧 Electron 源码或 native 参考工程。
 
 ## 参与贡献
 
@@ -344,10 +382,10 @@ scripts/         # 打包钩子等脚本
 
 - 报告问题时，请提供应用版本、操作系统、桌面环境、复现步骤和预期行为；UI 问题可附截图。
 - 修改前先阅读 [仓库开发规范](AGENTS.md)，尽量使每个改动围绕一个明确问题。
-- 提交前运行 `pnpm lint`、`pnpm typecheck`，并格式化修改过的文件。
+- 完成改动后按影响范围集中运行 lint、类型检查或构建，并格式化修改过的文件；UI 由维护者手动验收。
 - PR 中说明改动目的、验证结果及已知限制；涉及界面或平台能力时，附上实际运行环境和验证说明。
 - 请勿提交构建产物、下载的 OCR 模型、个人剪贴板数据或同步凭据。
 
 ## 许可证
 
-本项目采用 [MIT License](LICENSE)。第三方依赖与 OCR 模型的许可请查阅各自项目；KWin 模块使用的 kdotool 许可随模块保存在 [kdotool-LICENSE](packages/active-window-kwin/licenses/kdotool-LICENSE)。
+本项目采用 [MIT License](LICENSE)。第三方代码、底层封装和 OCR 依赖的来源与许可见 [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md)，随包运行库也包含对应声明。

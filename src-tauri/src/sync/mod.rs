@@ -1,0 +1,1676 @@
+use std::{path::PathBuf, sync::Arc, time::Duration};
+
+use futures_util::StreamExt;
+use reqwest::{
+    Client, Method, Response, StatusCode, Url,
+    header::{CONTENT_TYPE, ETAG, HeaderMap, HeaderValue, IF_MATCH, IF_NONE_MATCH},
+};
+use serde::{Deserialize, Serialize};
+use serde_json::{Value, json};
+use tokio::{io::AsyncWriteExt, sync::Mutex, time::sleep};
+use tokio_util::sync::CancellationToken;
+use uuid::Uuid;
+
+use crate::{
+    config::{
+        ConfigService, ConfigSnapshot, CredentialAvailability, WindowAccess, remote_projection,
+        validate_remote_projection_value,
+    },
+    events::{EventSink, now_ms},
+    storage::Storage,
+};
+
+const DOCUMENT_PATH: [&str; 3] = ["super_paste", "v1", "config.json"];
+const FORMAT_VERSION: u32 = 1;
+const CONFIG_SCHEMA_VERSION: u32 = 1;
+const MAX_DOCUMENT_BYTES: usize = 1024 * 1024;
+const MAX_TIMEOUT_MS: u64 = 300_000;
+
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum SyncDirection {
+    Upload,
+    Download,
+    Bidirectional,
+}
+
+impl SyncDirection {
+    fn parse(value: &str) -> Result<Self, String> {
+        match value {
+            "upload" => Ok(Self::Upload),
+            "download" => Ok(Self::Download),
+            "bidirectional" => Ok(Self::Bidirectional),
+            _ => Err("同步方向无效".to_owned()),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SyncRunResult {
+    pub success: bool,
+    pub message: String,
+    pub errors: Vec<String>,
+    pub uploaded_files: Vec<String>,
+    pub downloaded_files: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub conflict: Option<String>,
+    #[serde(skip)]
+    already_reported_conflict: bool,
+}
+
+impl SyncRunResult {
+    fn success(message: impl Into<String>) -> Self {
+        Self {
+            success: true,
+            message: message.into(),
+            errors: Vec::new(),
+            uploaded_files: Vec::new(),
+            downloaded_files: Vec::new(),
+            conflict: None,
+            already_reported_conflict: false,
+        }
+    }
+
+    fn failure(error: impl Into<String>) -> Self {
+        let error = error.into();
+        Self {
+            success: false,
+            message: error.clone(),
+            errors: vec![error],
+            uploaded_files: Vec::new(),
+            downloaded_files: Vec::new(),
+            conflict: None,
+            already_reported_conflict: false,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SyncTestResult {
+    pub success: bool,
+    pub message: String,
+}
+
+#[derive(Clone, Copy, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum SyncState {
+    #[default]
+    Idle,
+    Syncing,
+    Success,
+    Error,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SyncStatus {
+    pub is_running: bool,
+    pub last_sync_time: i64,
+    pub next_sync_time: i64,
+    pub sync_status: SyncState,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RemoteEnvelope {
+    format_version: u32,
+    config_schema_version: u32,
+    revision: String,
+    parent_revision: Option<String>,
+    updated_at: i64,
+    payload_sha256: String,
+    payload: Value,
+}
+
+impl RemoteEnvelope {
+    fn new(payload: Value, parent_revision: Option<String>) -> Result<Self, String> {
+        let bytes = serde_json::to_vec(&payload).map_err(|error| error.to_string())?;
+        Ok(Self {
+            format_version: FORMAT_VERSION,
+            config_schema_version: CONFIG_SCHEMA_VERSION,
+            revision: Uuid::new_v4().to_string(),
+            parent_revision,
+            updated_at: now_ms(),
+            payload_sha256: data_format::sha256_hex(&bytes),
+            payload,
+        })
+    }
+
+    fn validate(self) -> Result<Self, String> {
+        if self.format_version != FORMAT_VERSION {
+            return Err(format!("不支持的 WebDAV 文档格式: {}", self.format_version));
+        }
+        if self.config_schema_version != CONFIG_SCHEMA_VERSION {
+            return Err(format!(
+                "不支持的远端配置 schema: {}",
+                self.config_schema_version
+            ));
+        }
+        Uuid::parse_str(&self.revision).map_err(|_| "远端 revision 无效".to_owned())?;
+        if let Some(parent) = &self.parent_revision {
+            Uuid::parse_str(parent).map_err(|_| "远端 parentRevision 无效".to_owned())?;
+        }
+        if self.updated_at <= 0
+            || self.payload_sha256.len() != 64
+            || !self
+                .payload_sha256
+                .bytes()
+                .all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase())
+        {
+            return Err("远端配置元数据无效".to_owned());
+        }
+        let bytes = serde_json::to_vec(&self.payload).map_err(|error| error.to_string())?;
+        if data_format::sha256_hex(&bytes) != self.payload_sha256.to_ascii_lowercase() {
+            return Err("远端配置摘要校验失败".to_owned());
+        }
+        validate_remote_projection_value(&self.payload)?;
+        Ok(self)
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SyncBaseline {
+    revision: String,
+    payload_sha256: String,
+    etag: Option<String>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct PendingUpload {
+    envelope: RemoteEnvelope,
+    target_parent: Option<String>,
+}
+
+struct RemoteDocument {
+    envelope: RemoteEnvelope,
+    etag: Option<String>,
+}
+
+#[derive(Clone)]
+struct WebDavConfig {
+    server_url: String,
+    username: String,
+    password: String,
+    remote_path: String,
+    timeout_ms: u64,
+}
+
+struct ResolvedOperation {
+    snapshot: ConfigSnapshot,
+    payload: Value,
+    payload_sha256: String,
+    direction: SyncDirection,
+}
+
+struct WebDavTarget {
+    client: Client,
+    username: String,
+    password: String,
+    collection: Url,
+    collections: Vec<Url>,
+    document: Url,
+    target_key: String,
+    created_collections: Vec<Url>,
+}
+
+struct Scheduler {
+    cancel: CancellationToken,
+}
+
+#[derive(Clone, Copy)]
+enum RunKind {
+    Scheduled,
+    Manual,
+}
+
+pub struct SyncService {
+    config: Arc<ConfigService>,
+    storage: Arc<Storage>,
+    events: EventSink,
+    app_data_dir: PathBuf,
+    operation_gate: Mutex<()>,
+    configure_gate: Mutex<()>,
+    scheduler: Mutex<Option<Scheduler>>,
+    status: Mutex<SyncStatus>,
+    shutting_down: CancellationToken,
+}
+
+impl SyncService {
+    pub fn new(
+        config: Arc<ConfigService>,
+        storage: Arc<Storage>,
+        events: EventSink,
+        app_data_dir: PathBuf,
+    ) -> Arc<Self> {
+        Arc::new(Self {
+            config,
+            storage,
+            events,
+            app_data_dir,
+            operation_gate: Mutex::new(()),
+            configure_gate: Mutex::new(()),
+            scheduler: Mutex::new(None),
+            status: Mutex::new(SyncStatus {
+                is_running: false,
+                last_sync_time: 0,
+                next_sync_time: 0,
+                sync_status: SyncState::Idle,
+            }),
+            shutting_down: CancellationToken::new(),
+        })
+    }
+
+    pub async fn start(self: &Arc<Self>) -> Result<(), String> {
+        self.configure().await
+    }
+
+    pub async fn configure(self: &Arc<Self>) -> Result<(), String> {
+        let _configure = self.configure_gate.lock().await;
+        if self.shutting_down.is_cancelled() {
+            return Err("同步服务正在关闭".to_owned());
+        }
+        let config = self.config.get_snapshot("sync", WindowAccess::Main).await?;
+        let sync = config.snapshot.value;
+        let requested_enabled = sync
+            .get("enabled")
+            .and_then(Value::as_bool)
+            .unwrap_or(false);
+        let provider = sync
+            .get("provider")
+            .and_then(Value::as_str)
+            .unwrap_or_default();
+        let interval = sync.get("interval").and_then(Value::as_i64).unwrap_or(0);
+        if requested_enabled && !provider.is_empty() && provider != "webdav" {
+            return Err("当前只支持 WebDAV 配置同步".to_owned());
+        }
+        if requested_enabled && interval <= 0 {
+            return Err("同步间隔必须大于零".to_owned());
+        }
+        let webdav = sync.pointer("/params/webdav").and_then(Value::as_object);
+        let configured_password = config
+            .credential_fields
+            .get("sync.params.webdav.password")
+            .is_some_and(|state| {
+                matches!(
+                    *state,
+                    CredentialAvailability::Configured | CredentialAvailability::Available
+                )
+            });
+        let configuration_complete = webdav.is_some_and(|webdav| {
+            webdav
+                .get("serverUrl")
+                .and_then(Value::as_str)
+                .is_some_and(|value| !value.trim().is_empty())
+                && webdav
+                    .get("username")
+                    .and_then(Value::as_str)
+                    .is_some_and(|value| !value.trim().is_empty())
+                && configured_password
+                && !provider.is_empty()
+        });
+        let enabled = requested_enabled && configuration_complete;
+
+        let previous = self.scheduler.lock().await.take();
+        if let Some(previous) = previous {
+            previous.cancel.cancel();
+        }
+
+        let mut status = self.status.lock().await;
+        status.is_running = enabled;
+        status.next_sync_time = if enabled {
+            now_ms().saturating_add(interval)
+        } else {
+            0
+        };
+        let next_sync_time = status.next_sync_time;
+        drop(status);
+        if enabled {
+            let cancel = CancellationToken::new();
+            let task_cancel = cancel.clone();
+            let service = self.clone();
+            let period = Duration::from_millis(interval as u64);
+            tokio::spawn(async move {
+                loop {
+                    tokio::select! {
+                        _ = task_cancel.cancelled() => break,
+                        _ = sleep(period) => {}
+                    }
+                    if task_cancel.is_cancelled() {
+                        break;
+                    }
+                    let mut status = service.status.lock().await;
+                    if !status.is_running || task_cancel.is_cancelled() {
+                        break;
+                    }
+                    status.next_sync_time = now_ms().saturating_add(interval);
+                    drop(status);
+                    let _ = service
+                        .run_once(RunKind::Scheduled, None, None, Some(task_cancel.clone()))
+                        .await;
+                }
+            });
+            *self.scheduler.lock().await = Some(Scheduler { cancel });
+            (self.events)(
+                "sync-status-updated",
+                json!({"type":"sync-scheduled-started","interval":interval,"nextSyncTime":next_sync_time}),
+            );
+        } else {
+            (self.events)(
+                "sync-status-updated",
+                json!({
+                    "type":"sync-scheduled-stopped",
+                    "reason": if requested_enabled { "configuration-incomplete" } else { "disabled" },
+                }),
+            );
+        }
+        Ok(())
+    }
+
+    pub async fn shutdown(&self) {
+        self.shutting_down.cancel();
+        let _configure = self.configure_gate.lock().await;
+        if let Some(scheduler) = self.scheduler.lock().await.take() {
+            scheduler.cancel.cancel();
+        }
+        {
+            let mut status = self.status.lock().await;
+            status.is_running = false;
+            status.next_sync_time = 0;
+        }
+        drop(_configure);
+        let _operation = self.operation_gate.lock().await;
+    }
+
+    pub async fn test_connection(&self, candidate: Option<Value>) -> SyncTestResult {
+        let result = self.test_connection_inner(candidate.as_ref()).await;
+        let timestamp = now_ms();
+        match &result {
+            Ok(()) => (self.events)(
+                "sync-status-updated",
+                json!({"type":"connection-test-success","timestamp":timestamp}),
+            ),
+            Err(error) => (self.events)(
+                "sync-status-updated",
+                json!({"type":"connection-test-error","timestamp":timestamp,"error":error}),
+            ),
+        }
+        SyncTestResult {
+            success: result.is_ok(),
+            message: result.err().unwrap_or_else(|| "连接测试成功".to_owned()),
+        }
+    }
+
+    pub async fn test_connection_with_config(&self, config: Value) -> SyncTestResult {
+        self.test_connection(Some(config)).await
+    }
+
+    pub async fn manual_sync(&self) -> SyncRunResult {
+        self.run_once(RunKind::Manual, None, None, None).await
+    }
+
+    pub async fn manual_sync_with_direction(&self, direction: SyncDirection) -> SyncRunResult {
+        self.run_once(RunKind::Manual, Some(direction), None, None)
+            .await
+    }
+
+    pub async fn manual_sync_with_config(&self, config: Value) -> SyncRunResult {
+        self.run_once(RunKind::Manual, None, Some(config), None)
+            .await
+    }
+
+    pub async fn manual_sync_with_config_and_direction(
+        &self,
+        direction: SyncDirection,
+        config: Value,
+    ) -> SyncRunResult {
+        self.run_once(RunKind::Manual, Some(direction), Some(config), None)
+            .await
+    }
+
+    pub async fn status(&self) -> SyncStatus {
+        self.status.lock().await.clone()
+    }
+
+    async fn test_connection_inner(&self, candidate: Option<&Value>) -> Result<(), String> {
+        let _guard = self.operation_lock().await?;
+        let token = self.shutting_down.child_token();
+        let (_, mut target) = self.resolve_operation(candidate, None).await?;
+        let result = target.test_conditionals(&token).await;
+        let cleanup = target.cleanup_created(&token).await;
+        match result {
+            Ok(()) => {
+                cleanup?;
+                self.set_conditionals_supported(&target.target_key).await?;
+                Ok(())
+            }
+            Err(error) => {
+                self.set_conditionals_unsupported(&target.target_key)
+                    .await?;
+                match cleanup {
+                    Ok(()) => Err(error),
+                    Err(cleanup_error) => {
+                        Err(format!("{error}; 临时资源清理失败: {cleanup_error}"))
+                    }
+                }
+            }
+        }
+    }
+
+    async fn operation_lock(&self) -> Result<tokio::sync::MutexGuard<'_, ()>, String> {
+        tokio::select! {
+            _ = self.shutting_down.cancelled() => Err("同步服务正在关闭".to_owned()),
+            guard = self.operation_gate.lock() => Ok(guard),
+        }
+    }
+
+    async fn run_once(
+        &self,
+        kind: RunKind,
+        requested_direction: Option<SyncDirection>,
+        candidate: Option<Value>,
+        operation_cancel: Option<CancellationToken>,
+    ) -> SyncRunResult {
+        let guard = match self.operation_lock().await {
+            Ok(guard) => guard,
+            Err(error) => return SyncRunResult::failure(error),
+        };
+        {
+            self.status.lock().await.sync_status = SyncState::Syncing;
+        }
+        let manual = matches!(kind, RunKind::Manual);
+        let token = operation_cancel
+            .map(|cancel| cancel.child_token())
+            .unwrap_or_else(|| self.shutting_down.child_token());
+        let prepared: Result<Option<(ResolvedOperation, WebDavTarget)>, String> = async {
+            if token.is_cancelled() {
+                return Err("同步已取消".to_owned());
+            }
+            if matches!(kind, RunKind::Scheduled) {
+                let snapshot = self.config.snapshot().await?;
+                if snapshot.sync.get("enabled").and_then(Value::as_bool) != Some(true) {
+                    return Ok(None);
+                }
+            }
+            self.resolve_operation(candidate.as_ref(), requested_direction)
+                .await
+                .map(Some)
+        }
+        .await;
+        let suppress_repeated_schedule = match &prepared {
+            Ok(Some((_, target))) if !manual => {
+                match self
+                    .storage
+                    .read_meta(&conflict_meta_key(&target.target_key))
+                    .await
+                {
+                    Ok(Some(Value::String(_))) => true,
+                    Ok(_) => false,
+                    Err(error) => {
+                        tracing::warn!(%error, "unable to read scheduled sync conflict state");
+                        false
+                    }
+                }
+            }
+            _ => false,
+        };
+        if !suppress_repeated_schedule {
+            (self.events)(
+                "sync-status-updated",
+                json!({
+                    "type": if manual { "manual-sync-started" } else { "sync-started" },
+                    "timestamp": now_ms(),
+                }),
+            );
+        }
+
+        let result = match prepared {
+            Ok(None) => SyncRunResult::success("同步已关闭"),
+            Ok(Some((operation, mut target))) => match self
+                .run_core(kind, requested_direction, &operation, &mut target, &token)
+                .await
+            {
+                Ok(result) => result,
+                Err(error) => SyncRunResult::failure(error),
+            },
+            Err(error) => SyncRunResult::failure(error),
+        };
+        let timestamp = now_ms();
+        {
+            let mut status = self.status.lock().await;
+            status.last_sync_time = timestamp;
+            status.sync_status = if result.success {
+                SyncState::Success
+            } else {
+                SyncState::Error
+            };
+        }
+        let event_type = match (manual, result.success) {
+            (true, true) => "manual-sync-completed",
+            (true, false) => "manual-sync-failed",
+            (false, true) => "sync-completed",
+            (false, false) => "sync-failed",
+        };
+        let next_sync_time = self.status.lock().await.next_sync_time;
+        if suppress_repeated_schedule && result.already_reported_conflict {
+            (self.events)(
+                "sync-status-updated",
+                json!({"type":"sync-conflict-repeat","timestamp":timestamp}),
+            );
+        } else {
+            (self.events)(
+                "sync-status-updated",
+                json!({
+                    "type":event_type,
+                    "timestamp":timestamp,
+                    "nextSyncTime":next_sync_time,
+                    "result":result.clone(),
+                }),
+            );
+        }
+        drop(guard);
+        result
+    }
+
+    async fn run_core(
+        &self,
+        kind: RunKind,
+        requested_direction: Option<SyncDirection>,
+        operation: &ResolvedOperation,
+        target: &mut WebDavTarget,
+        cancel: &CancellationToken,
+    ) -> Result<SyncRunResult, String> {
+        if cancel.is_cancelled() {
+            return Err("同步已取消".to_owned());
+        }
+        let direction = requested_direction.unwrap_or(operation.direction);
+        let require_conditionals = match kind {
+            RunKind::Scheduled => direction != SyncDirection::Download,
+            RunKind::Manual => direction == SyncDirection::Bidirectional,
+        };
+        if require_conditionals {
+            match self.conditionals_supported(&target.target_key).await? {
+                Some(true) => {}
+                Some(false) => {
+                    return Err(
+                        "WebDAV 服务未通过条件写入检查，请手动测试连接后重试自动同步".to_owned(),
+                    );
+                }
+                None => {
+                    let test = target.test_conditionals(cancel).await;
+                    let cleanup = target.cleanup_created(cancel).await;
+                    match (test, cleanup) {
+                        (Ok(()), Ok(())) => {}
+                        (Err(error), Ok(())) => {
+                            self.set_conditionals_unsupported(&target.target_key)
+                                .await?;
+                            return Err(error);
+                        }
+                        (Ok(()), Err(error)) => return Err(error),
+                        (Err(error), Err(cleanup_error)) => {
+                            self.set_conditionals_unsupported(&target.target_key)
+                                .await?;
+                            return Err(format!("{error}; 临时资源清理失败: {cleanup_error}"));
+                        }
+                    }
+                    self.set_conditionals_supported(&target.target_key).await?;
+                }
+            }
+        }
+        target.ensure_collection(cancel).await?;
+        let remote = target.read_document(cancel).await?;
+        let baseline = self.read_baseline(&target.target_key).await?;
+
+        if matches!(kind, RunKind::Manual) {
+            return match direction {
+                SyncDirection::Upload => {
+                    self.upload_local(target, operation, remote, baseline, true, cancel)
+                        .await
+                }
+                SyncDirection::Download => {
+                    self.download_remote(target, operation, remote, cancel)
+                        .await
+                }
+                SyncDirection::Bidirectional => {
+                    self.reconcile(target, operation, remote, baseline, direction, cancel)
+                        .await
+                }
+            };
+        }
+
+        self.reconcile(target, operation, remote, baseline, direction, cancel)
+            .await
+    }
+
+    async fn reconcile(
+        &self,
+        target: &mut WebDavTarget,
+        operation: &ResolvedOperation,
+        remote: Option<RemoteDocument>,
+        baseline: Option<SyncBaseline>,
+        direction: SyncDirection,
+        cancel: &CancellationToken,
+    ) -> Result<SyncRunResult, String> {
+        let local_hash = &operation.payload_sha256;
+        let Some(baseline) = baseline else {
+            return match remote {
+                None if direction != SyncDirection::Download => {
+                    self.upload_local(target, operation, None, None, false, cancel)
+                        .await
+                }
+                None => Err("远端配置不存在，无法按下载方向同步".to_owned()),
+                Some(remote) if remote.envelope.payload_sha256 == *local_hash => {
+                    self.save_baseline(&target.target_key, &remote).await?;
+                    self.clear_pending_upload(&target.target_key).await?;
+                    self.clear_conflict(&target.target_key).await?;
+                    Ok(SyncRunResult::success("本机与远端配置相同，已建立同步基线"))
+                }
+                Some(remote) => {
+                    let already_reported = self
+                        .record_conflict(
+                            &target.target_key,
+                            &operation.payload,
+                            Some(&remote.envelope),
+                            None,
+                        )
+                        .await?;
+                    Ok(conflict_result(
+                        "首次连接发现不同配置，双方内容已保留",
+                        already_reported,
+                    ))
+                }
+            };
+        };
+
+        let Some(remote) = remote else {
+            let already_reported = self
+                .record_conflict(
+                    &target.target_key,
+                    &operation.payload,
+                    None,
+                    Some(&baseline),
+                )
+                .await?;
+            return Ok(conflict_result(
+                "远端配置已删除，本机内容已保留",
+                already_reported,
+            ));
+        };
+        let remote_hash = &remote.envelope.payload_sha256;
+        if local_hash == remote_hash {
+            self.save_baseline(&target.target_key, &remote).await?;
+            self.clear_pending_upload(&target.target_key).await?;
+            self.clear_conflict(&target.target_key).await?;
+            return Ok(SyncRunResult::success("本机与远端配置相同"));
+        }
+
+        let local_changed = local_hash != &baseline.payload_sha256;
+        let remote_changed = remote_hash != &baseline.payload_sha256;
+        if local_changed && remote_changed {
+            let already_reported = self
+                .record_conflict(
+                    &target.target_key,
+                    &operation.payload,
+                    Some(&remote.envelope),
+                    Some(&baseline),
+                )
+                .await?;
+            return Ok(conflict_result(
+                "本机和远端配置均已变化，未覆盖任一方",
+                already_reported,
+            ));
+        }
+
+        if local_changed {
+            if direction == SyncDirection::Download {
+                let already_reported = self
+                    .record_conflict(
+                        &target.target_key,
+                        &operation.payload,
+                        Some(&remote.envelope),
+                        Some(&baseline),
+                    )
+                    .await?;
+                return Ok(conflict_result(
+                    "本机配置已变化，当前下载方向不会覆盖本机内容",
+                    already_reported,
+                ));
+            }
+            return self
+                .upload_local(
+                    target,
+                    operation,
+                    Some(remote),
+                    Some(baseline),
+                    false,
+                    cancel,
+                )
+                .await;
+        }
+
+        if remote_changed {
+            if direction == SyncDirection::Upload {
+                let already_reported = self
+                    .record_conflict(
+                        &target.target_key,
+                        &operation.payload,
+                        Some(&remote.envelope),
+                        Some(&baseline),
+                    )
+                    .await?;
+                return Ok(conflict_result(
+                    "远端配置已变化，当前上传方向不会覆盖远端内容",
+                    already_reported,
+                ));
+            }
+            return self
+                .download_remote(target, operation, Some(remote), cancel)
+                .await;
+        }
+
+        self.save_baseline(&target.target_key, &remote).await?;
+        Ok(SyncRunResult::success("配置没有变化"))
+    }
+
+    async fn upload_local(
+        &self,
+        target: &mut WebDavTarget,
+        operation: &ResolvedOperation,
+        remote: Option<RemoteDocument>,
+        baseline: Option<SyncBaseline>,
+        manual: bool,
+        cancel: &CancellationToken,
+    ) -> Result<SyncRunResult, String> {
+        self.ensure_operation_current(operation).await?;
+        if let Some(remote) = remote.as_ref() {
+            if remote.envelope.payload_sha256 == operation.payload_sha256 {
+                self.save_baseline(&target.target_key, remote).await?;
+                self.clear_pending_upload(&target.target_key).await?;
+                self.clear_conflict(&target.target_key).await?;
+                return Ok(SyncRunResult::success("本机与远端配置相同"));
+            }
+        }
+        let parent = remote
+            .as_ref()
+            .map(|document| document.envelope.revision.clone());
+        let envelope = self
+            .pending_envelope(&target.target_key, &operation.payload, parent.clone())
+            .await?;
+        let bytes = serde_json::to_vec(&envelope).map_err(|error| error.to_string())?;
+        if bytes.len() > MAX_DOCUMENT_BYTES {
+            return Err("同步配置超过远端文档大小限制".to_owned());
+        }
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            CONTENT_TYPE,
+            HeaderValue::from_static("application/json; charset=utf-8"),
+        );
+        match remote.as_ref() {
+            Some(remote) => {
+                let baseline_etag = baseline
+                    .as_ref()
+                    .filter(|baseline| {
+                        baseline.revision == remote.envelope.revision
+                            && baseline.payload_sha256 == remote.envelope.payload_sha256
+                    })
+                    .and_then(|baseline| baseline.etag.as_deref())
+                    .filter(|etag| is_strong_etag(etag));
+                if let Some(etag) = remote
+                    .etag
+                    .as_deref()
+                    .filter(|etag| is_strong_etag(etag))
+                    .or(baseline_etag)
+                {
+                    headers.insert(
+                        IF_MATCH,
+                        HeaderValue::from_str(etag).map_err(|_| "远端 ETag 无效")?,
+                    );
+                } else if !manual {
+                    return Err("远端没有强 ETag，自动上传无法安全覆盖".to_owned());
+                }
+            }
+            None => {
+                headers.insert(IF_NONE_MATCH, HeaderValue::from_static("*"));
+            }
+        }
+        let put_result = target
+            .send(Method::PUT, &target.document, headers, Some(bytes), cancel)
+            .await;
+        let (status_error, precondition_failed) = match put_result {
+            Ok(response) if response.status().is_success() => (None, false),
+            Ok(response) if response.status() == StatusCode::PRECONDITION_FAILED => {
+                (Some("远端配置在同步期间发生变化".to_owned()), true)
+            }
+            Ok(response) => (
+                Some(format!("WebDAV 上传失败，HTTP {}", response.status())),
+                false,
+            ),
+            Err(error) => (Some(error), false),
+        };
+
+        let actual = target.read_document(cancel).await;
+        match actual {
+            Ok(Some(actual)) if actual.envelope.revision == envelope.revision => {
+                self.save_baseline(&target.target_key, &actual).await?;
+                self.clear_pending_upload(&target.target_key).await?;
+                self.clear_conflict(&target.target_key).await?;
+                let mut result = SyncRunResult::success("配置已上传");
+                result.uploaded_files.push("config.json".to_owned());
+                Ok(result)
+            }
+            Ok(actual) if precondition_failed => {
+                self.clear_pending_upload(&target.target_key).await?;
+                let already_reported = self
+                    .record_conflict(
+                        &target.target_key,
+                        &operation.payload,
+                        actual.as_ref().map(|document| &document.envelope),
+                        baseline.as_ref(),
+                    )
+                    .await?;
+                Ok(conflict_result(
+                    status_error.as_deref().unwrap_or("远端提交未确认"),
+                    already_reported,
+                ))
+            }
+            Ok(actual) if status_error.is_some() => {
+                let unchanged = match (baseline.as_ref(), actual.as_ref()) {
+                    (Some(baseline), Some(remote)) => {
+                        baseline.revision == remote.envelope.revision
+                            && baseline.payload_sha256 == remote.envelope.payload_sha256
+                    }
+                    (None, None) => true,
+                    _ => false,
+                };
+                if unchanged {
+                    return Err(status_error.unwrap_or_else(|| "WebDAV 上传失败".to_owned()));
+                }
+                self.clear_pending_upload(&target.target_key).await?;
+                let already_reported = self
+                    .record_conflict(
+                        &target.target_key,
+                        &operation.payload,
+                        actual.as_ref().map(|document| &document.envelope),
+                        baseline.as_ref(),
+                    )
+                    .await?;
+                Ok(conflict_result(
+                    "上传期间远端配置发生变化，双方内容已保留",
+                    already_reported,
+                ))
+            }
+            Ok(Some(actual)) => {
+                self.clear_pending_upload(&target.target_key).await?;
+                let already_reported = self
+                    .record_conflict(
+                        &target.target_key,
+                        &operation.payload,
+                        Some(&actual.envelope),
+                        baseline.as_ref(),
+                    )
+                    .await?;
+                Ok(conflict_result(
+                    "上传后远端版本已变化，双方内容已保留",
+                    already_reported,
+                ))
+            }
+            Ok(None) => Err("远端未确认本次配置提交，保留待核实版本".to_owned()),
+            Err(read_error) => Err(format!("上传结果不确定，读取远端核实失败: {read_error}")),
+        }
+    }
+
+    async fn ensure_operation_current(&self, operation: &ResolvedOperation) -> Result<(), String> {
+        let current = self.config.snapshot().await?;
+        let mut fields = Vec::new();
+        for root in ["settings", "sync"] {
+            if let Some(projected) = operation.payload.get(root).and_then(Value::as_object) {
+                fields.extend(projected.keys().map(|field| format!("{root}.{field}")));
+            }
+        }
+        fields.push("sync.params".to_owned());
+        if fields.into_iter().any(|field| {
+            operation
+                .snapshot
+                .versions
+                .get(&field)
+                .copied()
+                .unwrap_or(0)
+                != current.versions.get(&field).copied().unwrap_or(0)
+        }) {
+            return Err("同步期间配置发生变化，请重新发起操作".to_owned());
+        }
+        Ok(())
+    }
+
+    async fn download_remote(
+        &self,
+        target: &WebDavTarget,
+        operation: &ResolvedOperation,
+        remote: Option<RemoteDocument>,
+        _cancel: &CancellationToken,
+    ) -> Result<SyncRunResult, String> {
+        let remote = remote.ok_or_else(|| "远端配置不存在，无法下载".to_owned())?;
+        let before = operation.snapshot.clone();
+        match self
+            .config
+            .apply_remote_projection(before.versions.clone(), remote.envelope.payload.clone())
+            .await
+        {
+            Ok(after) => {
+                let mut result = SyncRunResult::success("配置已下载并应用");
+                result.downloaded_files.push("config.json".to_owned());
+                if before.settings != after.settings || before.sync != after.sync {
+                    (self.events)(
+                        "sync-requires-restart",
+                        json!({
+                            "downloadedFiles": result.downloaded_files,
+                            "message": "已下载配置，需要重新启动应用以应用更改",
+                        }),
+                    );
+                }
+                self.save_baseline(&target.target_key, &remote).await?;
+                self.clear_pending_upload(&target.target_key).await?;
+                self.clear_conflict(&target.target_key).await?;
+                Ok(result)
+            }
+            Err(error) => Err(format!("远端配置未应用，当前配置保持不变: {error}")),
+        }
+    }
+
+    async fn resolve_operation(
+        &self,
+        candidate: Option<&Value>,
+        requested_direction: Option<SyncDirection>,
+    ) -> Result<(ResolvedOperation, WebDavTarget), String> {
+        let before = self.config.snapshot().await?;
+        let provider = before
+            .sync
+            .get("provider")
+            .and_then(Value::as_str)
+            .unwrap_or_default();
+        let config_value = if let Some(candidate) = candidate {
+            let (provider_type, provider_config) = candidate_sync_config(candidate)?;
+            if provider_type != "webdav" {
+                return Err("当前只支持 WebDAV 同步".to_owned());
+            }
+            self.config
+                .runtime_webdav_test_config(provider_config)
+                .await?
+        } else {
+            if provider != "webdav" {
+                return Err("当前同步提供者不是 WebDAV".to_owned());
+            }
+            self.config.runtime_webdav_config().await?
+        };
+        let after = self.config.snapshot().await?;
+        if [
+            "sync.enabled",
+            "sync.provider",
+            "sync.interval",
+            "sync.direction",
+            "sync.params",
+        ]
+        .iter()
+        .any(|key| before.versions.get(*key) != after.versions.get(*key))
+        {
+            return Err("同步期间配置发生变化，请重新发起操作".to_owned());
+        }
+        let stored_direction = after
+            .sync
+            .get("direction")
+            .and_then(Value::as_str)
+            .unwrap_or("bidirectional");
+        let candidate_direction = config_value
+            .get("syncDirection")
+            .and_then(Value::as_str)
+            .map(SyncDirection::parse)
+            .transpose()?;
+        let direction = requested_direction
+            .or(candidate_direction)
+            .unwrap_or(SyncDirection::parse(stored_direction)?);
+        let webdav = parse_webdav_config(&config_value)?;
+        let target = WebDavTarget::new(webdav)?;
+        let payload = remote_projection(&after.settings, &after.sync)?;
+        validate_remote_projection_value(&payload)?;
+        let bytes = serde_json::to_vec(&payload).map_err(|error| error.to_string())?;
+        let payload_sha256 = data_format::sha256_hex(&bytes);
+        Ok((
+            ResolvedOperation {
+                snapshot: after,
+                payload,
+                payload_sha256,
+                direction,
+            },
+            target,
+        ))
+    }
+
+    async fn read_baseline(&self, target_key: &str) -> Result<Option<SyncBaseline>, String> {
+        let Some(value) = self
+            .storage
+            .read_meta(&baseline_meta_key(target_key))
+            .await?
+        else {
+            return Ok(None);
+        };
+        serde_json::from_value(value)
+            .map(Some)
+            .map_err(|error| format!("本机 WebDAV 同步基线无效: {error}"))
+    }
+
+    async fn conditionals_supported(&self, target_key: &str) -> Result<Option<bool>, String> {
+        Ok(self
+            .storage
+            .read_meta(&conditionals_meta_key(target_key))
+            .await?
+            .and_then(|value| value.as_bool()))
+    }
+
+    async fn set_conditionals_supported(&self, target_key: &str) -> Result<(), String> {
+        compare_meta(
+            self.storage.as_ref(),
+            &conditionals_meta_key(target_key),
+            &Value::Bool(true),
+        )
+        .await
+    }
+
+    async fn set_conditionals_unsupported(&self, target_key: &str) -> Result<(), String> {
+        compare_meta(
+            self.storage.as_ref(),
+            &conditionals_meta_key(target_key),
+            &Value::Bool(false),
+        )
+        .await
+    }
+
+    async fn save_baseline(&self, target_key: &str, remote: &RemoteDocument) -> Result<(), String> {
+        let next = serde_json::to_value(SyncBaseline {
+            revision: remote.envelope.revision.clone(),
+            payload_sha256: remote.envelope.payload_sha256.clone(),
+            etag: remote.etag.clone().filter(|value| is_strong_etag(value)),
+        })
+        .map_err(|error| error.to_string())?;
+        compare_meta(self.storage.as_ref(), &baseline_meta_key(target_key), &next).await
+    }
+
+    async fn pending_envelope(
+        &self,
+        target_key: &str,
+        payload: &Value,
+        parent_revision: Option<String>,
+    ) -> Result<RemoteEnvelope, String> {
+        let key = pending_meta_key(target_key);
+        if let Some(value) = self.storage.read_meta(&key).await? {
+            if let Ok(pending) = serde_json::from_value::<PendingUpload>(value) {
+                if pending.envelope.payload == *payload && pending.target_parent == parent_revision
+                {
+                    return Ok(pending.envelope);
+                }
+            }
+        }
+        let pending = PendingUpload {
+            envelope: RemoteEnvelope::new(payload.clone(), parent_revision.clone())?,
+            target_parent: parent_revision,
+        };
+        let value = serde_json::to_value(&pending).map_err(|error| error.to_string())?;
+        compare_meta(self.storage.as_ref(), &key, &value).await?;
+        Ok(pending.envelope)
+    }
+
+    async fn clear_pending_upload(&self, target_key: &str) -> Result<(), String> {
+        clear_meta(self.storage.as_ref(), &pending_meta_key(target_key)).await
+    }
+
+    async fn record_conflict(
+        &self,
+        target_key: &str,
+        local: &Value,
+        remote: Option<&RemoteEnvelope>,
+        baseline: Option<&SyncBaseline>,
+    ) -> Result<bool, String> {
+        let local_hash =
+            data_format::sha256_hex(&serde_json::to_vec(local).map_err(|error| error.to_string())?);
+        let remote_revision = remote
+            .map(|value| value.revision.as_str())
+            .unwrap_or("missing");
+        let remote_hash = remote
+            .map(|value| value.payload_sha256.as_str())
+            .unwrap_or("missing");
+        let baseline_revision = baseline
+            .map(|value| value.revision.as_str())
+            .unwrap_or("none");
+        let conflict_id = data_format::sha256_hex(
+            format!("{local_hash}\0{remote_revision}\0{remote_hash}\0{baseline_revision}")
+                .as_bytes(),
+        );
+        let meta_key = conflict_meta_key(target_key);
+        let previous = self.storage.read_meta(&meta_key).await?;
+        let already_reported = previous.as_ref().and_then(Value::as_str) == Some(&conflict_id);
+        let conflict_dir = self.app_data_dir.join("sync-conflicts");
+        tokio::fs::create_dir_all(&conflict_dir)
+            .await
+            .map_err(|error| format!("无法创建同步冲突目录: {error}"))?;
+        let path = conflict_dir.join(format!("{conflict_id}.json"));
+        if tokio::fs::metadata(&path).await.is_err() {
+            let record = json!({
+                "id": conflict_id,
+                "createdAt": now_ms(),
+                "local": local,
+                "remote": remote,
+                "baseline": baseline,
+            });
+            let bytes = serde_json::to_vec_pretty(&record).map_err(|error| error.to_string())?;
+            write_atomic(&path, &bytes).await?;
+        }
+        let next = Value::String(conflict_id);
+        if !already_reported {
+            let stored = self
+                .storage
+                .compare_and_set_meta(&meta_key, previous.as_ref(), &next)
+                .await?;
+            if !stored {
+                return Err("同步冲突状态并发变化，请重试".to_owned());
+            }
+        }
+        Ok(already_reported)
+    }
+
+    async fn clear_conflict(&self, target_key: &str) -> Result<(), String> {
+        clear_meta(self.storage.as_ref(), &conflict_meta_key(target_key)).await
+    }
+}
+
+fn candidate_sync_config<'a>(candidate: &'a Value) -> Result<(&'a str, &'a Value), String> {
+    let object = candidate
+        .as_object()
+        .ok_or_else(|| "同步配置必须是对象".to_owned())?;
+    let provider = object
+        .get("providerType")
+        .and_then(Value::as_str)
+        .ok_or_else(|| "同步配置缺少 providerType".to_owned())?;
+    let config = object
+        .get("providerConfig")
+        .ok_or_else(|| "同步配置缺少 providerConfig".to_owned())?;
+    Ok((provider, config))
+}
+
+fn parse_webdav_config(value: &Value) -> Result<WebDavConfig, String> {
+    let server_url = value
+        .get("serverUrl")
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .trim()
+        .to_owned();
+    if server_url.is_empty() {
+        return Err("WebDAV 服务器地址不能为空".to_owned());
+    }
+    let username = optional_string(value, "username")?.unwrap_or_default();
+    let password = optional_string(value, "password")?.unwrap_or_default();
+    let remote_path = optional_string(value, "remotePath")?.unwrap_or_default();
+    let timeout_ms = match value.get("timeout") {
+        Some(timeout) => timeout
+            .as_u64()
+            .ok_or_else(|| "WebDAV 超时设置无效".to_owned())?,
+        None => 30_000,
+    };
+    if timeout_ms == 0 || timeout_ms > MAX_TIMEOUT_MS {
+        return Err(format!("WebDAV 超时必须在 1 到 {MAX_TIMEOUT_MS} 毫秒之间"));
+    }
+    Ok(WebDavConfig {
+        server_url,
+        username,
+        password,
+        remote_path,
+        timeout_ms,
+    })
+}
+
+fn optional_string(value: &Value, field: &str) -> Result<Option<String>, String> {
+    value
+        .get(field)
+        .map(|value| {
+            value
+                .as_str()
+                .map(str::to_owned)
+                .ok_or_else(|| format!("WebDAV 字段无效: {field}"))
+        })
+        .transpose()
+}
+
+impl WebDavTarget {
+    fn new(config: WebDavConfig) -> Result<Self, String> {
+        let mut base =
+            Url::parse(&config.server_url).map_err(|_| "WebDAV 服务器地址无效".to_owned())?;
+        if !matches!(base.scheme(), "http" | "https")
+            || base.host_str().is_none()
+            || !base.username().is_empty()
+            || base.password().is_some()
+            || base.query().is_some()
+            || base.fragment().is_some()
+        {
+            return Err("WebDAV 地址必须是无凭据的 HTTP 或 HTTPS URL".to_owned());
+        }
+        let mut collections = Vec::new();
+        let mut segments = Vec::new();
+        for segment in config.remote_path.split('/') {
+            if segment.is_empty() {
+                continue;
+            }
+            if segment == "." || segment == ".." || segment.contains('\\') {
+                return Err("WebDAV 远程路径包含无效目录段".to_owned());
+            }
+            segments.push(segment.to_owned());
+        }
+        segments.extend(DOCUMENT_PATH[..2].iter().map(|part| (*part).to_owned()));
+        for segment in &segments {
+            append_url_segment(&mut base, segment)?;
+            collections.push(base.clone());
+        }
+        let collection = base;
+        let mut document = collection.clone();
+        append_url_segment(&mut document, DOCUMENT_PATH[2])?;
+        let target_key =
+            data_format::sha256_hex(format!("{}\0{}", document, config.username).as_bytes());
+        let client = Client::builder()
+            .timeout(Duration::from_millis(config.timeout_ms))
+            .connect_timeout(Duration::from_millis(config.timeout_ms.min(15_000)))
+            .redirect(reqwest::redirect::Policy::none())
+            .build()
+            .map_err(|error| format!("创建 WebDAV 客户端失败: {error}"))?;
+        Ok(Self {
+            client,
+            username: config.username,
+            password: config.password,
+            collection,
+            collections,
+            document,
+            target_key,
+            created_collections: Vec::new(),
+        })
+    }
+
+    async fn send(
+        &self,
+        method: Method,
+        url: &Url,
+        headers: HeaderMap,
+        body: Option<Vec<u8>>,
+        cancel: &CancellationToken,
+    ) -> Result<Response, String> {
+        self.send_with_timeout(method, url, headers, body, cancel, None)
+            .await
+    }
+
+    async fn send_with_timeout(
+        &self,
+        method: Method,
+        url: &Url,
+        headers: HeaderMap,
+        body: Option<Vec<u8>>,
+        cancel: &CancellationToken,
+        timeout: Option<Duration>,
+    ) -> Result<Response, String> {
+        if cancel.is_cancelled() {
+            return Err("同步已取消".to_owned());
+        }
+        let mut request = self.client.request(method, url.clone()).headers(headers);
+        if let Some(timeout) = timeout {
+            request = request.timeout(timeout);
+        }
+        if !self.username.is_empty() || !self.password.is_empty() {
+            request = request.basic_auth(&self.username, Some(&self.password));
+        }
+        if let Some(body) = body {
+            request = request.body(body);
+        }
+        tokio::select! {
+            _ = cancel.cancelled() => Err("同步已取消".to_owned()),
+            result = request.send() => result.map_err(|error| {
+                if error.is_timeout() {
+                    "WebDAV 请求超时".to_owned()
+                } else {
+                    format!("WebDAV 请求失败: {error}")
+                }
+            }),
+        }
+    }
+
+    async fn ensure_collection(&mut self, cancel: &CancellationToken) -> Result<(), String> {
+        let method = Method::from_bytes(b"MKCOL").map_err(|error| error.to_string())?;
+        for collection in self.collection_urls() {
+            let response = self
+                .send(method.clone(), &collection, HeaderMap::new(), None, cancel)
+                .await?;
+            match response.status() {
+                StatusCode::CREATED => self.created_collections.push(collection),
+                StatusCode::METHOD_NOT_ALLOWED | StatusCode::OK | StatusCode::NO_CONTENT => {}
+                status => return Err(format!("WebDAV 创建目录失败，HTTP {status}")),
+            }
+        }
+        Ok(())
+    }
+
+    fn collection_urls(&self) -> Vec<Url> {
+        self.collections.clone()
+    }
+
+    async fn read_document(
+        &self,
+        cancel: &CancellationToken,
+    ) -> Result<Option<RemoteDocument>, String> {
+        let response = self
+            .send(Method::GET, &self.document, HeaderMap::new(), None, cancel)
+            .await?;
+        if response.status() == StatusCode::NOT_FOUND {
+            return Ok(None);
+        }
+        if !response.status().is_success() {
+            return Err(format!("WebDAV 下载失败，HTTP {}", response.status()));
+        }
+        if response
+            .content_length()
+            .is_some_and(|length| length > MAX_DOCUMENT_BYTES as u64)
+        {
+            return Err("远端配置超过文档大小限制".to_owned());
+        }
+        let etag = response
+            .headers()
+            .get(ETAG)
+            .and_then(|value| value.to_str().ok())
+            .filter(|value| is_strong_etag(value))
+            .map(str::to_owned);
+        let mut stream = response.bytes_stream();
+        let mut bytes = Vec::new();
+        loop {
+            let next = tokio::select! {
+                _ = cancel.cancelled() => return Err("同步已取消".to_owned()),
+                next = stream.next() => next,
+            };
+            let Some(chunk) = next else { break };
+            let chunk = chunk.map_err(|error| format!("读取远端配置失败: {error}"))?;
+            if bytes.len().saturating_add(chunk.len()) > MAX_DOCUMENT_BYTES {
+                return Err("远端配置超过文档大小限制".to_owned());
+            }
+            bytes.extend_from_slice(&chunk);
+        }
+        let envelope = decode_envelope(&bytes)?;
+        Ok(Some(RemoteDocument { envelope, etag }))
+    }
+
+    async fn test_conditionals(&mut self, cancel: &CancellationToken) -> Result<(), String> {
+        self.ensure_collection(cancel).await?;
+        let mut probe = self.collection.clone();
+        append_url_segment(&mut probe, &format!(".probe-{}.json", Uuid::new_v4()))?;
+        let result = self.verify_conditionals_at(&probe, cancel).await;
+        let cleanup_cancel = CancellationToken::new();
+        let cleanup = self.delete_url(&probe, &cleanup_cancel).await;
+        match (result, cleanup) {
+            (Ok(()), Ok(())) => Ok(()),
+            (Err(error), Ok(())) => Err(error),
+            (Ok(()), Err(error)) => Err(format!("条件写入测试通过，但临时对象清理失败: {error}")),
+            (Err(error), Err(cleanup_error)) => {
+                Err(format!("{error}; 临时对象清理失败: {cleanup_error}"))
+            }
+        }
+    }
+
+    async fn verify_conditionals_at(
+        &self,
+        probe: &Url,
+        cancel: &CancellationToken,
+    ) -> Result<(), String> {
+        let body = br#"{"probe":"super_paste"}"#.to_vec();
+        let mut first_headers = HeaderMap::new();
+        first_headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
+        first_headers.insert(IF_NONE_MATCH, HeaderValue::from_static("*"));
+        let first = self
+            .send(
+                Method::PUT,
+                &probe,
+                first_headers,
+                Some(body.clone()),
+                cancel,
+            )
+            .await?;
+        if !first.status().is_success() {
+            return Err(format!("WebDAV 条件创建失败，HTTP {}", first.status()));
+        }
+        let etag = first
+            .headers()
+            .get(ETAG)
+            .and_then(|value| value.to_str().ok())
+            .filter(|value| is_strong_etag(value))
+            .ok_or_else(|| "WebDAV 服务未返回强 ETag，无法安全执行双向同步".to_owned())?
+            .to_owned();
+        let create_again = self
+            .send(
+                Method::PUT,
+                probe,
+                HeaderMap::from_iter([
+                    (CONTENT_TYPE, HeaderValue::from_static("application/json")),
+                    (IF_NONE_MATCH, HeaderValue::from_static("*")),
+                ]),
+                Some(body.clone()),
+                cancel,
+            )
+            .await?;
+        if create_again.status() != StatusCode::PRECONDITION_FAILED {
+            return Err("WebDAV 服务未遵守 If-None-Match 条件写入".to_owned());
+        }
+        let wrong_match = HeaderValue::from_static("\"super-paste-invalid-etag\"");
+        let wrong_match_response = self
+            .send(
+                Method::PUT,
+                probe,
+                HeaderMap::from_iter([
+                    (CONTENT_TYPE, HeaderValue::from_static("application/json")),
+                    (IF_MATCH, wrong_match),
+                ]),
+                Some(body.clone()),
+                cancel,
+            )
+            .await?;
+        if wrong_match_response.status() != StatusCode::PRECONDITION_FAILED {
+            return Err("WebDAV 服务未遵守 If-Match 条件写入".to_owned());
+        }
+        let updated_body = br#"{"probe":"super_paste","updated":true}"#.to_vec();
+        let update = self
+            .send(
+                Method::PUT,
+                probe,
+                HeaderMap::from_iter([
+                    (CONTENT_TYPE, HeaderValue::from_static("application/json")),
+                    (
+                        IF_MATCH,
+                        HeaderValue::from_str(&etag).map_err(|_| "WebDAV ETag 无效")?,
+                    ),
+                ]),
+                Some(updated_body),
+                cancel,
+            )
+            .await?;
+        if !update.status().is_success() {
+            return Err(format!("WebDAV 条件更新失败，HTTP {}", update.status()));
+        }
+        let updated_etag = update
+            .headers()
+            .get(ETAG)
+            .and_then(|value| value.to_str().ok())
+            .filter(|value| is_strong_etag(value))
+            .ok_or_else(|| "WebDAV 服务条件更新后未返回强 ETag".to_owned())?;
+        if updated_etag == etag {
+            return Err("WebDAV 服务更新内容后仍返回相同强 ETag".to_owned());
+        }
+        Ok(())
+    }
+
+    async fn delete_url(&self, url: &Url, cancel: &CancellationToken) -> Result<(), String> {
+        let response = self
+            .send_with_timeout(
+                Method::DELETE,
+                url,
+                HeaderMap::new(),
+                None,
+                cancel,
+                Some(Duration::from_secs(3)),
+            )
+            .await?;
+        if response.status().is_success() || response.status() == StatusCode::NOT_FOUND {
+            Ok(())
+        } else {
+            Err(format!(
+                "WebDAV 删除临时对象失败，HTTP {}",
+                response.status()
+            ))
+        }
+    }
+
+    async fn cleanup_created(&mut self, _cancel: &CancellationToken) -> Result<(), String> {
+        let mut errors = Vec::new();
+        let cleanup_cancel = CancellationToken::new();
+        let cleanup = tokio::time::timeout(Duration::from_secs(3), async {
+            for url in self.created_collections.iter().rev() {
+                if let Err(error) = self.delete_url(url, &cleanup_cancel).await {
+                    errors.push(error);
+                }
+            }
+        })
+        .await;
+        if cleanup.is_err() {
+            errors.push("清理新建的 WebDAV 目录超时".to_owned());
+        }
+        self.created_collections.clear();
+        if errors.is_empty() {
+            Ok(())
+        } else {
+            Err(errors.join("; "))
+        }
+    }
+}
+
+fn append_url_segment(url: &mut Url, segment: &str) -> Result<(), String> {
+    url.path_segments_mut()
+        .map_err(|_| "WebDAV URL 不支持路径段".to_owned())?
+        .pop_if_empty()
+        .push(segment);
+    Ok(())
+}
+
+fn decode_envelope(bytes: &[u8]) -> Result<RemoteEnvelope, String> {
+    if bytes.len() > MAX_DOCUMENT_BYTES {
+        return Err("远端配置超过文档大小限制".to_owned());
+    }
+    let value: Value =
+        serde_json::from_slice(bytes).map_err(|error| format!("远端配置 JSON 无效: {error}"))?;
+    let object = value
+        .as_object()
+        .ok_or_else(|| "远端配置文档必须是对象".to_owned())?;
+    let expected = [
+        "formatVersion",
+        "configSchemaVersion",
+        "revision",
+        "parentRevision",
+        "updatedAt",
+        "payloadSha256",
+        "payload",
+    ];
+    if object.len() != expected.len() || expected.iter().any(|key| !object.contains_key(*key)) {
+        return Err("远端配置 envelope 字段无效".to_owned());
+    }
+    serde_json::from_value::<RemoteEnvelope>(value)
+        .map_err(|error| format!("远端配置 envelope 无效: {error}"))?
+        .validate()
+}
+
+fn is_strong_etag(value: &str) -> bool {
+    value.len() >= 2
+        && !value.starts_with("W/")
+        && value.starts_with('"')
+        && value.ends_with('"')
+        && !value[1..value.len() - 1].contains('"')
+}
+
+fn baseline_meta_key(target_key: &str) -> String {
+    format!("sync.webdav.baseline.v1.{target_key}")
+}
+
+fn pending_meta_key(target_key: &str) -> String {
+    format!("sync.webdav.pending.v1.{target_key}")
+}
+
+fn conflict_meta_key(target_key: &str) -> String {
+    format!("sync.webdav.conflict.v1.{target_key}")
+}
+
+fn conditionals_meta_key(target_key: &str) -> String {
+    format!("sync.webdav.conditionals.v1.{target_key}")
+}
+
+async fn compare_meta(storage: &Storage, key: &str, next: &Value) -> Result<(), String> {
+    for _ in 0..8 {
+        let previous = storage.read_meta(key).await?;
+        if storage
+            .compare_and_set_meta(key, previous.as_ref(), next)
+            .await?
+        {
+            return Ok(());
+        }
+    }
+    Err(format!("同步元数据并发更新失败: {key}"))
+}
+
+async fn clear_meta(storage: &Storage, key: &str) -> Result<(), String> {
+    for _ in 0..8 {
+        let previous = storage.read_meta(key).await?;
+        let Some(previous) = previous else {
+            return Ok(());
+        };
+        if storage
+            .compare_and_set_meta(key, Some(&previous), &Value::Null)
+            .await?
+        {
+            return Ok(());
+        }
+    }
+    Err(format!("同步元数据清理并发更新失败: {key}"))
+}
+
+async fn write_atomic(path: &std::path::Path, bytes: &[u8]) -> Result<(), String> {
+    let parent = path.parent().ok_or_else(|| "冲突文件路径无效".to_owned())?;
+    let temporary = parent.join(format!(".{}.{}.tmp", Uuid::new_v4(), std::process::id()));
+    let result = async {
+        let mut file = tokio::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&temporary)
+            .await
+            .map_err(|error| format!("无法创建冲突临时文件: {error}"))?;
+        file.write_all(bytes)
+            .await
+            .map_err(|error| format!("无法写入冲突文件: {error}"))?;
+        file.sync_all()
+            .await
+            .map_err(|error| format!("无法同步冲突文件: {error}"))?;
+        drop(file);
+        tokio::fs::rename(&temporary, path)
+            .await
+            .map_err(|error| format!("无法保存冲突文件: {error}"))?;
+        Ok::<_, String>(())
+    }
+    .await;
+    if result.is_err() {
+        let _ = tokio::fs::remove_file(&temporary).await;
+    }
+    result
+}
+
+fn conflict_result(message: &str, already_reported: bool) -> SyncRunResult {
+    let mut result = SyncRunResult::failure(message);
+    result.conflict = Some(message.to_owned());
+    result.already_reported_conflict = already_reported;
+    result
+}
