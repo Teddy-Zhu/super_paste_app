@@ -213,7 +213,11 @@ impl WindowManager {
         if overlay {
             let host = window.clone();
             let app = self.app.clone();
-            on_main(&self.app, move || super::modifiers::install(&app, &host)).await?;
+            on_main(&self.app, move || {
+                super::native_frame::configure_overlay(&host)?;
+                super::modifiers::install(&app, &host)
+            })
+            .await?;
         }
         // The Wayland layer role is assigned before Wry can realize its GTK host.
         let route = if overlay {
@@ -692,10 +696,12 @@ impl WindowManager {
             state.deferred_blur = false;
         }
         self.source.freeze(false);
-        let hidden = self.window("overlay")?.hide().map_err(|e| e.to_string());
+        // Clear native opacity before unmapping so the compositor cannot animate
+        // a stale visible strip after the renderer has completed its slide-out.
         let opacity = super::native_frame::opacity(&self.app, "overlay", 0.).await;
+        let hidden = self.window("overlay")?.hide().map_err(|e| e.to_string());
         let notified = emit_window(&self.app, "overlay", "overlay-hidden", vec![json!(id)]);
-        hidden.and(opacity).and(notified)
+        opacity.and(hidden).and(notified)
     }
 
     fn is_current(&self, id: i64, phase: Phase) -> Result<bool, String> {

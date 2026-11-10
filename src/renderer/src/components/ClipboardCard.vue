@@ -389,12 +389,12 @@ const shortcutLabel = computed(() => {
 <style scoped>
 .clipboard-card {
   --type-color: var(--color-type-blue);
+  --card-border-width: 1px;
+  --card-border-color: var(--color-control-border);
   background: var(--color-bg-primary);
   border-radius: var(--radius-sm);
   cursor: pointer;
-  transition:
-    border-color var(--duration-fast),
-    box-shadow var(--duration-fast);
+  transition: box-shadow var(--duration-fast);
   display: flex;
   flex-direction: column;
   position: relative;
@@ -403,27 +403,44 @@ const shortcutLabel = computed(() => {
   width: min(300px, calc(100vw - 24px));
   height: var(--clipboard-card-height, calc(100vh - 66px));
   flex-shrink: 0;
-  border: 1px solid var(--color-control-border);
+  border: 0;
+  padding: 1px;
   contain: layout style;
 }
+/* Paint one frame above the content without changing its layout in each state. */
+.clipboard-card::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  border: var(--card-border-width) solid var(--card-border-color);
+  border-radius: inherit;
+  pointer-events: none;
+  transition: border-color var(--duration-fast);
+}
 .clipboard-card:hover {
-  border-color: var(--color-primary);
+  --card-border-width: 2px;
+  --card-border-color: var(--color-primary);
   box-shadow: var(--shadow-soft-sm);
 }
 .clipboard-card.selected {
-  border-color: var(--color-primary);
-  box-shadow: var(--shadow-soft-xs);
+  --card-border-width: 3px;
+  --card-border-color: var(--color-primary);
+  box-shadow: var(--shadow-soft-sm);
 }
 .clipboard-card.selected:hover {
-  border-color: var(--color-primary-hover);
+  --card-border-color: var(--color-primary-hover);
   box-shadow: var(--shadow-soft-sm);
 }
 .clipboard-card:hover .card-header {
   background: var(--color-selection);
 }
+.clipboard-card.selected .card-header {
+  background: var(--color-selection-hover);
+}
 .clipboard-card:active,
 .clipboard-card.selected:active {
-  border-color: var(--color-primary-active);
+  --card-border-color: var(--color-primary-active);
   box-shadow: var(--shadow-soft-xs);
 }
 .clipboard-card:active .card-header {

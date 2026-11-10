@@ -479,14 +479,20 @@ impl Runtime {
         let app = self.app.clone();
         tokio::task::spawn_blocking(move || {
             if enabled {
-                app.autolaunch().enable()
+                #[cfg(target_os = "linux")]
+                {
+                    crate::platform::autostart::enable(&app)
+                }
+                #[cfg(not(target_os = "linux"))]
+                {
+                    app.autolaunch().enable().map_err(|e| e.to_string())
+                }
             } else {
-                app.autolaunch().disable()
+                app.autolaunch().disable().map_err(|e| e.to_string())
             }
         })
         .await
         .map_err(|e| e.to_string())?
-        .map_err(|e| e.to_string())
     }
 
     fn apply_theme(&self, mode: &Value) -> Result<(), String> {

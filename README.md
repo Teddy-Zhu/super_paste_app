@@ -8,18 +8,16 @@
 
 - **剪贴板历史**：记录文本、图片、文件等内容，支持详情预览；可设置记录数量与保存期限。
 - **快捷面板**：通过自定义全局快捷键呼出，支持搜索、键盘导航和数字快捷选择；可从屏幕上、下、左、右四个方向出现。
-- **分类管理**：创建带颜色和描述的标签，按标签或来源应用筛选记录。来源识别能力取决于操作系统与桌面环境。
-- **图片 OCR**：支持本地离线模型、自定义远程 HTTP 接口、OpenAI 与 Claude 兼容接口；后台异步识别，图片右键菜单支持重新识别。
+- **分类管理**：创建带颜色和描述的标签，按标签或来源应用筛选记录。
+- **图片 OCR**：支持本地离线模型、自定义远程 HTTP 接口、OpenAI 与 Claude 兼容接口，可自动或手动识别图片。
 - **AI OCR 配置**：自定义 Base URL、API Key 和模型，支持拉取模型列表与连通性测试；OpenAI 可选择 Chat Completions 或 Responses 接口。
 - **本地模型管理**：按需下载、取消下载、删除模型或强制重新下载。
 - **统计**：按时间、内容类型、来源应用查看复制次数、数据量和趋势；按模型查看 AI 请求与 Token 用量，两类统计可分别清空。
 - **WebDAV 配置同步**：支持手动与定时同步、上传／下载／双向同步；仅同步非敏感设置，并发冲突保留双方版本并报告。
 - **MCP 服务**：通过本地 Streamable HTTP 接口向 AI 工具开放剪贴板读写、历史搜索和 OCR；支持可选 API Key 验证，以及基于 SSE 的剪贴板变化实时推送。
-- **桌面集成**：托盘、开机启动、可拖拽和缩放的设置窗口；支持标题栏最大化与恢复，粘贴面板按屏幕可用空间调整布局。
+- **桌面集成**：系统托盘、开机启动和可调整大小的设置窗口；粘贴面板自动适配屏幕可用空间。
 
 ## 界面预览
-
-以下沿用 Electron 版的界面截图，展示 Tauri 版复用的 Vue 页面与交互布局；窗口外观和平台行为以当前版本为准。截图使用独立演示数据，模型名称、统计数值与文件路径仅用于展示。
 
 ### 粘贴面板
 
@@ -65,7 +63,13 @@
 
 ## 安装与使用
 
-可在 [Releases](https://github.com/Teddy-Zhu/super_paste_app/releases) 查看发布版本。如没有适合当前系统的安装包，可按下文从源码运行或打包。
+从 [Releases](https://github.com/Teddy-Zhu/super_paste_app/releases) 下载适用于当前系统的安装包。
+
+| 系统                        | 安装包格式                                                        |
+| --------------------------- | ----------------------------------------------------------------- |
+| Windows x64                 | NSIS（`.exe`）、MSI（`.msi`）、便携版（`.zip`）                   |
+| macOS Intel / Apple Silicon | DMG（`.dmg`）                                                     |
+| Linux x64                   | DEB、RPM、AppImage、Pacman（`.pkg.tar.zst`）、便携版（`.tar.gz`） |
 
 1. 启动应用，进入设置窗口的「快捷键」页面，设置用于呼出粘贴面板的组合键。初始未配置全局快捷键。
 2. 复制内容，应用会将其保存到本地历史记录。
@@ -93,9 +97,9 @@
 | OpenAI 兼容接口 | 配置 Base URL、API Key 与视觉模型，可选 Chat Completions 或 Responses。      |
 | Claude 兼容接口 | 配置 Base URL、API Key 与视觉模型，使用 Claude Messages 协议。               |
 
-AI 模式下，点击「拉取模型」可展开接口返回的完整模型列表，也可在同一个输入框中手动填写模型 ID；输入内容不会筛选列表。选择的模型须支持图片输入。「测试连通性」会发送一次图片请求，并计入 AI 用量。
+AI 模式下，可点击「拉取模型」后从列表中选择模型，或手动填写模型 ID。模型须支持图片输入。「测试连通性」会发送一次图片请求，并计入 AI 用量。
 
-启用自动 OCR 后，保存图片到历史记录时会自动识别。所有识别方式都在后台异步执行，同一图片不会同时发起多个 OCR 请求；图片右键菜单可以手动识别或重新识别。删除当前启用的本地模型时，会关闭自动 OCR。
+启用自动 OCR 后，保存到历史记录的图片会自动识别。图片右键菜单支持手动识别和重新识别。删除当前启用的本地模型时，会关闭自动 OCR。
 
 ### 复制与 AI 用量统计
 
@@ -104,7 +108,7 @@ AI 模式下，点击「拉取模型」可展开接口返回的完整模型列�
 - **复制统计**：查看复制次数、剪贴板数据量、文件数量和活跃天数；支持时间范围、内容类型和来源应用筛选，以及按小时／天／月查看趋势。数据量包含文本、图片和文件路径，不包含所复制文件的本体大小。
 - **Token 用量**：查看请求次数、失败次数、输入／输出／缓存 Token、累计耗时、模型用量和趋势。统计以接口实际返回的用量为准，包含连通性测试；接口未返回用量时会单独计数。缓存 Token 已包含在输入用量中。
 
-统计从功能启用后开始累计，不从历史记录反推；删除或清理历史不会减少已有统计。两类统计可分别清空，清空作用于该类全部统计，不仅是当前筛选范围。
+统计从功能启用后开始累计，独立于历史记录保存。两类统计可分别清空，清空操作会删除对应类型的全部统计数据。
 
 AI 用量按小时汇总，并保留最近 50 条请求明细。
 
@@ -112,7 +116,7 @@ AI 用量按小时汇总，并保留最近 50 条请求明细。
 
 在「同步设置」中填写服务器地址、用户名、密码与远程目录，测试连接并保存配置。支持手动同步、定时同步，以及上传／下载／双向同步；下载后按页面提示重启。
 
-同步文档保存在所配置远程目录下的 `super_paste/v1/config.json`，使用带版本、修订号和内容摘要的新格式。同步范围仅包含可跨设备复用的非敏感设置，不同步历史、图片、标签、统计或数据库，也不与 Electron 版 WebDAV 格式互通。
+同步文档保存在所配置远程目录下的 `super_paste/v1/config.json`。同步范围仅包含可跨设备复用的非敏感设置，不同步历史、图片、标签、统计或数据库。
 
 API Key、WebDAV 口令、MCP 密钥、远程 OCR 地址与自由额外参数，以及本机路径、权限状态和 MCP 连接信息不会同步。新设备需重新填写本机凭据与连接设置。双向同步时，若本机与远端都发生修改，会保留双方并报告冲突；手动上传或下载可明确选择覆盖方向。
 
@@ -204,10 +208,6 @@ tool_timeout_sec = 180
 }
 ```
 
-连接后可让 AI 执行：
-
-> 使用 Super Paste MCP 读取当前剪贴板；如果是图片，调用 ocr_image 识别文字。需要接收后续复制内容时，调用 subscribe_clipboard_changes 订阅实时推送。
-
 #### 剪贴板实时推送
 
 调用 `subscribe_clipboard_changes`，或通过 `resources/subscribe` 订阅资源 `super-paste://clipboard/current`。客户端使用初始化响应返回的 `Mcp-Session-Id`，在同一 `/mcp` 地址建立 GET 连接，携带 `Accept: text/event-stream`；后续 GET、POST、DELETE 请求均携带会话 ID 和已配置的 Key。标准 MCP 客户端可自动管理会话和 SSE 连接。
@@ -247,21 +247,23 @@ AI 工具对资源通知的处理方式不同，接收推送不代表会自动�
 
 ## 平台说明
 
-发行目标为 Windows x64、macOS Intel x64 / Apple Silicon，以及 Linux x64。能力受系统权限和桌面环境影响，构建成功不代表已经完成所有平台的运行验收。
+提供 Windows x64、macOS Intel x64 / Apple Silicon 和 Linux x64 安装包。系统依赖与桌面环境要求如下：
 
-| 平台或环境           | 说明                                                                           |
-| -------------------- | ------------------------------------------------------------------------------ |
-| Windows              | 使用系统 WebView2；便携版也需要安装 WebView2 Runtime。                         |
-| macOS                | 最低版本为 13.3；按系统提示授权来源识别与桌面交互能力。                        |
-| Linux X11            | 支持原生活动窗口识别、全局快捷键与粘贴面板。                                   |
-| KDE Plasma 6 Wayland | 使用 Shortcut Portal、data-control、KWin 和 GTK Layer Shell 接入桌面能力。     |
-| 其他 Wayland 桌面    | 不保证完整支持；x-win 的 GNOME 后端需要其上游 Shell 扩展，应用不负责安装扩展。 |
+| 平台或环境           | 说明                                                                       |
+| -------------------- | -------------------------------------------------------------------------- |
+| Windows              | 使用系统 WebView2；便携版也需要安装 WebView2 Runtime。                     |
+| macOS                | 最低版本为 13.3；按系统提示授权来源识别与桌面交互能力。                    |
+| Linux X11            | 支持原生活动窗口识别、全局快捷键与粘贴面板。                               |
+| KDE Plasma 6 Wayland | 全局快捷键需要桌面门户授权。                                               |
+| 其他 Wayland 桌面    | 支持范围因桌面环境而异；GNOME 活动窗口识别需要安装 x-win 上游 Shell 扩展。 |
 
-Wayland 全局快捷键可能需要桌面门户授权，可在设置中查看状态并重试；也可在系统快捷键中绑定 `super_paste --toggle-overlay`。图标使用系统高分辨率资源，缺失时按平台能力回退。
+Wayland 全局快捷键可能需要桌面门户授权，可在设置中查看状态并重试；也可在系统快捷键中绑定 `super_paste --toggle-overlay`。
 
 凭据使用 Windows Credential Manager、macOS Keychain 或 Linux Secret Service。Linux 需要可用的 Secret Service 提供者；不可用时凭据操作会报告错误，本地历史仍可使用。Linux 便携包内含 AppImage，需要 FUSE 2 或兼容的 AppImage 运行环境。
 
-## 从源码运行
+Windows 安装包尚未签名；macOS 安装包尚未签名和公证。
+
+## 开发与构建
 
 ### 环境要求
 
@@ -281,27 +283,30 @@ pnpm install
 pnpm dev
 ```
 
-`pnpm dev` 和 `pnpm build` 会自动准备固定版本的 CPU ONNX Runtime，再启动 Tauri。前端使用 Vite 热更新，后端由 Tauri / Cargo 构建；运行安装包不需要 Node.js 或 Electron。
+首次运行 `pnpm dev` 或 `pnpm build` 时会自动准备 OCR 运行库。macOS Intel 的运行库需要从源码编译，首次准备耗时较长。开发模式支持前端热更新。
 
 ### 常用命令
 
-| 命令                                   | 用途                                         |
-| -------------------------------------- | -------------------------------------------- |
-| `pnpm dev`                             | 启动 Tauri 开发模式                          |
-| `pnpm dev:renderer`                    | 仅启动 Vite 前端，不能独立使用桌面功能       |
-| `pnpm build:renderer`                  | 前端类型检查与生产构建                       |
-| `pnpm lint`                            | 运行 ESLint                                  |
-| `pnpm format`                          | 格式化文件，会写入文件                       |
-| `pnpm build`                           | 构建当前平台安装包                           |
-| `pnpm build --bundles deb`             | 仅构建 Debian 安装包                         |
-| `pnpm build:pacman`                    | 一次完成 DEB、Pacman 包与 AUR 元数据生成     |
-| `pnpm aur:prepare`                     | 使用已有 DEB 重新生成 Pacman 包与 AUR 元数据 |
-| `pnpm version:sync`                    | 按 package.json 同步 Rust 主应用版本        |
-| `node scripts/prepare-ort.mjs --check` | 检查已准备的 ORT 资源，不下载                |
+| 命令                       | 用途                                   |
+| -------------------------- | -------------------------------------- |
+| `pnpm dev`                 | 启动 Tauri 开发模式                    |
+| `pnpm dev:renderer`        | 仅启动 Vite 前端，不能独立使用桌面功能 |
+| `pnpm build:renderer`      | 前端类型检查与生产构建                 |
+| `pnpm lint`                | 运行 ESLint                            |
+| `pnpm format`              | 格式化文件，会写入文件                 |
+| `pnpm build`               | 构建当前平台安装包                     |
+| `pnpm build --bundles deb` | 仅构建 Debian 安装包                   |
+| `pnpm build:pacman`        | 构建 Arch Linux 安装包                 |
 
-### 打包与发布
+### 本地打包
 
-在对应目标系统运行 `pnpm build`。Tauri 原生安装包位于 `target/release/bundle/`；前端静态构建位于 `dist/`。
+在对应目标系统运行：
+
+```sh
+pnpm build
+```
+
+安装包输出到 `target/release/bundle/`。
 
 在 x86_64 Arch Linux 上安装 `base-devel` 与 `libarchive` 后，可以直接生成本地 Pacman 包：
 
@@ -309,58 +314,11 @@ pnpm dev
 pnpm build:pacman
 ```
 
-版本和仓库信息自动从项目清单、`GITHUB_REPOSITORY` 或 Git `origin` 读取，无需手动复制 DEB、填写版本或提前发布 GitHub Release。产物包括：
-
-- `target/packages/super-paste_<version>_x86_64.pkg.tar.zst`，安装后的包名为 `super-paste-bin`。
-- `target/packages/super-paste_<version>_x86_64-unknown-linux-gnu.deb`。
-- `target/packages/aur/super-paste-bin/PKGBUILD` 和 `.SRCINFO`。
-
-复用外部 DEB 或指定输出位置时，可使用：
-
-```sh
-pnpm aur:prepare --deb <file.deb> --output <directory> --repository <owner/repo>
-```
-
-#### GitHub Release
-
-产品版本只需修改根目录 `package.json` 的 `version`。Tauri 配置通过 `../package.json` 读取同一版本；`pnpm dev`、打包和 CI 会自动同步 Rust 主应用的 `Cargo.toml` 与 `Cargo.lock`，应用内展示和产物命名均使用该版本。
-
-提交版本修改、创建标签前运行 `pnpm version:sync`，将同步后的清单和锁文件一起提交。也可用 `pnpm release:verify v<version>` 检查标签与当前版本是否匹配。已有标签指向固定提交，仅重新运行旧标签的工作流不会包含后来提交的修复。
-
-[Super Paste release](.github/workflows/release.yml) 支持两种触发方式：
-
-- **自动**：推送与 `package.json` 版本一致的 `v<version>` 标签。
-- **手动**：进入 GitHub → Actions → **Super Paste release** → **Run workflow**。选择待发布分支，`release_tag` 留空时使用该分支的项目版本，并在发布时创建 `v<version>` 标签；填写已有标签时，构建该标签对应的代码。
-
-所有平台固定构建同一个提交。已有标签必须指向该提交，已经公开的同版本 Release 不会被覆盖；上传期间保留草稿，失败后可重新运行，完整上传后才公开发布。带 `-` 后缀的版本标记为预发布。
-
-工作流交付 Windows NSIS / MSI / 便携 ZIP、双架构 macOS DMG、Linux DEB / RPM / AppImage / Pacman / 便携 tar.gz、独立迁移器、`super-paste-bin.PKGBUILD`、`super-paste-bin.SRCINFO` 及 `SHA256SUMS`。Release 使用工作流自带的 `GITHUB_TOKEN`，无需配置额外发布 Token。
-
-#### AUR 发布
-
-[Publish AUR](.github/workflows/aur.yml) 独立手动触发，将已公开 Release 的包描述发布到 **`super-paste-bin`**，不重新编译应用。先完成以下仓库配置：
-
-| 类型                   | 名称                  | 用途                                                                                         |
-| ---------------------- | --------------------- | -------------------------------------------------------------------------------------------- |
-| Actions Secret         | `AUR_SSH_PRIVATE_KEY` | AUR 账号的无口令 SSH 私钥；对应公钥需登记在 AUR，且该账号须有 `super-paste-bin` 的维护权限。 |
-| Actions Variable，可选 | `AUR_GIT_NAME`        | AUR Git 提交作者，默认 `github-actions[bot]`。                                               |
-| Actions Variable，可选 | `AUR_GIT_EMAIL`       | AUR Git 提交邮箱，默认 GitHub Actions 的 noreply 地址。                                      |
-
-进入 GitHub → Actions → **Publish AUR** → **Run workflow**，`release_tag` 留空发布最新稳定 Release，也可填写已公开的 `v<version>`。脚本下载 Release 的 DEB、AUR 元数据和校验文件，校验摘要及 PKGBUILD 源文件后，生成 `.SRCINFO` 并通过 SSH 推送至 AUR。相同内容重复运行会跳过；同版本元数据变化自动增加 `pkgrel`，版本更新重置为 `1`，版本倒退会拒绝发布。
-
-两个流程分别操作：发布 Release 后，需要手动运行 **Publish AUR**。AUR 需要公开的 GitHub 仓库和 Release 下载地址。工作流文件合入默认分支后，Actions 页面才会出现手动入口；AUR 发布脚本从默认分支读取。
-
-当前工作流未配置 Windows 签名或 macOS 签名与公证。发布前需分别验收目标平台的安装、快捷键、浮层、系统权限、凭据、本地与远程 OCR、同步和数据迁移。
-
-### OCR 运行库与模型
-
-CPU ONNX Runtime 固定为 **1.28.0**，由 `scripts/prepare-ort.mjs` 准备到 `resources/ort/<target>/` 并随安装包分发。Windows x64、Linux x64 和 macOS arm64 使用校验 SHA-256 的官方归档；macOS Intel 从固定官方源码构建。运行库附带许可证、第三方声明与来源 / 摘要清单。
-
-仓库不包含 OCR 模型权重，模型清单为 `resources/ocr-models.json`，使用时按需下载。ORT 缺失或加载失败会报告本地 OCR 不可用，不阻止其他服务启动。
+Pacman 包输出到 `target/packages/super-paste_<version>_x86_64.pkg.tar.zst`，包名为 `super-paste-bin`。
 
 ## 数据与隐私
 
-应用标识为 `com.v2dawn.superpaste`，数据使用 Tauri 的 `app_local_data_dir()`：
+应用标识为 `com.v2dawn.superpaste`，各平台的默认数据目录如下：
 
 | 平台    | 默认目录                                                                                  |
 | ------- | ----------------------------------------------------------------------------------------- |
@@ -368,49 +326,30 @@ CPU ONNX Runtime 固定为 **1.28.0**，由 `scripts/prepare-ort.mjs` 准备到 
 | macOS   | `~/Library/Application Support/com.v2dawn.superpaste`                                     |
 | Linux   | `$XDG_DATA_HOME/com.v2dawn.superpaste`，未设置时为 `~/.local/share/com.v2dawn.superpaste` |
 
-`app.db` 保存历史、标签、来源、设置与统计，已下载模型保存在 `ocr-models/`；缓存和日志使用对应的系统目录。API Key、WebDAV 口令与 MCP 密钥存系统凭据库，不进入普通配置、WebDAV 文档、迁移报告或诊断包。历史数据库未启用数据库加密。
+`app.db` 保存历史、标签、来源、设置与统计，已下载模型保存在 `ocr-models/`；缓存和日志使用对应的系统目录。API Key、WebDAV 口令与 MCP 密钥存系统凭据库，不进入普通配置、WebDAV 文档或诊断包。历史数据库未启用数据库加密。
 
-本地 OCR 的模型下载需要联网，识别在本机执行。远程 HTTP、OpenAI 与 Claude OCR 会向所配置接口提交图片，连通性测试也会发送测试图片。MCP 开启后，获准连接的本机客户端可读取剪贴板与历史；客户端如何处理内容取决于其自身配置。
-
-正常启动只读取当前应用的数据，不读取 Electron 或早期实验版 Tauri 的数据目录。
-
-### 从 Electron 一次性迁移
-
-关闭新旧应用，在首次启动新版前，用单独分发的 `migrate-electron` 工具执行预检查和迁移：
-
-```sh
-migrate-electron --from <electron-user-data-directory> --to <tauri-app-local-data-directory> --dry-run
-migrate-electron --from <electron-user-data-directory> --to <tauri-app-local-data-directory>
-```
-
-`--from` 为旧 Electron 用户数据目录，`--to` 为上述新版数据目录，目标必须不存在或为空。源目录保持只读，成功后在目标目录生成 `migration-report.json`。无法解密的凭据会报告并要求重新配置；MCP 使用新端口和新密钥，客户端需更新连接信息。
-
-本地开发也可使用 `scripts/migrate-electron` 或 `scripts/migrate-electron.ps1`，脚本会构建同一独立 Rust 工具。早期实验版 Tauri 的身份与数据不提供迁移或兼容层。
+本地 OCR 的模型下载需要联网，识别在本机执行。远程 HTTP、OpenAI 与 Claude OCR 会向所配置接口提交图片，连通性测试也会发送测试图片。MCP 开启后，连接到服务的本机客户端可读取剪贴板与历史。
 
 ## 项目结构
 
 ```text
-src/renderer/src/        # 复用的 Vue 页面、组件、状态与交互
+src/renderer/src/        # Vue 页面、组件与状态管理
 src/shared/              # 前后端契约、类型与常量
 src-tauri/src/           # Rust 桌面服务、窗口、剪贴板、OCR、同步与 MCP
-src-tauri/vendor/        # 自包含的底层封装与必要补丁
-crates/data-format/      # 主应用与迁移工具共享的数据格式
-tools/migrate-electron/  # 独立 Electron 数据迁移工具
-resources/              # OCR 模型清单与按目标准备的 ORT
+src-tauri/vendor/        # 平台依赖与补丁
+crates/data-format/      # 共享数据格式
+resources/              # OCR 模型清单与运行库资源
 scripts/                # 开发、构建、打包与发布入口
 packaging/              # AUR 模板与便携包说明
-docs/                   # 截图、重写设计与能力核对记录
+docs/                   # 项目文档与截图
 ```
-
-Tauri 工程直接位于仓库根目录，独立维护 Rust / pnpm 锁文件；构建和运行不依赖旧 Electron 源码或 native 参考工程。
 
 ## 参与贡献
 
 欢迎通过 [Issues](https://github.com/Teddy-Zhu/super_paste_app/issues) 报告问题或提出建议，通过 Pull Request 提交改进。
 
 - 报告问题时，请提供应用版本、操作系统、桌面环境、复现步骤和预期行为；UI 问题可附截图。
-- 修改前先阅读 [仓库开发规范](AGENTS.md)，尽量使每个改动围绕一个明确问题。
-- 完成改动后按影响范围集中运行 lint、类型检查或构建，并格式化修改过的文件；UI 由维护者手动验收。
+- 提交前运行与改动相关的 lint、类型检查或构建，并格式化修改过的文件。
 - PR 中说明改动目的、验证结果及已知限制；涉及界面或平台能力时，附上实际运行环境和验证说明。
 - 请勿提交构建产物、下载的 OCR 模型、个人剪贴板数据或同步凭据。
 

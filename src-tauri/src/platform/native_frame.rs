@@ -6,6 +6,35 @@ use tauri::Manager;
 use tokio::sync::oneshot;
 
 type Reply = Arc<Mutex<Option<oneshot::Sender<Result<(), String>>>>>;
+
+#[cfg(target_os = "linux")]
+pub fn configure_overlay(window: &tauri::Window) -> Result<(), String> {
+    use gtk::prelude::*;
+
+    fn apply(host: &gtk::ApplicationWindow) {
+        if let Some(surface) = host.window()
+            && surface.is::<gdkx11::X11Window>()
+        {
+            // The renderer owns the slide animation. KWin must not scale the last
+            // window texture after GTK unmaps it, including on repeated openings.
+            gdk::property_change(
+                &surface,
+                &gdk::Atom::intern("_KDE_NET_WM_SKIP_CLOSE_ANIMATION"),
+                &gdk::Atom::intern("CARDINAL"),
+                32,
+                gdk::PropMode::Replace,
+                gdk::ChangeData::ULongs(&[1]),
+            );
+            surface.display().flush();
+        }
+    }
+
+    let host = window.gtk_window().map_err(|e| e.to_string())?;
+    host.connect_realize(apply);
+    apply(&host);
+    Ok(())
+}
+
 fn reply(sender: &Reply, result: Result<(), String>) {
     if let Ok(mut sender) = sender.lock()
         && let Some(sender) = sender.take()

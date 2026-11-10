@@ -17,6 +17,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use tauri::Manager;
 use tauri_plugin_dialog::DialogExt;
 
+const AUTOSTART_APP_NAME: &str = "Super Paste";
+
 #[derive(Default)]
 struct StartupActivation {
     requested: AtomicBool,
@@ -58,7 +60,7 @@ pub fn run() {
     let diagnostics = diagnostics::Diagnostics::install().expect("无法初始化应用日志");
     let holder = RuntimeHolder::default();
     let autostart = tauri_plugin_autostart::Builder::new()
-        .app_name("Super Paste")
+        .app_name(AUTOSTART_APP_NAME)
         .args(["--background"]);
     #[cfg(target_os = "macos")]
     let autostart = autostart.macos_launcher(tauri_plugin_autostart::MacosLauncher::LaunchAgent);

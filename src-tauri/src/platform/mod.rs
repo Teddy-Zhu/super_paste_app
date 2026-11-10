@@ -1,5 +1,7 @@
 pub mod active_window;
 #[cfg(target_os = "linux")]
+pub mod autostart;
+#[cfg(target_os = "linux")]
 mod kwin;
 #[cfg(target_os = "linux")]
 mod layer_shell;

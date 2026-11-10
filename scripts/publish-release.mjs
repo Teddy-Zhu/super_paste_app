@@ -1,9 +1,11 @@
 import { createHash } from 'node:crypto'
 import { execFileSync } from 'node:child_process'
-import { existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import os from 'node:os'
 import path from 'node:path'
 import { githubApi, tagCommit } from './github.mjs'
 import { githubRepository, productName, projectRoot, verifyReleaseTag } from './project.mjs'
+import { generateReleaseNotes } from './release-notes.mjs'
 
 const releaseRoot = path.resolve(process.argv[2] ?? 'release-assets')
 const tag = process.env.RELEASE_TAG ?? process.env.GITHUB_REF_NAME
@@ -55,23 +57,45 @@ const gh = (args) =>
     env: { ...process.env, GH_TOKEN: process.env.GITHUB_TOKEN },
     stdio: 'inherit'
   })
-// Keep incomplete uploads in a draft so a failed job can resume without replacing a public release.
-if (!release) {
-  const args = [
-    'release',
-    'create',
-    tag,
-    '--draft',
-    '--target',
-    commit,
-    '--title',
-    `${productName} ${version}`,
-    '--generate-notes'
-  ]
-  if (version.includes('-')) args.push('--prerelease')
-  gh(args)
-} else {
-  gh(['release', 'edit', tag, '--target', commit])
+const existingNotes = release?.body?.trim()
+const generatedLink = /^\*\*Full Changelog\*\*:\s+(https:\/\/github\.com\/\S+)$/.exec(
+  existingNotes ?? ''
+)?.[1]
+const needsNotes = !existingNotes || Boolean(generatedLink)
+const comparisonPrefix = `https://github.com/${githubRepository()}/compare/`
+const comparison = generatedLink?.startsWith(comparisonPrefix)
+  ? generatedLink.slice(comparisonPrefix.length).split('...').map(decodeURIComponent)
+  : null
+const startTag = comparison?.length === 2 && comparison[1] === tag ? comparison[0] : undefined
+const temporary = mkdtempSync(path.join(os.tmpdir(), 'super-paste-release-'))
+try {
+  const notesArgs = []
+  if (needsNotes) {
+    const notesFile = path.join(temporary, 'release-notes.md')
+    writeFileSync(notesFile, await generateReleaseNotes(tag, commit, startTag))
+    notesArgs.push('--notes-file', notesFile)
+  }
+
+  // Keep incomplete uploads in a draft so a failed job can resume without replacing a public release.
+  if (!release) {
+    const args = [
+      'release',
+      'create',
+      tag,
+      '--draft',
+      '--target',
+      commit,
+      '--title',
+      `${productName} ${version}`,
+      ...notesArgs
+    ]
+    if (version.includes('-')) args.push('--prerelease')
+    gh(args)
+  } else {
+    gh(['release', 'edit', tag, '--target', commit, ...notesArgs])
+  }
+  gh(['release', 'upload', tag, ...releaseAssets, '--clobber'])
+  gh(['release', 'edit', tag, '--draft=false', `--prerelease=${version.includes('-')}`])
+} finally {
+  rmSync(temporary, { recursive: true, force: true })
 }
-gh(['release', 'upload', tag, ...releaseAssets, '--clobber'])
-gh(['release', 'edit', tag, '--draft=false', `--prerelease=${version.includes('-')}`])
