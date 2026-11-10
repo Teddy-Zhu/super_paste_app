@@ -21,6 +21,31 @@ mod wayland;
 
 pub type ClipboardResult<T> = Result<T, Box<dyn Error + Send + Sync + 'static>>;
 
+// clipboard-rs keeps its X11 owner thread alive after a context is dropped.
+// Reuse one process-wide context and serialize requests over its read connection.
+#[cfg(target_os = "linux")]
+static X11_CONTEXT: std::sync::Mutex<Option<ClipboardContext>> = std::sync::Mutex::new(None);
+
+fn with_native_context<T>(
+    operation: impl FnOnce(&ClipboardContext) -> ClipboardResult<T>,
+) -> ClipboardResult<T> {
+    #[cfg(target_os = "linux")]
+    {
+        let mut context = X11_CONTEXT
+            .lock()
+            .map_err(|_| "X11 clipboard context lock poisoned")?;
+        if let Some(clipboard) = context.as_ref() {
+            return operation(clipboard);
+        }
+        // Only cache successful initialization so unavailable displays can be retried.
+        operation(context.insert(ClipboardContext::new()?))
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        operation(&ClipboardContext::new()?)
+    }
+}
+
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct ClipboardSnapshot {
     pub text: Option<String>,
@@ -61,7 +86,7 @@ pub fn check_available() -> ClipboardResult<()> {
         #[cfg(target_os = "linux")]
         return wayland::check_available();
     }
-    ClipboardContext::new().map(|_| ())
+    with_native_context(|_| Ok(()))
 }
 
 pub fn read() -> ClipboardResult<ClipboardSnapshot> {
@@ -106,32 +131,33 @@ impl FormatReader {
 }
 
 fn read_native() -> ClipboardResult<ClipboardSnapshot> {
-    let clipboard = ClipboardContext::new()?;
-    let mut snapshot = ClipboardSnapshot::default();
-    let mut formats = FormatReader::new();
-    if clipboard.has(ContentFormat::Text) {
-        snapshot.text = formats.read("text", clipboard.get_text());
-    }
-    if clipboard.has(ContentFormat::Html) {
-        snapshot.html = formats.read("html", clipboard.get_html());
-    }
-    if clipboard.has(ContentFormat::Rtf) {
-        snapshot.rtf = formats.read("rtf", clipboard.get_rich_text());
-    }
-    if clipboard.has(ContentFormat::Image) {
-        snapshot.image = formats.read(
-            "image",
-            clipboard
-                .get_image()
-                .and_then(|image| image.to_png().map(|png| png.get_bytes().to_vec())),
-        );
-    }
-    if clipboard.has(ContentFormat::Files) {
-        snapshot.files = formats
-            .read("files", clipboard.get_files())
-            .unwrap_or_default();
-    }
-    formats.finish(snapshot)
+    with_native_context(|clipboard| {
+        let mut snapshot = ClipboardSnapshot::default();
+        let mut formats = FormatReader::new();
+        if clipboard.has(ContentFormat::Text) {
+            snapshot.text = formats.read("text", clipboard.get_text());
+        }
+        if clipboard.has(ContentFormat::Html) {
+            snapshot.html = formats.read("html", clipboard.get_html());
+        }
+        if clipboard.has(ContentFormat::Rtf) {
+            snapshot.rtf = formats.read("rtf", clipboard.get_rich_text());
+        }
+        if clipboard.has(ContentFormat::Image) {
+            snapshot.image = formats.read(
+                "image",
+                clipboard
+                    .get_image()
+                    .and_then(|image| image.to_png().map(|png| png.get_bytes().to_vec())),
+            );
+        }
+        if clipboard.has(ContentFormat::Files) {
+            snapshot.files = formats
+                .read("files", clipboard.get_files())
+                .unwrap_or_default();
+        }
+        formats.finish(snapshot)
+    })
 }
 
 pub fn write(snapshot: &ClipboardSnapshot) -> ClipboardResult<()> {
@@ -146,7 +172,6 @@ pub fn write(snapshot: &ClipboardSnapshot) -> ClipboardResult<()> {
 }
 
 fn write_native(snapshot: &ClipboardSnapshot) -> ClipboardResult<()> {
-    let clipboard = ClipboardContext::new()?;
     let mut contents = Vec::new();
 
     // Windows' clipboard-rs backend clears the clipboard while installing an
@@ -168,8 +193,7 @@ fn write_native(snapshot: &ClipboardSnapshot) -> ClipboardResult<()> {
         contents.push(ClipboardContent::Files(native_file_paths(&snapshot.files)?));
     }
 
-    clipboard.set(contents)?;
-    Ok(())
+    with_native_context(|clipboard| clipboard.set(contents))
 }
 
 fn native_file_paths(files: &[String]) -> ClipboardResult<Vec<String>> {
