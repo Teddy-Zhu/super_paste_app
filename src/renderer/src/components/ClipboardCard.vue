@@ -1,24 +1,12 @@
 <script setup lang="ts">
 import type { ClipboardItem, TagGroup, AppInfo } from '@renderer/api/types'
 import { computed, ref, toRef, watch } from 'vue'
-import IconTextBox from '~icons/mdi/text-box'
-import IconTag from '~icons/mdi/tag'
-import IconCheck from '~icons/mdi/check'
-import IconDelete from '~icons/mdi/delete'
-import IconCircle from '~icons/mdi/circle'
-import IconOpenInNew from '~icons/mdi/open-in-new'
 import IconExpand from '~icons/mdi/arrow-expand'
-import { useContextMenu, type ContextMenuItem } from '@renderer/composables/useContextMenu'
-import { tags, clipboard } from '@renderer/api/renderer-api'
-import { send } from '@renderer/api'
-import { showMessage } from '@renderer/api/dialog'
+import { useContextMenu } from '@renderer/composables/useContextMenu'
 import { useDeferredPreview } from '@renderer/composables/useDeferredPreview'
-import { createClipboardPreview } from '@renderer/utils/clipboard-preview'
-import {
-  PREVIEW_ACTIONS,
-  PREVIEW_LABELS,
-  PREVIEW_TYPES
-} from '@renderer/constants/clipboard-preview'
+import { createClipboardPreview } from '@renderer/features/clipboard/preview'
+import { createClipboardMenu } from '@renderer/features/clipboard/menu'
+import { PREVIEW_LABELS, PREVIEW_TYPES } from '@renderer/constants/clipboard-preview'
 import ClipboardPreviewContent from './ClipboardPreviewContent.vue'
 import ClipboardPreviewDialog from './ClipboardPreviewDialog.vue'
 import ClipboardSourceApp from './ClipboardSourceApp.vue'
@@ -99,11 +87,6 @@ watch(
   }
 )
 
-const hasConvertibleContent = (item: ClipboardItem): boolean => {
-  const { text, html, rtf, files } = item.content
-  return Boolean(text?.trim() || html?.trim() || rtf?.trim() || files?.length)
-}
-
 const formatTime = (timestamp: number): string => {
   if (!Number.isFinite(timestamp)) return ''
   const minutes = Math.max(0, Math.floor((Date.now() - timestamp) / 60000))
@@ -121,174 +104,23 @@ const handleClick = (): void => {
 }
 
 const handleContextMenu = (event: MouseEvent): void => {
-  const menuItems: ContextMenuItem[] = [
-    {
-      label: PREVIEW_ACTIONS.restoreAsText,
-      icon: IconTextBox,
-      action: handleRestoreAsText,
-      disabled: !hasConvertibleContent(props.item)
+  const menuItems = createClipboardMenu({
+    item: props.item,
+    preview: preview.value || createClipboardPreview(props.item),
+    ocrBusy: ocrBusy.value,
+    allTags: props.allTags,
+    activeTagId: props.activeTagId,
+    callbacks: {
+      restoreAsText: (id) => emit('restoreAsText', id),
+      restoreOcrText: (id) => emit('restoreOcrText', id),
+      parseOcr: (id) => emit('parseOcr', id),
+      parseQRCode: (id) => emit('parseQRCode', id),
+      generateQRCode: (id) => emit('generateQRCode', id),
+      deleted: (id) => emit('delete', id)
     }
-  ]
-
-  if (preview.value?.kind === 'image' && props.item.content.ocr && props.item.content.ocr.trim()) {
-    menuItems.push({
-      label: PREVIEW_ACTIONS.restoreOcrText,
-      icon: IconTextBox,
-      action: handleRestoreOcrText
-    })
-  }
-
-  if (preview.value?.kind === 'image') {
-    menuItems.push({
-      label: props.item.content.ocr?.trim() ? PREVIEW_ACTIONS.reparseOcr : PREVIEW_ACTIONS.parseOcr,
-      icon: IconTextBox,
-      action: handleParseOcr,
-      disabled: ocrBusy.value
-    })
-  }
-
-  if (preview.value?.kind === 'image') {
-    menuItems.push({
-      label: PREVIEW_ACTIONS.parseQRCode,
-      icon: IconTextBox,
-      action: handleParseQRCode
-    })
-  }
-
-  if (['text', 'html', 'url'].includes(props.item.primaryType)) {
-    menuItems.push({
-      label: PREVIEW_ACTIONS.generateQRCode,
-      icon: IconTextBox,
-      action: handleGenerateQRCode
-    })
-  }
-
-  if (preview.value?.url && preview.value.kind === 'url') {
-    menuItems.push({
-      label: PREVIEW_ACTIONS.openInBrowser,
-      icon: IconOpenInNew,
-      action: handleOpenInBrowser
-    })
-  }
-
-  if (props.allTags && props.allTags.length > 0) {
-    const currentTagIds = new Set(props.item.tags?.map((tag) => tag.id) || [])
-    const tagSubmenu: ContextMenuItem[] = props.allTags.map((tag) => {
-      const isTagged = currentTagIds.has(tag.id)
-      return {
-        label: isTagged ? `${tag.name}` : tag.name,
-        icon: isTagged ? IconCheck : IconCircle,
-        iconColor: tag.color,
-        action: () => (isTagged ? handleRemoveTag(tag.id) : handleAddTag(tag.id))
-      }
-    })
-
-    if (props.activeTagId !== 'all' && currentTagIds.size > 0) {
-      tagSubmenu.push({
-        label: '---',
-        action: () => undefined,
-        disabled: true
-      })
-
-      tagSubmenu.push({
-        label: PREVIEW_ACTIONS.removeCurrentTag,
-        icon: IconDelete,
-        action: handleRemoveCurrentTag
-      })
-    }
-
-    menuItems.push({
-      label: PREVIEW_ACTIONS.manageTags,
-      icon: IconTag,
-      action: () => undefined,
-      submenu: tagSubmenu
-    })
-  }
-
-  menuItems.push({
-    label: '---',
-    action: () => undefined,
-    disabled: true
-  })
-
-  menuItems.push({
-    label: PREVIEW_ACTIONS.delete,
-    icon: IconDelete,
-    action: handleDeleteItem
   })
 
   showContextMenu(event, menuItems, `clipboard-card-${props.item.id}`)
-}
-
-const handleRestoreAsText = (): void => {
-  emit('restoreAsText', props.item.id)
-}
-
-const handleRestoreOcrText = (): void => {
-  emit('restoreOcrText', props.item.id)
-}
-
-const handleParseQRCode = (): void => {
-  emit('parseQRCode', props.item.id)
-}
-
-const handleParseOcr = (): void => {
-  emit('parseOcr', props.item.id)
-}
-
-const handleGenerateQRCode = (): void => {
-  emit('generateQRCode', props.item.id)
-}
-
-const handleOpenInBrowser = (): void => {
-  const url = preview.value?.url?.href
-  if (!url) return
-  send('open-external-url', url)
-}
-
-const handleDeleteItem = async (): Promise<void> => {
-  try {
-    const success = await clipboard.deleteItem(props.item.id)
-    if (success) {
-      emit('delete', props.item.id)
-    } else {
-      await showMessage('删除失败')
-    }
-  } catch (error) {
-    console.error('删除剪贴板项目失败:', error)
-    await showMessage('删除失败: ' + (error as Error).message)
-  }
-}
-
-const handleAddTag = async (tagId: string): Promise<void> => {
-  try {
-    await tags.bindTagToRecord(props.item.id, tagId)
-  } catch (error) {
-    console.error('绑定标签失败:', error)
-    await showMessage('绑定标签失败: ' + (error as Error).message)
-  }
-}
-
-const handleRemoveTag = async (tagId: string): Promise<void> => {
-  try {
-    await tags.unbindTagFromRecord(props.item.id, tagId)
-  } catch (error) {
-    console.error('解绑标签失败:', error)
-    await showMessage('解绑标签失败: ' + (error as Error).message)
-  }
-}
-
-const handleRemoveCurrentTag = async (): Promise<void> => {
-  if (!props.activeTagId || props.activeTagId === 'all') {
-    return
-  }
-
-  try {
-    await tags.unbindTagFromRecord(props.item.id, props.activeTagId)
-  } catch (error) {
-    console.error('解绑当前标签失败:', error)
-    await showMessage('解绑当前标签失败: ' + (error as Error).message)
-  }
 }
 
 const shortcutLabel = computed(() => {

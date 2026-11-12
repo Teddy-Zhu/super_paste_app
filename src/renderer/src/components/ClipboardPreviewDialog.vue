@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import type { AppInfo } from '@renderer/api/types'
-import type { ClipboardPreview } from '@renderer/utils/clipboard-preview'
+import type { ClipboardPreview } from '@renderer/features/clipboard/preview'
 import { PREVIEW_LABELS } from '@renderer/constants/clipboard-preview'
 import IconClose from '~icons/mdi/close'
 import ClipboardPreviewContent from './ClipboardPreviewContent.vue'

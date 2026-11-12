@@ -1,7 +1,9 @@
+mod apps;
 mod clipboard;
 mod commands;
 mod settings;
 mod statistics;
+mod tags;
 mod usage;
 
 use std::{path::Path, sync::Arc};
@@ -85,10 +87,6 @@ impl Storage {
         commands::invoke(self, channel, args).await
     }
 
-    pub fn handles(channel: &str) -> bool {
-        commands::handles(channel)
-    }
-
     pub async fn get_setting(&self, key: &str) -> Result<Option<Value>, String> {
         self.read_setting(key).await
     }
@@ -150,11 +148,11 @@ impl Storage {
     }
 
     pub async fn get_tagged_record_ids(&self) -> Result<Vec<String>, String> {
-        clipboard::get_tagged_record_ids(self).await
+        tags::get_tagged_record_ids(self).await
     }
 
     pub async fn upsert_app(&self, app: &Value) -> Result<String, String> {
-        clipboard::upsert_app(self, app).await
+        apps::upsert_app(self, app).await
     }
 
     pub(crate) async fn source_apps(&self) -> Result<Vec<SourceApp>, String> {

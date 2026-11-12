@@ -1,35 +1,12 @@
 use serde_json::{Value, json};
 
-use super::{Storage, clipboard, statistics, usage};
-
-pub(super) fn handles(channel: &str) -> bool {
-    matches!(
-        channel,
-        "clipboard-get-history"
-            | "clipboard-delete-item"
-            | "clipboard-clear-history"
-            | "get-all-tags"
-            | "create-tag"
-            | "update-tag"
-            | "delete-tag"
-            | "get-tag-stats"
-            | "bind-tag-to-record"
-            | "unbind-tag-from-record"
-            | "statistics:get-copy"
-            | "statistics:clear-copy"
-            | "ocr:get-usage"
-            | "ocr:clear-usage"
-    )
-}
+use super::{Storage, clipboard, statistics, tags, usage};
 
 pub(super) async fn invoke(
     storage: &Storage,
     channel: &str,
     args: &[Value],
 ) -> Result<Value, String> {
-    if !handles(channel) {
-        return Err(format!("未由 Storage 处理的通道: {channel}"));
-    }
     let first = args.first().cloned().unwrap_or(Value::Null);
     match channel {
         "clipboard-get-history" => clipboard::query_history(storage, &first).await,
@@ -51,10 +28,8 @@ pub(super) async fn invoke(
             let deleted_ids = clipboard::clear_clipboard(storage).await?;
             Ok(json!({"success":true,"message":"剪贴板历史已清空","deletedIds":deleted_ids}))
         }
-        "get-all-tags" => {
-            Ok(json!({"success":true,"data":clipboard::get_all_tags(storage).await?}))
-        }
-        "create-tag" => match clipboard::create_tag(storage, &first).await {
+        "get-all-tags" => Ok(json!({"success":true,"data":tags::get_all_tags(storage).await?})),
+        "create-tag" => match tags::create_tag(storage, &first).await {
             Ok(tag_id) => {
                 Ok(json!({"success":true,"data":{"tagId":tag_id},"message":"标签创建成功"}))
             }
@@ -66,21 +41,19 @@ pub(super) async fn invoke(
                 .and_then(Value::as_str)
                 .ok_or_else(|| "标签 ID 无效".to_owned())?;
             let updates = first.get("updates").cloned().unwrap_or_else(|| json!({}));
-            let success = clipboard::update_tag(storage, tag_id, &updates).await?;
+            let success = tags::update_tag(storage, tag_id, &updates).await?;
             Ok(
                 json!({"success":success,"message":if success {"标签更新成功"} else {"更新标签失败"}}),
             )
         }
         "delete-tag" => {
             let tag_id = first.as_str().ok_or_else(|| "标签 ID 无效".to_owned())?;
-            let success = clipboard::delete_tag(storage, tag_id).await?;
+            let success = tags::delete_tag(storage, tag_id).await?;
             Ok(
                 json!({"success":success,"message":if success {"标签删除成功"} else {"删除标签失败"}}),
             )
         }
-        "get-tag-stats" => {
-            Ok(json!({"success":true,"data":clipboard::get_tag_stats(storage).await?}))
-        }
+        "get-tag-stats" => Ok(json!({"success":true,"data":tags::get_tag_stats(storage).await?})),
         "bind-tag-to-record" | "unbind-tag-from-record" => {
             let content_id = first
                 .get("contentId")
@@ -91,9 +64,9 @@ pub(super) async fn invoke(
                 .and_then(Value::as_str)
                 .ok_or_else(|| "标签 ID 无效".to_owned())?;
             let success = if channel == "bind-tag-to-record" {
-                clipboard::bind_tag(storage, content_id, tag_id).await?
+                tags::bind_tag(storage, content_id, tag_id).await?
             } else {
-                clipboard::unbind_tag(storage, content_id, tag_id).await?
+                tags::unbind_tag(storage, content_id, tag_id).await?
             };
             let message = if channel == "bind-tag-to-record" {
                 "标签绑定成功"
@@ -109,6 +82,6 @@ pub(super) async fn invoke(
         }
         "ocr:get-usage" => usage::get_ai_usage_stats(storage, &first).await,
         "ocr:clear-usage" => usage::clear_ai_usage(storage).await,
-        _ => unreachable!(),
+        _ => Err(format!("未由 Storage 处理的通道: {channel}")),
     }
 }

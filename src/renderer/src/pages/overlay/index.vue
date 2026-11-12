@@ -8,7 +8,7 @@ import type { ClipboardItem, ClipboardHistoryQueryOptions, AppInfo } from '@rend
 import { OverlayError, OverlayErrorCode, isClipboardItem } from '@renderer/types/overlay'
 import { reconcileClipboardHistory } from '@renderer/utils/clipboard-history'
 import { getWheelScrollAmount } from '@renderer/utils/wheel'
-import type { OCRTaskStatus } from '@shared/ai-ocr'
+import { useOcrStatuses } from '@renderer/features/clipboard/composables/useOcrStatuses'
 
 // 导入优化后的 composables
 import {
@@ -32,7 +32,10 @@ import IconSettings from '~icons/mdi/cog'
 import IconDelete from '~icons/mdi/delete'
 import IconClipboard from '~icons/mdi/clipboard-text-outline'
 import { OVERLAY_LABELS } from '@renderer/constants/desktop-ui'
-import { OCR_MANAGE_TEXT } from '@renderer/constants/ocr'
+import {
+  useClipboardActions,
+  ensureValidItemId
+} from '@renderer/features/clipboard/composables/useClipboardActions'
 
 // ==================== DOM 引用 ====================
 const overlayContentRef = ref<HTMLElement>()
@@ -44,36 +47,15 @@ const tabsContainerRef = ref<HTMLElement>()
 // ==================== 核心状态 ====================
 const clipboardHistory = shallowRef<ClipboardItem[]>([])
 const clipboardApps = shallowRef<Record<string, AppInfo>>({})
-const ocrStatuses = ref<Record<string, OCRTaskStatus>>({})
+const {
+  statuses: ocrStatuses,
+  apply: applyOCRStatus,
+  retain: retainOCRStatuses,
+  start: startOCRStatusExpiry
+} = useOcrStatuses(clipboardHistory)
 const selectedIndex = ref(0)
 const previewsActive = ref(true)
 let previewIdleTimer: ReturnType<typeof setTimeout> | undefined
-let ocrExpiryTimer: ReturnType<typeof setInterval> | undefined
-const ocrErrorsExpireAt = new Map<string, number>()
-
-const removeOCRStatus = (id: string): void => {
-  delete ocrStatuses.value[id]
-  ocrErrorsExpireAt.delete(id)
-}
-const pruneOCRStatuses = (): void => {
-  const ids = new Set(clipboardHistory.value.map((item) => item.id))
-  for (const id of Object.keys(ocrStatuses.value)) {
-    if (!ids.has(id) || (ocrErrorsExpireAt.get(id) ?? Infinity) <= Date.now()) removeOCRStatus(id)
-  }
-}
-const applyOCRStatus = (status: OCRTaskStatus): void => {
-  if (status.state === 'completed' || status.state === 'cancelled') {
-    removeOCRStatus(status.contentId)
-    return
-  }
-  if (status.state === 'error') {
-    if (!clipboardHistory.value.some((item) => item.id === status.contentId)) return
-    ocrErrorsExpireAt.set(status.contentId, Date.now() + 2 * 60000)
-  } else ocrErrorsExpireAt.delete(status.contentId)
-  ocrStatuses.value[status.contentId] = status
-  const ids = Object.keys(ocrStatuses.value)
-  for (const id of ids.slice(0, Math.max(0, ids.length - 500))) removeOCRStatus(id)
-}
 const retainPreviews = (): void => {
   clearTimeout(previewIdleTimer)
   previewIdleTimer = undefined
@@ -132,8 +114,6 @@ const traceOverlay = (
   } satisfies OverlayRendererTrace)
 }
 
-type RestoreMethod =
-  'restore' | 'restoreAsText' | 'restoreOcrText' | 'parseQRCode' | 'generateQRCode'
 type OverlayPosition = 'top' | 'bottom' | 'left' | 'right'
 
 const settingsStore = useSettingsStore()
@@ -209,9 +189,7 @@ const queryClipboardHistory = async (options: ClipboardHistoryQueryOptions): Pro
     )
     clipboardApps.value = reconciled.apps
     const validIds = new Set(reconciled.items.map((item) => item.id))
-    for (const id of Object.keys(ocrStatuses.value)) {
-      if (!validIds.has(id)) removeOCRStatus(id)
-    }
+    retainOCRStatuses(validIds)
     const preservedIndex = reconciled.items.findIndex((item) => item.id === selectedId)
     selectedIndex.value =
       filterChanged || resetPosition
@@ -280,18 +258,6 @@ let scrollAndTagsManager!: ScrollAndTagsManager
 
 // ==================== 核心功能函数 ====================
 
-/**
- * 通用剪贴板还原函数
- */
-const ensureValidItemId = (itemId: string): void => {
-  if (!itemId || typeof itemId !== 'string') {
-    throw new OverlayError('无效的剪贴板项目ID', OverlayErrorCode.INVALID_STATE, {
-      itemId,
-      type: typeof itemId
-    })
-  }
-}
-
 const normalizeAfterAction = async (): Promise<void> => {
   const id = transitionId
   searchAndNavManager.setKeyboardNavigation(false)
@@ -304,120 +270,18 @@ const normalizeAfterAction = async (): Promise<void> => {
   }
 }
 
-const getRestoreMethodMeta = (
-  restoreMethod: RestoreMethod
-): { typeName: string; action: string } => {
-  const typeNameMap: Record<RestoreMethod, string> = {
-    restore: '',
-    restoreAsText: '纯文本',
-    restoreOcrText: 'OCR文字',
-    parseQRCode: '二维码',
-    generateQRCode: '二维码'
-  }
-
-  const actionMap: Record<RestoreMethod, string> = {
-    restore: '还原',
-    restoreAsText: '还原',
-    restoreOcrText: '还原',
-    parseQRCode: '解析',
-    generateQRCode: '生成'
-  }
-
-  return {
-    typeName: typeNameMap[restoreMethod],
-    action: actionMap[restoreMethod]
-  }
-}
-
-const restoreClipboard = async (itemId: string, restoreMethod: RestoreMethod): Promise<void> => {
-  const actionTransitionId = transitionId
-  try {
-    ensureValidItemId(itemId)
-
-    if (restoreMethod === 'generateQRCode') {
-      const result = await clipboard.generateQRCode(itemId)
-      if (result.success) {
-        if (actionTransitionId === transitionId) await normalizeAfterAction()
-      } else {
-        throw new OverlayError(
-          `生成二维码失败: ${result.message}`,
-          OverlayErrorCode.CLIPBOARD_LOAD_FAILED,
-          { itemId }
-        )
-      }
-    } else {
-      const success = await clipboard[restoreMethod](itemId)
-
-      if (success) {
-        if (actionTransitionId === transitionId) await normalizeAfterAction()
-      } else {
-        const { typeName, action } = getRestoreMethodMeta(restoreMethod)
-        throw new OverlayError(
-          `剪贴板${typeName}${action}操作失败`,
-          OverlayErrorCode.CLIPBOARD_LOAD_FAILED,
-          { itemId }
-        )
-      }
-    }
-  } catch (error) {
-    const { typeName, action } = getRestoreMethodMeta(restoreMethod)
-    const suffix = restoreMethod === 'restore' ? '' : ` ${typeName}`
-    console.error(`[前端] ${action}剪贴板${suffix}失败:`, error)
-  }
-}
-
-/**
- * 还原剪贴板内容
- */
-const restoreClipboardContent = (itemId: string): Promise<void> =>
-  restoreClipboard(itemId, 'restore')
-
-/**
- * 还原剪贴板内容为纯文本
- */
-const restoreClipboardContentAsText = (itemId: string): Promise<void> =>
-  restoreClipboard(itemId, 'restoreAsText')
-
-/**
- * 还原剪贴板内容为OCR文字
- */
-const restoreClipboardContentAsOcrText = (itemId: string): Promise<void> =>
-  restoreClipboard(itemId, 'restoreOcrText')
-
-/**
- * 解析剪贴板项目的OCR文字
- */
-const parseOcrFromClipboardItem = async (itemId: string): Promise<void> => {
-  try {
-    ensureValidItemId(itemId)
-
-    await clipboard.parseOcr(itemId)
-  } catch (error) {
-    applyOCRStatus({
-      contentId: itemId,
-      state: 'error',
-      error:
-        error instanceof Error
-          ? error.message
-          : typeof error === 'string'
-            ? error
-            : OCR_MANAGE_TEXT.error
-    })
-    console.error('[前端] 解析OCR失败:', error)
-  }
-}
-
-/**
- * 解析剪贴板项目中的二维码
- */
-const parseQRCodeFromClipboardItem = (itemId: string): Promise<void> =>
-  restoreClipboard(itemId, 'parseQRCode')
-
-/**
- * 生成剪贴板项目的二维码
- */
-const generateQRCodeFromClipboardItem = (itemId: string): Promise<void> =>
-  restoreClipboard(itemId, 'generateQRCode')
+const {
+  restoreClipboardContent,
+  restoreClipboardContentAsText,
+  restoreClipboardContentAsOcrText,
+  parseOcrFromClipboardItem,
+  parseQRCodeFromClipboardItem,
+  generateQRCodeFromClipboardItem
+} = useClipboardActions({
+  getTransitionId: () => transitionId,
+  normalizeAfterAction,
+  applyOCRStatus
+})
 
 /**
  * 删除剪贴板项目
@@ -1033,7 +897,7 @@ onMounted(async () => {
     ipcUnsubscribers.push(removeOCRUpdateListener)
     ipcUnsubscribers.push(onSimple('ocr:task-status', applyOCRStatus))
 
-    ocrExpiryTimer = setInterval(pruneOCRStatuses, 60000)
+    startOCRStatusExpiry()
     schedulePreviewRelease()
     const preloadPromises = [
       loadClipboardHistory({
@@ -1059,7 +923,6 @@ onMounted(async () => {
  */
 onUnmounted(() => {
   clearTimeout(previewIdleTimer)
-  clearInterval(ocrExpiryTimer)
   ++animationVersion
   try {
     throttledLoadClipboardHistory.cancel()

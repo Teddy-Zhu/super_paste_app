@@ -78,6 +78,7 @@ export interface IpcChannels {
   'clipboard-restore-ocr-text': { itemId: string }
   'clipboard-parse-ocr': { itemId: string }
   'clipboard-parse-qrcode': { itemId: string }
+  'clipboard-copy-color': string
   'clipboard-generate-qrcode': { itemId: string }
   'clipboard-delete-item': { itemId: string }
   'clipboard-clear-history': void
@@ -140,6 +141,7 @@ export interface IpcResponses {
   'clipboard-restore-as-text': { success: boolean; message?: string; error?: string }
   'clipboard-restore-ocr-text': { success: boolean; message?: string; error?: string }
   'clipboard-parse-ocr': { success: boolean; message?: string; error?: string }
+  'clipboard-copy-color': ClipboardIpcResponse
   'clipboard-generate-qrcode': {
     success: boolean
     message?: string
@@ -309,6 +311,7 @@ export interface ClipboardHistoryResult {
 
 // 剪贴板操作类型
 export interface ClipboardOperations {
+  copyColor(text: string): Promise<void>
   getHistory(options?: ClipboardHistoryQueryOptions | number): Promise<ClipboardHistoryResult>
   searchHistory(options: ClipboardHistoryQueryOptions): Promise<ClipboardHistoryResult>
   restore(itemId: string): Promise<boolean>

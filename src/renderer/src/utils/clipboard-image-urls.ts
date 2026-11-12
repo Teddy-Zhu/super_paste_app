@@ -1,4 +1,4 @@
-import { getImageMimeType } from './clipboard-preview'
+import { getImageMimeType } from '@renderer/utils/image-mime'
 
 interface ImageURL {
   url: string
