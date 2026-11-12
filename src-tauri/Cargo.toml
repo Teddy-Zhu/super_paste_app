@@ -1,6 +1,6 @@
 [package]
 name = "super_paste"
-version = "0.1.1"
+version = "1.0.1"
 description = "Super Paste clipboard manager"
 authors = ["v2dawn"]
 license = "MIT"
