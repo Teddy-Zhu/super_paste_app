@@ -397,6 +397,12 @@
   width: 100%;
 }
 
+.clipboard-scroll-container--dragging,
+.clipboard-scroll-container--dragging :deep(*) {
+  cursor: grabbing !important;
+  user-select: none;
+}
+
 .clipboard-list-wrapper {
   display: flex;
   gap: 10px;

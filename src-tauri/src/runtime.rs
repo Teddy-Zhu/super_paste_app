@@ -247,7 +247,11 @@ impl Runtime {
         if std::env::args().any(|arg| arg == "--toggle-overlay") {
             runtime.windows.show(None).await?;
         } else if !std::env::args().any(|arg| arg == "--background") {
-            runtime.windows.open_main().await?;
+            let settings = runtime.config.runtime_settings().await?;
+            let silent_start = settings["silentStart"].as_bool().ok_or("静默启动配置无效")?;
+            if !silent_start {
+                runtime.windows.open_main().await?;
+            }
         }
         runtime.initialize_background_services();
         tracing::info!("desktop runtime ready");

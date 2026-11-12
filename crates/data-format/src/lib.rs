@@ -18,6 +18,7 @@ pub fn default_preferences() -> Value {
         "settings": {
             "colorMode": "system",
             "autoStart": false,
+            "silentStart": false,
             "overlayPosition": "bottom",
             "globalShortcut": "",
             "maxHistorySize": 100,

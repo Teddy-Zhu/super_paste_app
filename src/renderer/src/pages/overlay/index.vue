@@ -1102,8 +1102,13 @@ const isFilteredHistory = computed(
           ref="clipboardScrollRef"
           :class="[
             'clipboard-scroll-container',
-            { 'clipboard-scroll-container--side': isSideLayout }
+            {
+              'clipboard-scroll-container--side': isSideLayout,
+              'clipboard-scroll-container--dragging': scrollAndTagsManager.isDragging.value
+            }
           ]"
+          @pointerdown.capture="scrollAndTagsManager.handlePointerDown"
+          @click.capture="scrollAndTagsManager.handleClickCapture"
         >
           <transition-group
             name="clipboard-list"

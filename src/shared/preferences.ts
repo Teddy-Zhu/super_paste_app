@@ -5,6 +5,7 @@ import { DEFAULT_COLOR_MODE, type ColorMode } from './color-mode'
 const defaultSettings = {
   colorMode: DEFAULT_COLOR_MODE as ColorMode,
   autoStart: false,
+  silentStart: false,
   overlayPosition: 'bottom' as 'top' | 'bottom' | 'left' | 'right',
   globalShortcut: '',
   maxHistorySize: 100,

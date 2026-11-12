@@ -3,7 +3,7 @@
  * 合并滚动管理和标签管理，提供统一的数据和交互接口
  */
 
-import { ref, computed, nextTick, onUnmounted, readonly, type Ref } from 'vue'
+import { ref, computed, nextTick, onUnmounted, readonly, watch, type Ref } from 'vue'
 import type { ClipboardItem, TagGroup, ClipboardHistoryQueryOptions } from '@renderer/api/types'
 import { tags } from '@renderer/api/renderer-api'
 import { useRafThrottle, useStateManager } from './useUtils'
@@ -33,6 +33,7 @@ export interface TagState {
 export interface ScrollAndTagsManager {
   // 滚动状态
   readonly isScrolling: Ref<boolean>
+  readonly isDragging: Ref<boolean>
 
   // 标签状态
   readonly allTags: Ref<TagGroup[]>
@@ -46,6 +47,8 @@ export interface ScrollAndTagsManager {
   scrollToStart: () => void
   scrollToSelectedItem: () => void
   handleWheel: (event: WheelEvent) => void
+  handlePointerDown: (event: PointerEvent) => void
+  handleClickCapture: (event: MouseEvent) => void
   ensureSelectedItemVisible: () => void
   initializeScrollbar: () => void
   destroyScrollbar: () => void
@@ -60,9 +63,16 @@ export interface ScrollAndTagsManager {
 // ==================== 常量定义 ====================
 
 const SCROLL_MARGIN = 40 // 滚动时的边距，确保选中项不会紧贴边缘
+const DRAG_THRESHOLD = 6
+// 速度单位为 px/ms，加速度单位为 px/ms²。
+const MAX_DRAG_VELOCITY = 4
+const DRAG_DECELERATION = 0.003
+const DRAG_VELOCITY_SMOOTHING = 35
+const DRAG_RELEASE_IDLE_TIME = 100
+const WHEEL_ACCELERATION_WINDOW = 160
 
 const SCROLLBAR_OPTIONS: Partial<ScrollbarOptions> = {
-  damping: 0.24,
+  damping: 0.12,
   renderByPixels: false,
   alwaysShowTracks: false,
   continuousScrolling: true
@@ -82,9 +92,11 @@ export function useScrollAndTags(
   // ==================== 状态管理 ====================
 
   const isScrolling = ref(false)
+  const isDragging = ref(false)
   let scrollbarInstance: Scrollbar | null = null
   let lastWheelDirection = 0
   let lastWheelAxis: 'x' | 'y' | undefined
+  let lastWheelTime = 0
 
   // 获取上下文菜单管理器
   const { hideContextMenu } = useContextMenu()
@@ -164,6 +176,7 @@ export function useScrollAndTags(
   }
 
   const destroyScrollbar = (): void => {
+    cancelDragScroll()
     lastWheelDirection = 0
     lastWheelAxis = undefined
     if (scrollbarInstance) {
@@ -177,6 +190,7 @@ export function useScrollAndTags(
   }
 
   const scrollToStart = (): void => {
+    cancelDragScroll()
     scrollToSelectedItem.cancel()
     lastWheelDirection = 0
     if (scrollbarInstance) {
@@ -233,7 +247,209 @@ export function useScrollAndTags(
     return !metrics || (isVerticalLayout.value ? metrics.scrollTop : metrics.scrollLeft) <= 1
   }
 
+  let drag: {
+    pointerId: number
+    container: HTMLElement
+    startX: number
+    startY: number
+    lastPosition: number
+    lastMoveTime: number
+    velocity: number
+    vertical: boolean
+  } | null = null
+  let suppressClick = false
+  let dragInertia: { container: HTMLElement; scrollbar: Scrollbar | null } | null = null
+
+  const stopDragInertia = (): void => {
+    const previousInertia = dragInertia
+    dragInertia = null
+    window.removeEventListener('blur', stopDragInertia)
+    if (!previousInertia) return
+    if (previousInertia.scrollbar) {
+      const scrollbar = previousInertia.scrollbar
+      scrollbar.scrollTo(scrollbar.scrollLeft, scrollbar.scrollTop, 0)
+    } else {
+      const container = previousInertia.container
+      container.scrollTo({
+        left: container.scrollLeft,
+        top: container.scrollTop,
+        behavior: 'instant'
+      })
+    }
+  }
+
+  const startDragInertia = (velocity: number, vertical: boolean): void => {
+    const container = clipboardScrollRef.value
+    const metrics = getScrollMetrics()
+    if (!container || !metrics || Math.abs(velocity) < 0.08) return
+    const start = vertical ? metrics.scrollTop : metrics.scrollLeft
+    const limit = Math.max(
+      0,
+      vertical
+        ? metrics.contentHeight - metrics.containerHeight
+        : metrics.contentWidth - metrics.containerWidth
+    )
+    const distance = (velocity * Math.abs(velocity)) / (2 * DRAG_DECELERATION)
+    const target = Math.min(limit, Math.max(0, start + distance))
+    if (target === start) return
+    // 二次缓出对应匀减速；靠近边界时缩短时长，保持松手瞬间的速度。
+    const duration = (2 * Math.abs(target - start)) / Math.abs(velocity)
+    const left = vertical ? metrics.scrollLeft : target
+    const top = vertical ? target : metrics.scrollTop
+    dragInertia = { container, scrollbar: scrollbarInstance }
+    window.addEventListener('blur', stopDragInertia)
+    if (scrollbarInstance) {
+      scrollbarInstance.scrollTo(left, top, duration, {
+        easing: (progress) => progress * (2 - progress),
+        callback: () => {
+          dragInertia = null
+          window.removeEventListener('blur', stopDragInertia)
+        }
+      })
+    } else {
+      container.scrollTo({ left, top, behavior: 'smooth' })
+    }
+  }
+
+  const cancelDragScroll = (): void => {
+    stopDragInertia()
+    const previousDrag = drag
+    drag = null
+    isDragging.value = false
+    window.removeEventListener('pointermove', handleDragMove, true)
+    window.removeEventListener('pointerup', handleDragEnd, true)
+    window.removeEventListener('pointercancel', handleDragEnd, true)
+    window.removeEventListener('lostpointercapture', handleDragEnd, true)
+    window.removeEventListener('blur', cancelDragScroll)
+    if (previousDrag?.container.hasPointerCapture(previousDrag.pointerId)) {
+      previousDrag.container.releasePointerCapture(previousDrag.pointerId)
+    }
+  }
+
+  const handleDragMove = (event: PointerEvent): void => {
+    if (!drag || event.pointerId !== drag.pointerId) return
+    if (!(event.buttons & 1) || !drag.container.isConnected) {
+      cancelDragScroll()
+      return
+    }
+    if (!isDragging.value) {
+      // 用位移区分点击和拖拽，容忍点击时的轻微抖动。
+      if (Math.hypot(event.clientX - drag.startX, event.clientY - drag.startY) < DRAG_THRESHOLD) {
+        return
+      }
+      scrollToSelectedItem.cancel()
+      hideContextMenu()
+      if (scrollbarInstance) {
+        scrollbarInstance.setMomentum(0, 0)
+        scrollbarInstance.scrollTo(scrollbarInstance.scrollLeft, scrollbarInstance.scrollTop, 0)
+      }
+      lastWheelDirection = 0
+      lastWheelAxis = undefined
+      isDragging.value = true
+      suppressClick = true
+      drag.container.setPointerCapture(drag.pointerId)
+    }
+
+    event.preventDefault()
+    event.stopPropagation()
+    const position = drag.vertical ? event.clientY : event.clientX
+    const delta = drag.lastPosition - position
+    drag.lastPosition = position
+    const metrics = getScrollMetrics()
+    if (!metrics) return
+    const left = metrics.scrollLeft + (drag.vertical ? 0 : delta)
+    const top = metrics.scrollTop + (drag.vertical ? delta : 0)
+    if (scrollbarInstance) {
+      scrollbarInstance.setPosition(left, top)
+    } else {
+      drag.container.scrollTo({ left, top, behavior: 'instant' })
+    }
+    const updatedMetrics = getScrollMetrics()
+    if (!updatedMetrics) return
+    const elapsed = Math.max(1, event.timeStamp - drag.lastMoveTime)
+    const moved = drag.vertical
+      ? updatedMetrics.scrollTop - metrics.scrollTop
+      : updatedMetrics.scrollLeft - metrics.scrollLeft
+    const velocity = Math.max(-MAX_DRAG_VELOCITY, Math.min(MAX_DRAG_VELOCITY, moved / elapsed))
+    const weight = 1 - Math.exp(-elapsed / DRAG_VELOCITY_SMOOTHING)
+    // 到达边界或反向拖拽时丢弃旧速度，避免松手后沿旧方向续滚。
+    drag.velocity =
+      moved === 0 || Math.sign(velocity) !== Math.sign(drag.velocity)
+        ? velocity
+        : drag.velocity + (velocity - drag.velocity) * weight
+    drag.lastMoveTime = event.timeStamp
+  }
+
+  const handleDragEnd = (event: PointerEvent): void => {
+    if (!drag || event.pointerId !== drag.pointerId) return
+    const { velocity, vertical, lastMoveTime } = drag
+    const released = event.type === 'pointerup' && isDragging.value
+    const idleFactor = Math.max(0, 1 - (event.timeStamp - lastMoveTime) / DRAG_RELEASE_IDLE_TIME)
+    cancelDragScroll()
+    if (released) startDragInertia(velocity * idleFactor, vertical)
+  }
+
+  const handlePointerDown = (event: PointerEvent): void => {
+    if (event.pointerType !== 'mouse' || event.button !== 0) return
+    cancelDragScroll()
+    suppressClick = false
+    const container = clipboardScrollRef.value
+    if (
+      !container ||
+      currentAnimationState.value !== AnimationState.ACTIVE ||
+      !(event.target instanceof Element) ||
+      event.target.closest(
+        'button, a, input, textarea, select, [contenteditable], .scrollbar-track'
+      )
+    )
+      return
+
+    const metrics = getScrollMetrics()
+    const vertical = isVerticalLayout.value
+    if (
+      !metrics ||
+      (vertical
+        ? metrics.contentHeight <= metrics.containerHeight
+        : metrics.contentWidth <= metrics.containerWidth)
+    )
+      return
+
+    // 阻止原生文字选择和图片拖动；未拖拽时仍由原有 click 处理。
+    event.preventDefault()
+    scrollToSelectedItem.cancel()
+    if (scrollbarInstance) {
+      scrollbarInstance.setMomentum(0, 0)
+      scrollbarInstance.scrollTo(scrollbarInstance.scrollLeft, scrollbarInstance.scrollTop, 0)
+    }
+    drag = {
+      pointerId: event.pointerId,
+      container,
+      startX: event.clientX,
+      startY: event.clientY,
+      lastPosition: vertical ? event.clientY : event.clientX,
+      lastMoveTime: event.timeStamp,
+      velocity: 0,
+      vertical
+    }
+    window.addEventListener('pointermove', handleDragMove, true)
+    window.addEventListener('pointerup', handleDragEnd, true)
+    window.addEventListener('pointercancel', handleDragEnd, true)
+    window.addEventListener('lostpointercapture', handleDragEnd, true)
+    window.addEventListener('blur', cancelDragScroll)
+  }
+
+  const handleClickCapture = (event: MouseEvent): void => {
+    // 保留键盘触发的点击；拖拽后的鼠标点击不得触发卡片粘贴。
+    if (!suppressClick || event.detail === 0) return
+    suppressClick = false
+    event.preventDefault()
+    event.stopPropagation()
+  }
+
+  watch([clipboardScrollRef, isVerticalLayout, currentAnimationState], cancelDragScroll)
+
   const scrollToAxisPosition = (target: number, axis: 'x' | 'y'): void => {
+    stopDragInertia()
     hideContextMenu()
 
     if (scrollbarInstance) {
@@ -352,12 +568,24 @@ export function useScrollAndTags(
     event.stopPropagation()
     if (currentAnimationState.value !== AnimationState.ACTIVE) return
 
+    cancelDragScroll()
+
     const verticalLayout = isVerticalLayout.value
     const scrollAmount = getWheelScrollAmount(
       event,
       verticalLayout ? container.clientHeight : container.clientWidth
     )
     if (scrollAmount === 0) return
+
+    const direction = Math.sign(scrollAmount)
+    const axis = verticalLayout ? 'y' : 'x'
+    const now = performance.now()
+    const sameDirection = direction === lastWheelDirection && axis === lastWheelAxis
+    const acceleration = sameDirection
+      ? Math.max(0, 1 - (now - lastWheelTime) / WHEEL_ACCELERATION_WINDOW)
+      : 0
+    const momentum = scrollAmount * (1.5 + acceleration)
+    lastWheelTime = now
 
     scrollToSelectedItem.cancel()
     hideContextMenu()
@@ -375,25 +603,20 @@ export function useScrollAndTags(
       try {
         // 取消键盘定位动画，但保留同向滚动的剩余位移，让连续滚轮完整累积。
         scrollbarInstance.scrollTo(scrollbarInstance.scrollLeft, scrollbarInstance.scrollTop, 0)
-        const direction = Math.sign(scrollAmount)
-        const axis = verticalLayout ? 'y' : 'x'
-        if (direction !== lastWheelDirection || axis !== lastWheelAxis) {
+        if (!sameDirection) {
           scrollbarInstance.setMomentum(0, 0)
         }
         lastWheelDirection = direction
         lastWheelAxis = axis
-        scrollbarInstance.addMomentum(
-          verticalLayout ? 0 : scrollAmount,
-          verticalLayout ? scrollAmount : 0
-        )
+        scrollbarInstance.addMomentum(verticalLayout ? 0 : momentum, verticalLayout ? momentum : 0)
       } catch (error) {
         console.warn('[滚动标签管理] scrollbar 实例操作失败，尝试重新初始化:', error)
         initializeScrollbar()
       }
     } else {
       container.scrollBy({
-        left: verticalLayout ? 0 : scrollAmount,
-        top: verticalLayout ? scrollAmount : 0,
+        left: verticalLayout ? 0 : momentum,
+        top: verticalLayout ? momentum : 0,
         behavior: 'smooth'
       })
     }
@@ -502,6 +725,7 @@ export function useScrollAndTags(
   return {
     // 滚动状态
     isScrolling: readonly(isScrolling),
+    isDragging: readonly(isDragging),
 
     // 标签状态
     allTags,
@@ -515,6 +739,8 @@ export function useScrollAndTags(
     scrollToStart,
     scrollToSelectedItem,
     handleWheel,
+    handlePointerDown,
+    handleClickCapture,
     ensureSelectedItemVisible,
     initializeScrollbar,
     destroyScrollbar,

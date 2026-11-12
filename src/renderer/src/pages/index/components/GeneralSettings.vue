@@ -119,6 +119,10 @@ const updateAutoStart = (value: boolean): void => {
   settingsStore.$patch({ autoStart: value })
 }
 
+const updateSilentStart = (value: boolean): void => {
+  settingsStore.$patch({ silentStart: value })
+}
+
 const updateOverlayPosition = (value: OverlayPosition): void => {
   const normalized = normalizeOverlayPosition(value)
   settingsStore.$patch({ overlayPosition: normalized })
@@ -182,6 +186,24 @@ const clearHistory = async (): Promise<void> => {
               :checked="settingsStore.autoStart"
               type="checkbox"
               @change="updateAutoStart(($event.target as HTMLInputElement).checked)"
+            />
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+      </div>
+
+      <div class="setting-card">
+        <div class="setting-info">
+          <h4 class="setting-title">静默启动</h4>
+          <p class="setting-description">启动时不自动打开设置窗口，下次启动生效</p>
+        </div>
+        <div class="setting-control">
+          <label class="toggle-switch">
+            <input
+              :checked="settingsStore.silentStart"
+              type="checkbox"
+              aria-label="静默启动"
+              @change="updateSilentStart(($event.target as HTMLInputElement).checked)"
             />
             <span class="toggle-slider"></span>
           </label>
