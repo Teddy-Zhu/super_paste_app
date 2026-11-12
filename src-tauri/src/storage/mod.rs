@@ -87,14 +87,6 @@ impl Storage {
         commands::invoke(self, channel, args).await
     }
 
-    pub async fn get_setting(&self, key: &str) -> Result<Option<Value>, String> {
-        self.read_setting(key).await
-    }
-
-    pub async fn upsert_clipboard(&self, item: &Value) -> Result<UpsertClipboard, String> {
-        clipboard::upsert_clipboard(self, item).await
-    }
-
     pub async fn upsert_clipboard_with_image(
         &self,
         item: &Value,
@@ -145,10 +137,6 @@ impl Storage {
 
     pub async fn update_ocr(&self, content_id: &str, text: &str) -> Result<bool, String> {
         clipboard::update_ocr(self, content_id, text).await
-    }
-
-    pub async fn get_tagged_record_ids(&self) -> Result<Vec<String>, String> {
-        tags::get_tagged_record_ids(self).await
     }
 
     pub async fn upsert_app(&self, app: &Value) -> Result<String, String> {

@@ -1,314 +1,138 @@
 <script setup lang="ts">
-import IconTag from '~icons/mdi/tag-outline'
-import ColorPicker from '@renderer/components/ColorPicker.vue'
-import { FORM_CONTROL_TEXT } from '@renderer/constants/form-controls'
-import { SETTINGS_LABELS } from '@renderer/constants/desktop-ui'
 import { ref, onMounted } from 'vue'
-import { tags } from '@renderer/api/renderer-api'
-import { confirmAction, showMessage } from '@renderer/api/dialog'
+import IconTag from '~icons/mdi/tag-outline'
+import IconPlus from '~icons/mdi/plus'
+import IconEdit from '~icons/mdi/pencil-outline'
+import IconDelete from '~icons/mdi/trash-can-outline'
+import TagEditorDialog from './TagEditorDialog.vue'
+import { SETTINGS_LABELS } from '@renderer/constants/desktop-ui'
+import { tags } from '@renderer/api/tags'
+import { confirmAction } from '@renderer/api/dialog'
 import type { TagGroup } from '@renderer/api/types'
 
-// 标签管理相关状态
 const allTags = ref<TagGroup[]>([])
-const isLoadingTags = ref(false)
-const isCreatingTag = ref(false)
-const isEditingTag = ref(false)
-const editingTagId = ref<string | null>(null)
+const loading = ref(true)
+const error = ref('')
+const deletingId = ref<string | null>(null)
+// undefined closes the editor; null creates a tag; a record edits that tag.
+const editorTag = ref<TagGroup | null>()
 
-// 新建/编辑标签表单
-const tagForm = ref({
-  name: '',
-  color: '#3b82f6',
-  description: ''
-})
-
-// 预设颜色选项
-const presetColors = [
-  '#3b82f6', // 蓝色
-  '#10b981', // 绿色
-  '#8b5cf6', // 紫色
-  '#f59e0b', // 橙色
-  '#ef4444', // 红色
-  '#06b6d4', // 青色
-  '#84cc16', // 柠檬绿
-  '#f97316', // 深橙色
-  '#ec4899', // 粉色
-  '#6366f1' // 靛蓝色
-]
-
-// 加载所有标签
 const loadAllTags = async (): Promise<void> => {
+  loading.value = true
+  error.value = ''
   try {
-    isLoadingTags.value = true
     allTags.value = await tags.getAllTags()
-  } catch (error) {
-    console.error('加载标签失败:', error)
-    // 可以在这里添加错误提示
+  } catch (cause) {
+    error.value = cause instanceof Error ? cause.message : String(cause)
   } finally {
-    isLoadingTags.value = false
+    loading.value = false
   }
 }
-
-// 重置标签表单
-const resetTagForm = (): void => {
-  tagForm.value = {
-    name: '',
-    color: '#3b82f6',
-    description: ''
-  }
-  isCreatingTag.value = false
-  isEditingTag.value = false
-  editingTagId.value = null
-}
-
-// 开始创建新标签
-const startCreateTag = (): void => {
-  resetTagForm()
-  isCreatingTag.value = true
-}
-
-// 开始编辑标签
-const startEditTag = (tag: TagGroup): void => {
-  tagForm.value = {
-    name: tag.name,
-    color: tag.color,
-    description: tag.description || ''
-  }
-  editingTagId.value = tag.id
-  isEditingTag.value = true
-}
-
-// 保存标签（创建或更新）
-const saveTag = async (): Promise<void> => {
-  if (!tagForm.value.name.trim()) {
-    await showMessage('请输入标签名称')
-    return
-  }
-
-  try {
-    if (isCreatingTag.value) {
-      // 创建新标签
-      await tags.createTag(
-        tagForm.value.name.trim(),
-        tagForm.value.color,
-        tagForm.value.description.trim() || undefined
-      )
-    } else if (isEditingTag.value && editingTagId.value) {
-      // 更新标签
-      await tags.updateTag(editingTagId.value, {
-        name: tagForm.value.name.trim(),
-        color: tagForm.value.color,
-        description: tagForm.value.description.trim() || undefined
-      })
-    }
-
-    // 重新加载标签列表
-    await loadAllTags()
-    resetTagForm()
-  } catch (error) {
-    console.error('保存标签失败:', error)
-    await showMessage('保存标签失败: ' + (error as Error).message)
-  }
-}
-
-// 删除标签
 const deleteTag = async (tag: TagGroup): Promise<void> => {
-  if (!(await confirmAction(`确定要删除标签"${tag.name}"吗？这将同时移除所有相关的标签绑定。`))) {
-    return
-  }
-
+  if (deletingId.value) return
+  deletingId.value = tag.id
   try {
+    if (!(await confirmAction(`删除标签“${tag.name}”？相关剪贴板内容会保留，标签绑定将被移除。`)))
+      return
     await tags.deleteTag(tag.id)
+    allTags.value = allTags.value.filter((item) => item.id !== tag.id)
     await loadAllTags()
-  } catch (error) {
-    console.error('删除标签失败:', error)
-    await showMessage('删除标签失败: ' + (error as Error).message)
+  } catch (cause) {
+    error.value = cause instanceof Error ? cause.message : String(cause)
+  } finally {
+    deletingId.value = null
   }
 }
-
-// 取消编辑
-const cancelEdit = (): void => {
-  resetTagForm()
-}
-
-// 格式化时间显示
-const formatDate = (timestamp: number): string => {
-  return new Date(timestamp).toLocaleString('zh-CN')
-}
-
-// 组件挂载时加载标签
-onMounted(() => {
-  loadAllTags()
-})
+const formatDate = (timestamp: number): string => new Date(timestamp).toLocaleString('zh-CN')
+onMounted(() => void loadAllTags())
 </script>
 
 <template>
-  <div class="content-section">
-    <div class="section-header">
-      <h3 class="section-title">标签管理</h3>
-      <p class="section-subtitle">创建和管理剪贴板内容的标签分类</p>
-    </div>
-
-    <!-- 创建新标签按钮 -->
-    <div class="tag-actions">
+  <section class="content-section tags-management" :aria-busy="loading">
+    <header class="section-header">
+      <h2 class="section-title">标签管理</h2>
+      <p class="section-subtitle">整理剪贴板内容的分类标签</p>
+    </header>
+    <div class="tags-toolbar">
+      <span class="tags-count">{{ allTags.length }} 个标签</span>
       <button
+        type="button"
         class="create-tag-button"
-        :disabled="isCreatingTag || isEditingTag"
-        @click="startCreateTag"
+        :disabled="loading || !!deletingId"
+        @click="editorTag = null"
       >
-        <svg
-          width="16"
-          height="16"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="2"
-        >
-          <line x1="12" y1="5" x2="12" y2="19"></line>
-          <line x1="5" y1="12" x2="19" y2="12"></line>
-        </svg>
+        <IconPlus />新建标签
+      </button>
+    </div>
+    <div v-if="error" class="tags-error" role="alert">
+      <span>{{ error }}</span>
+      <button
+        type="button"
+        class="form-button secondary"
+        :disabled="loading || !!deletingId"
+        @click="loadAllTags"
+      >
+        重新加载
+      </button>
+    </div>
+    <div v-if="loading && !allTags.length" class="loading-state" role="status">
+      <div class="loading-spinner" />
+      <span>正在加载标签…</span>
+    </div>
+    <div v-else-if="!error && !allTags.length" class="empty-state">
+      <div class="empty-icon" aria-hidden="true"><IconTag /></div>
+      <p class="empty-text">暂无标签</p>
+      <button type="button" class="form-button secondary" @click="editorTag = null">
         新建标签
       </button>
     </div>
-
-    <!-- 标签表单 -->
-    <Transition name="settings-reveal">
-      <div v-if="isCreatingTag || isEditingTag" class="tag-form-card">
-        <div class="tag-form-header">
-          <h4 class="tag-form-title">{{ isCreatingTag ? '创建新标签' : '编辑标签' }}</h4>
+    <div v-else-if="allTags.length" class="tags-grid">
+      <div
+        v-for="tag in allTags"
+        :key="tag.id"
+        class="tag-card"
+        :class="{ 'tag-card--busy': deletingId === tag.id }"
+        @dblclick="!deletingId && (editorTag = tag)"
+      >
+        <span class="tag-color-dot" :style="{ backgroundColor: tag.color }" aria-hidden="true" />
+        <div
+          class="tag-info"
+          :title="`创建于 ${formatDate(tag.createdAt)}\n更新于 ${formatDate(tag.updatedAt)}`"
+        >
+          <h3 class="tag-name">{{ tag.name }}</h3>
+          <p v-if="tag.description" class="tag-description">{{ tag.description }}</p>
         </div>
-
-        <div class="tag-form-content">
-          <!-- 标签名称 -->
-          <div class="form-group">
-            <label class="form-label">标签名称</label>
-            <input
-              v-model="tagForm.name"
-              type="text"
-              class="form-input"
-              placeholder="请输入标签名称"
-              maxlength="20"
-            />
-          </div>
-
-          <!-- 标签颜色 -->
-          <div class="form-group">
-            <label class="form-label">标签颜色</label>
-            <div class="color-picker">
-              <div class="color-options">
-                <button
-                  v-for="color in presetColors"
-                  :key="color"
-                  type="button"
-                  class="color-option"
-                  :aria-label="color"
-                  :aria-pressed="tagForm.color === color"
-                  :class="{ active: tagForm.color === color }"
-                  :style="{ backgroundColor: color }"
-                  @click="tagForm.color = color"
-                ></button>
-              </div>
-              <ColorPicker v-model="tagForm.color" :aria-label="FORM_CONTROL_TEXT.customColor" />
-            </div>
-          </div>
-
-          <!-- 标签描述 -->
-          <div class="form-group">
-            <label class="form-label">描述（可选）</label>
-            <textarea
-              v-model="tagForm.description"
-              class="form-textarea"
-              placeholder="请输入标签描述"
-              maxlength="100"
-              rows="3"
-            ></textarea>
-          </div>
-
-          <!-- 表单按钮 -->
-          <div class="form-actions">
-            <button class="form-button primary" @click="saveTag">
-              {{ isCreatingTag ? '创建' : '保存' }}
-            </button>
-            <button class="form-button secondary" @click="cancelEdit">取消</button>
-          </div>
-        </div>
-      </div>
-    </Transition>
-
-    <!-- 标签列表 -->
-    <div class="tags-list">
-      <div v-if="isLoadingTags" class="loading-state">
-        <div class="loading-spinner"></div>
-        <span>加载标签中...</span>
-      </div>
-
-      <div v-else-if="allTags.length === 0" class="empty-state">
-        <div class="empty-icon" aria-hidden="true"><IconTag /></div>
-        <p class="empty-text">暂无标签</p>
-        <p class="empty-hint">点击"新建标签"创建第一个标签</p>
-      </div>
-
-      <div v-else class="tags-grid">
-        <div v-for="tag in allTags" :key="tag.id" class="tag-card">
-          <div class="tag-card-header">
-            <div class="tag-info">
-              <div class="tag-color-dot" :style="{ backgroundColor: tag.color }"></div>
-              <h4 class="tag-name">{{ tag.name }}</h4>
-            </div>
-            <div class="tag-actions-menu">
-              <button
-                class="tag-action-button"
-                :aria-label="`${SETTINGS_LABELS.editTag}：${tag.name}`"
-                :title="SETTINGS_LABELS.editTag"
-                @click="startEditTag(tag)"
-              >
-                <svg
-                  width="14"
-                  height="14"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  stroke-width="2"
-                >
-                  <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
-                  <path d="m18.5 2.5 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
-                </svg>
-              </button>
-              <button
-                class="tag-action-button danger"
-                :aria-label="`${SETTINGS_LABELS.deleteTag}：${tag.name}`"
-                :title="SETTINGS_LABELS.deleteTag"
-                @click="deleteTag(tag)"
-              >
-                <svg
-                  width="14"
-                  height="14"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  stroke-width="2"
-                >
-                  <polyline points="3,6 5,6 21,6"></polyline>
-                  <path
-                    d="m19,6v14a2,2 0 0,1 -2,2H7a2,2 0 0,1 -2,-2V6m3,0V4a2,2 0 0,1 2,-2h4a2,2 0 0,1 2,2v2"
-                  ></path>
-                </svg>
-              </button>
-            </div>
-          </div>
-
-          <div v-if="tag.description" class="tag-description">
-            {{ tag.description }}
-          </div>
-
-          <div class="tag-meta">
-            <span class="tag-date">创建于 {{ formatDate(tag.createdAt) }}</span>
-            <span v-if="tag.updatedAt !== tag.createdAt" class="tag-date">
-              更新于 {{ formatDate(tag.updatedAt) }}
-            </span>
-          </div>
+        <div class="tag-actions-menu">
+          <button
+            type="button"
+            class="tag-action-button"
+            :disabled="!!deletingId"
+            :aria-label="`${SETTINGS_LABELS.editTag}：${tag.name}`"
+            :title="SETTINGS_LABELS.editTag"
+            @click="editorTag = tag"
+            @dblclick.stop
+          >
+            <IconEdit />
+          </button>
+          <button
+            type="button"
+            class="tag-action-button danger"
+            :disabled="!!deletingId"
+            :aria-label="`${SETTINGS_LABELS.deleteTag}：${tag.name}`"
+            :title="SETTINGS_LABELS.deleteTag"
+            @click="deleteTag(tag)"
+            @dblclick.stop
+          >
+            <IconDelete />
+          </button>
         </div>
       </div>
     </div>
-  </div>
+    <TagEditorDialog
+      v-if="editorTag !== undefined"
+      :tag="editorTag"
+      @close="editorTag = undefined"
+      @saved="loadAllTags"
+    />
+  </section>
 </template>

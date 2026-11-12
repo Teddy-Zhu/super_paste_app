@@ -12,67 +12,6 @@ pub struct SettingsSnapshot {
 }
 
 impl Storage {
-    pub async fn read_setting(&self, key: &str) -> Result<Option<Value>, String> {
-        let key = key.to_owned();
-        self.call(move |connection| {
-            let value = connection
-                .query_row(
-                    "SELECT value_json FROM app_settings WHERE key=?1",
-                    [key.split('.').next().unwrap_or_default()],
-                    |row| row.get::<_, String>(0),
-                )
-                .optional()?
-                .map(|json| {
-                    serde_json::from_str::<Value>(&json).map_err(|_| rusqlite::Error::InvalidQuery)
-                })
-                .transpose()?;
-            Ok(value.and_then(|mut value| {
-                for field in key.split('.').skip(1) {
-                    value = value.get(field)?.clone();
-                }
-                Some(value)
-            }))
-        })
-        .await
-    }
-
-    pub async fn write_settings(&self, entries: &[(String, Value)]) -> Result<(), String> {
-        let entries = entries.to_vec();
-        self.call(move |connection| {
-            let transaction = connection.transaction()?;
-            for (key, value) in entries {
-                if key.trim().is_empty() {
-                    return Err(rusqlite::Error::InvalidQuery);
-                }
-                let (root, field) = split_path(&key);
-                if !["settings", "sync"].contains(&root)
-                    || field.is_some_and(|field| field.is_empty() || field.contains('.'))
-                {
-                    return Err(rusqlite::Error::InvalidQuery);
-                }
-                let mut current = read_root(&transaction, root)?;
-                if let Some(field) = field {
-                    let object = current
-                        .as_object_mut()
-                        .ok_or(rusqlite::Error::InvalidQuery)?;
-                    object.insert(field.to_owned(), value);
-                    write_root(&transaction, root, &current)?;
-                    bump_version(&transaction, &key)?;
-                } else if let Some(fields) = value.as_object() {
-                    for field in fields.keys() {
-                        bump_version(&transaction, &format!("{root}.{field}"))?;
-                    }
-                    write_root(&transaction, root, &value)?;
-                } else {
-                    write_root(&transaction, root, &value)?;
-                    bump_version(&transaction, &key)?;
-                }
-            }
-            transaction.commit()
-        })
-        .await
-    }
-
     pub async fn read_settings_snapshot(&self) -> Result<SettingsSnapshot, String> {
         self.call(|connection| {
             let mut values = BTreeMap::new();
@@ -261,12 +200,4 @@ fn credentials_are_references(root: &str, value: &Value) -> bool {
         }
         Some(_) => false,
     })
-}
-
-fn bump_version(connection: &rusqlite::Connection, key: &str) -> rusqlite::Result<()> {
-    connection.execute(
-        "INSERT INTO config_field_versions(key,version) VALUES(?1,1) ON CONFLICT(key) DO UPDATE SET version=version+1",
-        [key],
-    )?;
-    Ok(())
 }

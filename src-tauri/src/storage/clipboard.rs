@@ -179,20 +179,6 @@ impl HistoryRow {
     }
 }
 
-pub(super) async fn upsert_clipboard(
-    storage: &Storage,
-    item: &Value,
-) -> Result<UpsertClipboard, String> {
-    let image = item
-        .get("content")
-        .and_then(Value::as_object)
-        .and_then(|content| content.get("image"))
-        .filter(|value| !value.is_null())
-        .map(data_format::image_bytes)
-        .transpose()?;
-    upsert_clipboard_with_image(storage, item, image).await
-}
-
 pub(super) async fn upsert_clipboard_with_image(
     storage: &Storage,
     item: &Value,

@@ -143,6 +143,12 @@
   flex-direction: column;
   overflow: hidden;
   background: var(--color-bg-tertiary);
+  /* Keep the scrollbar clear of the native resize handle on the same surface. */
+  padding: 0 5px 5px 0;
+}
+
+.settings-shell--maximized .main-content {
+  padding: 0;
 }
 
 .content-section {

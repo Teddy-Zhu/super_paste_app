@@ -84,9 +84,6 @@ pub struct ConfigSnapshot {
 pub struct ConfigChange {
     pub store_id: String,
     pub key: String,
-    pub before: Value,
-    pub after: Value,
-    pub credential_paths: Vec<String>,
 }
 
 pub type ConfigEffectFuture<'a> = Pin<Box<dyn Future<Output = Result<(), String>> + Send + 'a>>;

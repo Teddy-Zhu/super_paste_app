@@ -49,7 +49,6 @@ struct ModelManifest {
 #[derive(Clone, Debug)]
 pub(super) struct InstalledModel {
     pub info: ModelInfo,
-    pub directory: PathBuf,
     pub detector: PathBuf,
     pub recognizer: PathBuf,
     pub dictionary: PathBuf,
@@ -377,7 +376,6 @@ impl ModelManager {
         }
         Ok(Some(InstalledModel {
             info: model.clone(),
-            directory: directory.clone(),
             detector: directory.join("det.onnx"),
             recognizer: directory.join("rec.onnx"),
             dictionary: directory.join("dict.txt"),

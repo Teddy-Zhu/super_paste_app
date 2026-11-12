@@ -661,10 +661,6 @@ impl OcrService {
         .await
     }
 
-    pub fn generate_qr(&self, text: &str) -> Result<QRCodeData, String> {
-        qr::generate(text)
-    }
-
     pub async fn generate_qr_for_record(&self, content_id: &str) -> Result<QRCodeData, String> {
         let item = self
             .inner

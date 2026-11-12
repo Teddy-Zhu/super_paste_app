@@ -320,30 +320,12 @@ impl SyncService {
         }
     }
 
-    pub async fn test_connection_with_config(&self, config: Value) -> SyncTestResult {
-        self.test_connection(Some(config)).await
-    }
-
     pub async fn manual_sync(&self) -> SyncRunResult {
         self.run_once(RunKind::Manual, None, None, None).await
     }
 
-    pub async fn manual_sync_with_direction(&self, direction: SyncDirection) -> SyncRunResult {
-        self.run_once(RunKind::Manual, Some(direction), None, None)
-            .await
-    }
-
     pub async fn manual_sync_with_config(&self, config: Value) -> SyncRunResult {
         self.run_once(RunKind::Manual, None, Some(config), None)
-            .await
-    }
-
-    pub async fn manual_sync_with_config_and_direction(
-        &self,
-        direction: SyncDirection,
-        config: Value,
-    ) -> SyncRunResult {
-        self.run_once(RunKind::Manual, Some(direction), Some(config), None)
             .await
     }
 

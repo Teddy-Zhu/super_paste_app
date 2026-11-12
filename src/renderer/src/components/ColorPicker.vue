@@ -12,6 +12,7 @@ const emit = defineEmits<{ 'update:modelValue': [value: string] }>()
 const id = useId()
 const trigger = ref<HTMLButtonElement | null>(null)
 const panel = ref<HTMLElement | null>(null)
+const teleportTarget = ref<HTMLElement | string>('body')
 const open = ref(false)
 const hue = ref(0)
 const saturation = ref(72)
@@ -123,6 +124,8 @@ const onHexInput = (): void => {
 
 const openPicker = (): void => {
   if (props.disabled) return
+  // A modal dialog makes body portals inert; keep its picker in the same top layer.
+  teleportTarget.value = trigger.value?.closest('dialog') || document.body
   open.value = true
   void nextTick(() => {
     if (open.value)
@@ -164,6 +167,7 @@ const onFocusIn = (event: FocusEvent): void => {
 const onKeydown = (event: KeyboardEvent): void => {
   if (event.key === 'Escape') {
     event.preventDefault()
+    event.stopPropagation()
     closePicker(true)
   }
 }
@@ -222,7 +226,7 @@ onBeforeUnmount(() => {
       <span class="color-picker-control__swatch" :style="{ backgroundColor: modelValue }" />
       <IconChevronDown aria-hidden="true" />
     </button>
-    <Teleport to="body">
+    <Teleport :to="teleportTarget">
       <section
         v-if="open"
         :id="`${id}-panel`"

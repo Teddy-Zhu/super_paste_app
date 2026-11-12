@@ -2,17 +2,6 @@ use super::{Storage, now_ms};
 use rusqlite::params;
 use serde_json::{Value, json};
 
-pub(super) async fn get_tagged_record_ids(storage: &Storage) -> Result<Vec<String>, String> {
-    storage
-        .call(|connection| {
-            let mut statement =
-                connection.prepare("SELECT DISTINCT content_id FROM clipboard_history_tags")?;
-            let rows = statement.query_map([], |row| row.get(0))?;
-            rows.collect()
-        })
-        .await
-}
-
 pub(super) async fn get_all_tags(storage: &Storage) -> Result<Vec<Value>, String> {
     storage.call(|connection| {
         let mut statement = connection.prepare("SELECT id,name,color,description,created_at,updated_at FROM tag_groups ORDER BY created_at DESC")?;

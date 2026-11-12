@@ -474,8 +474,6 @@ onUnmounted(() => {
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  /* Reserve the resize border so it cannot intercept the content scrollbar. */
-  padding: 0 5px 5px;
   border: 1px solid var(--color-border-strong);
   background: var(--color-window);
 }
@@ -486,17 +484,8 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-inline: -5px;
   background: var(--color-titlebar);
   border-bottom: 1px solid var(--color-border-medium);
-}
-
-.settings-shell--maximized {
-  padding: 0;
-}
-
-.settings-shell--maximized .custom-titlebar {
-  margin-inline: 0;
 }
 
 .titlebar-drag-area {

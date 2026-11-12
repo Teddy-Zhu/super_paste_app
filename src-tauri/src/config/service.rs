@@ -162,12 +162,6 @@ impl ConfigService {
         Ok(safe_root(&settings))
     }
 
-    pub async fn runtime_sync(&self) -> Result<Value, String> {
-        let stored = self.storage.read_settings_snapshot().await?;
-        let (_, sync) = roots_from_stored(&stored)?;
-        Ok(safe_root(&sync))
-    }
-
     pub async fn runtime_ocr_settings(&self) -> Result<Value, String> {
         let stored = self.storage.read_settings_snapshot().await?;
         let (stored_settings, _) = roots_from_stored(&stored)?;
@@ -529,17 +523,6 @@ impl ConfigService {
                 changes_for_hooks.push(ConfigChange {
                     store_id: store_id.to_owned(),
                     key: field.to_owned(),
-                    before: event_projection(store_id, field, &before_value),
-                    after: event_projection(
-                        store_id,
-                        field,
-                        root.get(field).expect("field exists"),
-                    ),
-                    credential_paths: credential_changes
-                        .keys()
-                        .filter(|credential_path| credential_path.starts_with(&format!("{path}.")))
-                        .cloned()
-                        .collect(),
                 });
             }
         }

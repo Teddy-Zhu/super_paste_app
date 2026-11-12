@@ -237,8 +237,6 @@ struct LocalEngine {
     detector: TextDetectionPredictor,
     recognizer: CRNNModel,
     dictionary: Vec<String>,
-    recognition_height: usize,
-    recognition_width: usize,
 }
 
 impl LocalEngine {
@@ -325,8 +323,6 @@ impl LocalEngine {
             detector,
             recognizer,
             dictionary,
-            recognition_height,
-            recognition_width,
         })
     }
 
