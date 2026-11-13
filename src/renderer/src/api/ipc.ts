@@ -13,6 +13,7 @@ type AnyListener = (event: IpcRendererEvent, ...args: unknown[]) => void
 const COMMANDS: Record<string, string> = {
   'clipboard-copy-color': 'clipboard_copy_color',
   'clipboard-get-history': 'clipboard_get_history',
+  'clipboard-get-item': 'clipboard_get_item',
   'clipboard-restore': 'clipboard_restore',
   'clipboard-restore-as-text': 'clipboard_restore_as_text',
   'clipboard-restore-ocr-text': 'clipboard_restore_ocr_text',

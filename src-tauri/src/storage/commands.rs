@@ -10,6 +10,17 @@ pub(super) async fn invoke(
     let first = args.first().cloned().unwrap_or(Value::Null);
     match channel {
         "clipboard-get-history" => clipboard::query_history(storage, &first).await,
+        "clipboard-get-item" => {
+            let id = first
+                .get("id")
+                .and_then(Value::as_str)
+                .filter(|id| !id.is_empty())
+                .ok_or_else(|| "历史记录 ID 无效".to_owned())?;
+            let item = clipboard::get_clipboard_item(storage, id)
+                .await?
+                .ok_or_else(|| "历史记录不存在".to_owned())?;
+            Ok(json!({"success":true,"data":item}))
+        }
         "clipboard-delete-item" => {
             let id = first
                 .as_str()

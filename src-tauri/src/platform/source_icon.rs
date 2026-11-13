@@ -11,8 +11,8 @@ const PNG_PREFIX: &str = "data:image/png;base64,";
 pub(crate) fn load(window: &ActiveWindow, app: &tauri::AppHandle) -> Result<String> {
     #[cfg(target_os = "linux")]
     let window_icon = if !clipboard_core::is_wayland_session() {
-        window.native.as_ref().and_then(|native| {
-            x11_icon(native.id)
+        window.id.parse::<u32>().ok().and_then(|id| {
+            x11_icon(id)
                 .inspect_err(|error| tracing::debug!(%error, "X11 window icon unavailable"))
                 .ok()
         })

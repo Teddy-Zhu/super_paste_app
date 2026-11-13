@@ -219,44 +219,6 @@ export function useDebounce<Args extends unknown[]>(
   return debouncedFn
 }
 
-// ==================== 节流函数 ====================
-
-/**
- * 创建节流函数
- * @param fn 要节流的函数
- * @param delay 节流间隔（毫秒）
- */
-export function useThrottle<Args extends unknown[]>(
-  fn: (...args: Args) => unknown,
-  delay: number = 100
-): ThrottleFunction<Args> {
-  const timerManager = useTimerManager()
-  let isThrottled = false
-  let timeoutId: number | null = null
-
-  const throttledFn = ((...args: Args) => {
-    if (isThrottled) return
-
-    fn(...args)
-    isThrottled = true
-
-    timeoutId = timerManager.setTimeout(() => {
-      isThrottled = false
-      timeoutId = null
-    }, delay)
-  }) as ThrottleFunction<Args>
-
-  throttledFn.cancel = () => {
-    if (timeoutId !== null) {
-      timerManager.clearTimeout(timeoutId)
-      timeoutId = null
-    }
-    isThrottled = false
-  }
-
-  return throttledFn
-}
-
 // ==================== RAF 节流函数 ====================
 
 /**

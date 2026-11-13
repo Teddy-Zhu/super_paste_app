@@ -1,4 +1,3 @@
-import { getImageMimeType } from '@renderer/utils/image-mime'
 import type { PreviewProvider } from '../types'
 
 export function formatByteSize(bytes: number): string {
@@ -9,13 +8,8 @@ export function formatByteSize(bytes: number): string {
 
 export const imagePreview: PreviewProvider = ({ item, preview }) => {
   const image = item.content.image
-  if (!image?.byteLength) return null
+  if (typeof image !== 'string' || !image) return null
   preview.kind = 'image'
-  preview.summary = [
-    getImageMimeType(image).replace('image/', '').toUpperCase(),
-    formatByteSize(image.byteLength)
-  ]
-    .filter(Boolean)
-    .join(' · ')
+  preview.summary = '图片'
   return 'image'
 }

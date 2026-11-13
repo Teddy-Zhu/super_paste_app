@@ -463,3 +463,19 @@
 .clipboard-scroll-container :deep(.scrollbar-thumb) {
   display: none !important;
 }
+
+.history-error {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 4px 12px;
+  color: var(--color-text-secondary);
+  font-size: 12px;
+}
+.history-error button {
+  border: 0;
+  background: transparent;
+  color: var(--color-primary);
+  cursor: pointer;
+}

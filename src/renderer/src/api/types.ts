@@ -73,6 +73,7 @@ export interface IpcChannels {
 
   // 剪贴板相关
   'clipboard-get-history': ClipboardHistoryQueryOptions | { limit?: number } | void
+  'clipboard-get-item': { id: string }
   'clipboard-restore': { itemId: string }
   'clipboard-restore-as-text': { itemId: string }
   'clipboard-restore-ocr-text': { itemId: string }
@@ -136,7 +137,8 @@ export interface IpcResponses {
   'store:patch': StoreWriteResult
 
   // 剪贴板相关响应
-  'clipboard-get-history': ClipboardIpcResponse<ClipboardItemDto[]>
+  'clipboard-get-history': ClipboardIpcResponse<ClipboardItem[]>
+  'clipboard-get-item': ClipboardIpcResponse<ClipboardItem>
   'clipboard-restore': { success: boolean; message?: string; error?: string }
   'clipboard-restore-as-text': { success: boolean; message?: string; error?: string }
   'clipboard-restore-ocr-text': { success: boolean; message?: string; error?: string }
@@ -188,11 +190,11 @@ export interface TypedIpcRenderer {
   removeAllListeners(channel: string): void
 }
 
-// 剪贴板内容数据类型（前端版本 - 图片数据为 Uint8Array）
+// 图片由受控资源协议读取，列表和详情复用同一内容结构。
 export interface ClipboardContent {
   text?: string
   html?: string
-  image?: Uint8Array // 图片原始数据（Uint8Array 格式）
+  image?: string // 图片资源 URL
   rtf?: string
   files?: string[] // 文件路径列表
   ocr?: string // OCR识别的文本内容
@@ -250,19 +252,28 @@ export interface ClipboardItem {
   availableFormats: string[]
   timestamp: number
   lastUsed: number
+  contentVersion?: number
+  hasImage?: boolean
+  imageBytes?: number | null
+  previewTruncated?: boolean
+  contentUnchanged?: boolean
+  filesCount?: number
+  textLength?: number
   tags?: TagGroup[] // 绑定的标签列表
   source_app?: string // 原始的来源应用ID字段
 }
 
-// Tauri JSON 响应中的图片是普通字节数组，由 API 统一转换为渲染层使用的 Uint8Array。
-export type ClipboardItemDto = Omit<ClipboardItem, 'content'> & {
-  content: Omit<ClipboardContent, 'image'> & { image?: number[] }
+export interface ClipboardHistoryCursor {
+  value: number
+  id: string
 }
 
 // 剪贴板历史查询选项
 export interface ClipboardHistoryQueryOptions {
   limit?: number
   offset?: number
+  cursor?: ClipboardHistoryCursor
+  knownVersions?: Record<string, number>
   tagIds?: string[]
   primaryType?: string
   searchText?: string
@@ -298,6 +309,8 @@ export interface ClipboardStatus {
 export interface ClipboardIpcResponse<T = unknown> {
   success: boolean
   data?: T
+  hasMore?: boolean
+  nextCursor?: ClipboardHistoryCursor | null
   apps?: Record<string, AppInfo> // 应用信息映射
   message?: string
   error?: string
@@ -307,10 +320,13 @@ export interface ClipboardIpcResponse<T = unknown> {
 export interface ClipboardHistoryResult {
   items: ClipboardItem[]
   apps: Record<string, AppInfo>
+  hasMore?: boolean
+  nextCursor?: ClipboardHistoryCursor | null
 }
 
 // 剪贴板操作类型
 export interface ClipboardOperations {
+  getItem(id: string): Promise<ClipboardItem>
   copyColor(text: string): Promise<void>
   getHistory(options?: ClipboardHistoryQueryOptions | number): Promise<ClipboardHistoryResult>
   searchHistory(options: ClipboardHistoryQueryOptions): Promise<ClipboardHistoryResult>

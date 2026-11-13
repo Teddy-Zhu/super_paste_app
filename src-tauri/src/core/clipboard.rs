@@ -1,6 +1,4 @@
-use super::clipboard_content::{
-    content_bytes, formats, from_content, plain_text, primary_type, textual_content,
-};
+use super::clipboard_content::{content_bytes, formats, primary_type, textual_content};
 use crate::{
     events::{EventSink, SettingsProvider, now_ms},
     platform::active_window::SourceTracker,
@@ -216,28 +214,11 @@ impl ClipboardService {
         text_only: bool,
         ocr_only: bool,
     ) -> Result<(), String> {
-        let item = self
+        let snapshot = self
             .storage
-            .get_clipboard(id)
+            .get_clipboard_snapshot(id, text_only, ocr_only)
             .await?
             .ok_or("历史记录不存在")?;
-        let mut snapshot = from_content(&item["content"])?;
-        if ocr_only {
-            let text = item["content"]["ocr"]
-                .as_str()
-                .filter(|v| !v.is_empty())
-                .ok_or("该记录没有 OCR 文本")?;
-            snapshot = ClipboardSnapshot {
-                text: Some(text.into()),
-                ..Default::default()
-            };
-        } else if text_only {
-            let text = plain_text(&item["content"])?;
-            snapshot = ClipboardSnapshot {
-                text: Some(text),
-                ..Default::default()
-            };
-        }
         self.write(snapshot).await?;
         self.storage.touch_clipboard(id).await?;
         (self.events)("clipboard-history-updated", Value::Null);
@@ -339,6 +320,7 @@ impl ClipboardService {
             .storage
             .upsert_clipboard_with_image(&item, snapshot.image)
             .await?;
+        (self.events)("clipboard-history-updated", Value::Null);
         let removed = self
             .storage
             .cleanup_history(
@@ -358,8 +340,8 @@ impl ClipboardService {
             if let Some(callback) = callback {
                 callback(removed);
             }
+            (self.events)("clipboard-history-updated", Value::Null);
         }
-        (self.events)("clipboard-history-updated", Value::Null);
         if retained
             && !self.shutdown.is_cancelled()
             && inserted.is_new

@@ -4,7 +4,13 @@ import { invoke, send, onSimple } from '@renderer/api'
 import { clipboard } from '@renderer/api/renderer-api'
 import { confirmAction } from '@renderer/api/dialog'
 import { useSettingsStore } from '@renderer/stores/common'
-import type { ClipboardItem, ClipboardHistoryQueryOptions, AppInfo } from '@renderer/api/types'
+import type {
+  ClipboardItem,
+  ClipboardHistoryQueryOptions,
+  ClipboardHistoryCursor,
+  ClipboardHistoryResult,
+  AppInfo
+} from '@renderer/api/types'
 import { OverlayError, OverlayErrorCode, isClipboardItem } from '@renderer/types/overlay'
 import { reconcileClipboardHistory } from '@renderer/utils/clipboard-history'
 import { getWheelScrollAmount } from '@renderer/utils/wheel'
@@ -19,7 +25,7 @@ import {
 import type { OverlayModifiers, OverlayRendererTrace } from '@shared/overlay-events'
 import { useSearchAndNavigation } from '@renderer/composables/useSearchAndNavigation'
 import { useScrollAndTags, type ScrollAndTagsManager } from '@renderer/composables/useScrollAndTags'
-import { useEventManager, useThrottle } from '@renderer/composables/useUtils'
+import { useEventManager } from '@renderer/composables/useUtils'
 import { useContextMenu } from '@renderer/composables/useContextMenu'
 import { useTabIndicator } from '@renderer/composables/useTabIndicator'
 
@@ -90,6 +96,39 @@ let overlayVisible = false
 let preparedOpening: { id: number; animation: AnimationControls } | null = null
 let closingTransitionId: number | null = null
 let historyDirty = false
+let historyQueue = Promise.resolve()
+let refreshTimer: ReturnType<typeof setTimeout> | undefined
+let nextHistoryCursor: ClipboardHistoryCursor | null = null
+const hasMoreHistory = ref(false)
+const loadingMoreHistory = ref(false)
+const historyError = ref('')
+const HISTORY_VIEWPORT_BUFFER = 3
+const viewportOffset = ref(0)
+const viewportSize = ref(0)
+const cardStride = ref(310)
+const virtualStart = computed(() =>
+  Math.min(
+    Math.max(0, clipboardHistory.value.length - 1),
+    Math.max(0, Math.floor(viewportOffset.value / cardStride.value) - HISTORY_VIEWPORT_BUFFER)
+  )
+)
+const virtualEnd = computed(() =>
+  Math.min(
+    clipboardHistory.value.length,
+    Math.ceil(
+      (viewportOffset.value + (viewportSize.value || getHistoryViewportSize())) / cardStride.value
+    ) + HISTORY_VIEWPORT_BUFFER
+  )
+)
+const visibleHistory = computed(() =>
+  clipboardHistory.value
+    .slice(virtualStart.value, virtualEnd.value)
+    .map((item, offset) => ({ item, index: virtualStart.value + offset }))
+)
+const spacerStyle = (count: number): Record<string, string> => ({
+  flex: `0 0 ${Math.max(0, count * cardStride.value - 10)}px`,
+  [isSideLayout.value ? 'height' : 'width']: `${Math.max(0, count * cardStride.value - 10)}px`
+})
 let wheelHandler: ((event: WheelEvent) => void) | null = null
 const ipcUnsubscribers: Array<() => void> = []
 
@@ -138,6 +177,29 @@ const isSideLayout = computed(() => {
 
 // ==================== 剪贴板历史加载 ====================
 
+const getHistoryViewportSize = (): number => {
+  const container = clipboardScrollRef.value
+  const measured = isSideLayout.value ? container?.clientHeight : container?.clientWidth
+  return Math.max(
+    1,
+    measured || (isSideLayout.value ? window.innerHeight - 66 : window.innerWidth - 24)
+  )
+}
+
+const getHistoryPageSize = (): number => {
+  const size = getHistoryViewportSize()
+  // 覆盖可见区域与虚拟列表缓冲，同时保留数字 1–9 快捷选择。
+  return Math.min(100, Math.max(9, Math.ceil(size / cardStride.value) + HISTORY_VIEWPORT_BUFFER))
+}
+
+const fillHistoryViewport = (): void => {
+  if (!overlayVisible || historyError.value) return
+  const size = viewportSize.value || getHistoryViewportSize()
+  const required =
+    Math.ceil((viewportOffset.value + size) / cardStride.value) + HISTORY_VIEWPORT_BUFFER
+  if (clipboardHistory.value.length < required) void loadMoreHistory()
+}
+
 const getHistoryFilterKey = (text: string, tagIds: string[]): string => {
   return JSON.stringify([text.trim(), [...tagIds].sort()])
 }
@@ -149,11 +211,13 @@ const getCurrentHistoryFilterKey = (): string => {
 /**
  * 获取剪贴板历史记录（带类型验证和错误处理）
  */
-const queryClipboardHistory = async (options: ClipboardHistoryQueryOptions): Promise<boolean> => {
-  const requestId = ++historyRequestId
+const queryClipboardHistory = async (
+  options: ClipboardHistoryQueryOptions,
+  requestId: number
+): Promise<boolean> => {
   try {
     const defaultOptions: ClipboardHistoryQueryOptions = {
-      limit: 200,
+      limit: getHistoryPageSize(),
       searchText: getCurrentSearchText(),
       tagIds: getActiveTagIds(),
       orderBy: 'last_used',
@@ -163,7 +227,41 @@ const queryClipboardHistory = async (options: ClipboardHistoryQueryOptions): Pro
     const queryOptions = { ...defaultOptions, ...options }
     queryOptions.searchText = queryOptions.searchText?.trim() ?? ''
     const filterKey = getHistoryFilterKey(queryOptions.searchText ?? '', queryOptions.tagIds ?? [])
-    const result = await clipboard.searchHistory(queryOptions)
+    const pageSize = getHistoryPageSize()
+    const targetCount =
+      appliedHistoryFilterKey === filterKey
+        ? Math.max(pageSize, clipboardHistory.value.length)
+        : pageSize
+    const previousById = new Map(clipboardHistory.value.map((item) => [item.id, item]))
+    const knownVersions = Object.fromEntries(
+      clipboardHistory.value
+        .filter((item) => item.contentVersion !== undefined)
+        .map((item) => [item.id, item.contentVersion!])
+    )
+    const result: ClipboardHistoryResult = { items: [], apps: {} }
+    // 只刷新已加载的分页；未变化的内容由版本协商复用。
+    do {
+      if (requestId !== historyRequestId || filterKey !== getCurrentHistoryFilterKey()) return false
+      const page = await clipboard.searchHistory({
+        ...queryOptions,
+        limit: Math.min(pageSize, targetCount - result.items.length),
+        knownVersions,
+        cursor: result.nextCursor ?? undefined
+      })
+      for (const item of page.items) {
+        const { contentUnchanged, ...fields } = item
+        if (contentUnchanged) {
+          const previous = previousById.get(item.id)
+          if (!previous || previous.contentVersion !== item.contentVersion) {
+            throw new Error('历史内容版本不匹配')
+          }
+          result.items.push({ ...fields, content: previous.content })
+        } else result.items.push(fields)
+      }
+      Object.assign(result.apps, page.apps)
+      result.hasMore = page.hasMore
+      result.nextCursor = page.nextCursor
+    } while (result.hasMore && result.nextCursor && result.items.length < targetCount)
     // 输入一变化就拒绝旧筛选的响应，不等待下一次防抖查询启动。
     if (
       requestId !== historyRequestId ||
@@ -179,6 +277,9 @@ const queryClipboardHistory = async (options: ClipboardHistoryQueryOptions): Pro
       )
     }
 
+    nextHistoryCursor = result.nextCursor ?? null
+    hasMoreHistory.value = result.hasMore ?? false
+    historyError.value = ''
     // 停在头部时跟随最新第一条；手动浏览后保留位置，不按旧选中项自动滚动。
     const resetPosition = selectedIndex.value === 0 && scrollAndTagsManager.isAtStart()
     const selectedId = clipboardHistory.value[selectedIndex.value]?.id
@@ -211,6 +312,7 @@ const queryClipboardHistory = async (options: ClipboardHistoryQueryOptions): Pro
   } catch (error) {
     if (requestId !== historyRequestId) return false
     console.error('获取剪贴板历史失败:', error)
+    historyError.value = '历史加载失败'
     return false
   }
 }
@@ -220,10 +322,22 @@ const loadClipboardHistory = (options?: ClipboardHistoryQueryOptions): Promise<b
     options?.searchText ?? getCurrentSearchText(),
     options?.tagIds ?? getActiveTagIds()
   )
-  const promise = queryClipboardHistory(options ?? {})
+  const queryOptions = { searchText: getCurrentSearchText(), tagIds: getActiveTagIds(), ...options }
+  const requestId = ++historyRequestId
+  historyDirty = false
+  const promise = historyQueue.then(() => {
+    if (requestId !== historyRequestId) return false
+    return queryClipboardHistory(queryOptions, requestId)
+  })
+  historyQueue = promise.then(
+    () => undefined,
+    () => undefined
+  )
   pendingHistoryLoad = { filterKey, promise }
   promise.finally(() => {
     if (pendingHistoryLoad?.promise === promise) pendingHistoryLoad = undefined
+    if (historyDirty) scheduleHistoryRefresh()
+    else fillHistoryViewport()
   })
   return promise
 }
@@ -238,20 +352,86 @@ const getCurrentSearchText = (): string => {
   return searchAndNavManager.searchText.value || ''
 }
 
-const throttledLoadClipboardHistory = useThrottle(() => {
-  if (!overlayVisible || animationManager.isAnimating()) {
-    historyDirty = true
+const scheduleHistoryRefresh = (): void => {
+  if (
+    !historyDirty ||
+    refreshTimer ||
+    pendingHistoryLoad ||
+    loadingMoreHistory.value ||
+    !overlayVisible ||
+    animationManager.isAnimating()
+  )
     return
-  }
-  historyDirty = false
-  const currentTagIds = getActiveTagIds()
-  const currentSearchText = getCurrentSearchText()
+  refreshTimer = setTimeout(() => {
+    refreshTimer = undefined
+    if (!overlayVisible || animationManager.isAnimating() || pendingHistoryLoad) return
+    void loadClipboardHistory().then((applied) => {
+      if (!applied) historyDirty = true
+    })
+  }, 80)
+}
 
-  loadClipboardHistory({
-    tagIds: currentTagIds,
-    searchText: currentSearchText
-  }).catch(console.error)
-}, 500)
+const markHistoryDirty = (): void => {
+  historyDirty = true
+  scheduleHistoryRefresh()
+}
+
+const loadMoreHistory = async (): Promise<void> => {
+  if (
+    !overlayVisible ||
+    loadingMoreHistory.value ||
+    pendingHistoryLoad ||
+    historyDirty ||
+    appliedHistoryFilterKey !== getCurrentHistoryFilterKey() ||
+    !hasMoreHistory.value ||
+    !nextHistoryCursor
+  )
+    return
+  const requestId = historyRequestId
+  const filterKey = getCurrentHistoryFilterKey()
+  const cursor = nextHistoryCursor
+  loadingMoreHistory.value = true
+  try {
+    const page = await clipboard.searchHistory({
+      limit: getHistoryPageSize(),
+      cursor,
+      searchText: getCurrentSearchText(),
+      tagIds: getActiveTagIds(),
+      orderBy: 'last_used',
+      orderDirection: 'DESC'
+    })
+    if (
+      requestId !== historyRequestId ||
+      filterKey !== getCurrentHistoryFilterKey() ||
+      historyDirty
+    )
+      return
+    const ids = new Set(clipboardHistory.value.map((item) => item.id))
+    clipboardHistory.value = [
+      ...clipboardHistory.value,
+      ...page.items.filter((item) => !ids.has(item.id))
+    ]
+    clipboardApps.value = { ...clipboardApps.value, ...page.apps }
+    nextHistoryCursor = page.nextCursor ?? null
+    hasMoreHistory.value = page.hasMore ?? false
+    historyError.value = ''
+    await nextTick()
+    scrollAndTagsManager.initializeScrollbar()
+  } catch (error) {
+    historyError.value = '历史加载失败'
+    console.error('加载更多历史失败:', error)
+  } finally {
+    loadingMoreHistory.value = false
+    scheduleHistoryRefresh()
+    fillHistoryViewport()
+  }
+}
+
+const retryHistory = (): void => {
+  historyError.value = ''
+  if (clipboardHistory.value.length && hasMoreHistory.value && !historyDirty) void loadMoreHistory()
+  else void loadClipboardHistory()
+}
 
 // ==================== 临时占位符，将在 searchAndNavManager 定义后重新定义 ====================
 let scrollAndTagsManager!: ScrollAndTagsManager
@@ -290,7 +470,7 @@ const deleteClipboardItem = async (itemId: string): Promise<void> => {
   try {
     ensureValidItemId(itemId)
 
-    throttledLoadClipboardHistory()
+    markHistoryDirty()
   } catch (error) {
     console.error('[前端] 删除剪贴板项目失败:', error)
   }
@@ -349,6 +529,7 @@ const closeWindow = async (): Promise<void> => {
   preparedOpening = null
   const version = ++animationVersion
   searchAndNavManager.cancelPendingActions()
+  historyDirty ||= pendingHistoryLoad !== undefined
   ++historyRequestId
   pendingHistoryLoad = undefined
   const startedAt = performance.now()
@@ -458,7 +639,7 @@ const performSearchCallback = async (text: string): Promise<boolean> => {
       : loadClipboardHistory({
           searchText: text.trim(),
           tagIds: getActiveTagIds(),
-          limit: 50,
+          limit: getHistoryPageSize(),
           orderBy: 'last_used',
           orderDirection: 'DESC'
         })
@@ -480,7 +661,10 @@ const searchAndNavManager = useSearchAndNavigation({
   selectedIndex,
   isSearchVisible: animationManager.isSearchVisible,
   isActive: () => overlayVisible && closingTransitionId === null,
-  areResultsCurrent: () => appliedHistoryFilterKey === getCurrentHistoryFilterKey(),
+  areResultsCurrent: () =>
+    appliedHistoryFilterKey === getCurrentHistoryFilterKey() &&
+    !historyDirty &&
+    !pendingHistoryLoad,
   performSearch: performSearchCallback,
   onRestoreClipboard: restoreClipboardContent,
   onOpenSearch: showSearchBox,
@@ -499,7 +683,13 @@ scrollAndTagsManager = useScrollAndTags(
     await loadClipboardHistory(options)
   },
   () => searchAndNavManager.searchText.value || '',
-  isSideLayout
+  isSideLayout,
+  (offset, size, stride) => {
+    viewportOffset.value = offset
+    viewportSize.value = size
+    cardStride.value = stride
+    fillHistoryViewport()
+  }
 )
 const tabIndicatorStyle = useTabIndicator(tabsContainerRef, scrollAndTagsManager.tabs)
 
@@ -519,22 +709,24 @@ const prepareOpening = async (position: OverlayPosition, id: number): Promise<vo
   hideContextMenu()
   hideDropdownMenu()
   searchAndNavManager.resetSearchState()
+  historyDirty ||= pendingHistoryLoad !== undefined
   ++historyRequestId
   pendingHistoryLoad = undefined
   closingTransitionId = null
   animationManager.resetOverlayState()
   applyOverlayPosition(position)
-  if (historyDirty || appliedHistoryFilterKey !== getCurrentHistoryFilterKey()) {
-    historyDirty = false
-    void loadClipboardHistory().then((applied) => {
-      if (!applied && id === transitionId) historyDirty = true
-    })
-  }
   traceOverlay('prepare')
   await nextTick()
   if (id !== transitionId || version !== animationVersion) {
     traceOverlay('cancelled', { receivedId: id, reason: 'prepare-superseded' })
     return
+  }
+  scrollAndTagsManager.initializeScrollbar()
+  if (historyDirty || appliedHistoryFilterKey !== getCurrentHistoryFilterKey()) {
+    historyDirty = false
+    void loadClipboardHistory().then((applied) => {
+      if (!applied && id === transitionId) historyDirty = true
+    })
   }
   const element = overlayContentRef.value
   if (!element) throw new Error('Overlay animation target is unavailable')
@@ -563,6 +755,7 @@ const triggerSlideInAnimation = async (id: number): Promise<void> => {
   }
   transitionId = id
   overlayVisible = true
+  scrollAndTagsManager.initializeScrollbar()
   applyNativeModifiers()
   retainPreviews()
   closingTransitionId = null
@@ -587,7 +780,7 @@ const triggerSlideInAnimation = async (id: number): Promise<void> => {
   searchAndNavManager.focusSearchInput()
   traceOverlay('opened', { elapsedMs: Math.round(performance.now() - startedAt) })
   send('open-overlay-finished', id)
-  if (historyDirty) throttledLoadClipboardHistory()
+  scheduleHistoryRefresh()
 }
 
 const handleCloseWindow = async (force = false, id = transitionId): Promise<void> => {
@@ -709,6 +902,7 @@ const handleTabsContainerWheel = (event: WheelEvent): boolean => {
  * 监听 selectedIndex 变化，自动滚动到可视区域
  */
 watch(selectedIndex, () => {
+  if (selectedIndex.value >= clipboardHistory.value.length - 5) void loadMoreHistory()
   if (searchAndNavManager.isKeyboardNavigation.value) {
     nextTick(() => {
       scrollAndTagsManager.scrollToSelectedItem()
@@ -754,10 +948,11 @@ onMounted(async () => {
         overlayVisible = false
         closingTransitionId = null
         preparedOpening = null
+        historyDirty ||= pendingHistoryLoad !== undefined
         ++historyRequestId
         pendingHistoryLoad = undefined
-        historyDirty = true
-        throttledLoadClipboardHistory.cancel()
+        clearTimeout(refreshTimer)
+        refreshTimer = undefined
         resetQuickSelectMode()
         hideDropdownMenu()
         hideContextMenu()
@@ -865,10 +1060,7 @@ onMounted(async () => {
 
     animationManager.initializeStyles()
 
-    const removeClipboardUpdateListener = onSimple(
-      'clipboard-history-updated',
-      throttledLoadClipboardHistory
-    )
+    const removeClipboardUpdateListener = onSimple('clipboard-history-updated', markHistoryDirty)
     ipcUnsubscribers.push(removeClipboardUpdateListener)
 
     const removeTagsUpdateListener = onSimple('tags-updated', () => {
@@ -879,12 +1071,17 @@ onMounted(async () => {
     const removeOCRUpdateListener = onSimple(
       'record-ocr-updated',
       (data: { contentId: string; ocrText: string; timestamp: number }) => {
+        if (getCurrentSearchText().trim()) {
+          markHistoryDirty()
+          return
+        }
         const targetIndex = clipboardHistory.value.findIndex((item) => item.id === data.contentId)
         if (targetIndex >= 0 && clipboardHistory.value[targetIndex].content.ocr !== data.ocrText) {
           const targetItem = clipboardHistory.value[targetIndex]
           const updatedHistory = [...clipboardHistory.value]
           updatedHistory[targetIndex] = {
             ...targetItem,
+            contentVersion: data.timestamp,
             content: {
               ...targetItem.content,
               ocr: data.ocrText
@@ -925,7 +1122,7 @@ onUnmounted(() => {
   clearTimeout(previewIdleTimer)
   ++animationVersion
   try {
-    throttledLoadClipboardHistory.cancel()
+    clearTimeout(refreshTimer)
     searchAndNavManager.cleanup()
     scrollAndTagsManager.destroyScrollbar()
     ipcUnsubscribers.forEach((unsubscribe) => unsubscribe())
@@ -1084,6 +1281,9 @@ const isFilteredHistory = computed(
         </div>
       </div>
 
+      <div v-if="historyError" class="history-error" role="status">
+        {{ historyError }} <button type="button" @click="retryHistory">重试</button>
+      </div>
       <div class="overlay-body">
         <!-- 空状态 -->
         <div v-if="clipboardHistory.length === 0" class="empty-container">
@@ -1110,13 +1310,12 @@ const isFilteredHistory = computed(
           @pointerdown.capture="scrollAndTagsManager.handlePointerDown"
           @click.capture="scrollAndTagsManager.handleClickCapture"
         >
-          <transition-group
-            name="clipboard-list"
-            tag="div"
+          <div
             :class="['clipboard-list-wrapper', { 'clipboard-list-wrapper--side': isSideLayout }]"
           >
+            <div v-if="virtualStart > 0" :style="spacerStyle(virtualStart)" aria-hidden="true" />
             <ClipboardCard
-              v-for="(item, index) in clipboardHistory"
+              v-for="{ item, index } in visibleHistory"
               :key="item.id"
               v-memo="[
                 item,
@@ -1148,7 +1347,12 @@ const isFilteredHistory = computed(
               @generate-q-r-code="generateQRCodeFromClipboardItem(item.id)"
               @delete="deleteClipboardItem(item.id)"
             />
-          </transition-group>
+            <div
+              v-if="virtualEnd < clipboardHistory.length"
+              :style="spacerStyle(clipboardHistory.length - virtualEnd)"
+              aria-hidden="true"
+            />
+          </div>
         </div>
       </div>
     </div>

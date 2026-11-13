@@ -23,6 +23,8 @@ let version = 0
 let disposed = false
 let unsubscribe: (() => void) | undefined
 let refreshTimer: ReturnType<typeof setTimeout> | undefined
+let inFlightLoad: Promise<void> | undefined
+let needsRefresh = false
 const number = (value: number | null | undefined): string =>
   value == null ? '—' : value.toLocaleString()
 const time = (value: number | null | undefined): string =>
@@ -52,8 +54,7 @@ const metrics = computed(() => {
   ]
 })
 
-const load = async (): Promise<void> => {
-  const current = ++version
+const runLoad = async (current: number): Promise<void> => {
   loading.value = true
   error.value = ''
   try {
@@ -64,9 +65,31 @@ const load = async (): Promise<void> => {
   } catch (cause) {
     if (!disposed && current === version)
       error.value = cause instanceof Error ? cause.message : String(cause)
-  } finally {
-    if (current === version) loading.value = false
   }
+}
+const clearRefreshTimer = (): void => {
+  if (refreshTimer) clearTimeout(refreshTimer)
+  refreshTimer = undefined
+}
+const load = (): Promise<void> => {
+  clearRefreshTimer()
+  needsRefresh = true
+  if (disposed || document.hidden || clearing.value) return Promise.resolve()
+  if (inFlightLoad) return inFlightLoad
+
+  needsRefresh = false
+  const current = ++version
+  const task = runLoad(current)
+  inFlightLoad = task
+  void task.finally(() => {
+    if (inFlightLoad === task) inFlightLoad = undefined
+    if (needsRefresh && !disposed && !document.hidden && !clearing.value) {
+      void load()
+    } else {
+      loading.value = false
+    }
+  })
+  return task
 }
 
 const clear = async (): Promise<void> => {
@@ -77,28 +100,41 @@ const clear = async (): Promise<void> => {
     const result = await invoke('ocr:clear-usage')
     if (!result.success) throw new Error(result.error || text.clearFailed)
     confirmingClear.value = false
-    await load()
   } catch (cause) {
     error.value = cause instanceof Error ? cause.message : String(cause)
   } finally {
     clearing.value = false
+    if (needsRefresh) void load()
   }
 }
 
-watch(period, load)
+watch(period, () => {
+  ++version
+  void load()
+})
+const handleUsageUpdated = (): void => {
+  needsRefresh = true
+  if (document.hidden) return
+  clearRefreshTimer()
+  refreshTimer = setTimeout(() => {
+    refreshTimer = undefined
+    void load()
+  }, 150)
+}
+const handleVisibilityChange = (): void => {
+  if (!document.hidden && needsRefresh) void load()
+}
 onMounted(() => {
-  unsubscribe = onSimple('ocr:usage-updated', () => {
-    if (refreshTimer) clearTimeout(refreshTimer)
-    refreshTimer = setTimeout(() => {
-      void load()
-    }, 150)
-  })
+  unsubscribe = onSimple('ocr:usage-updated', handleUsageUpdated)
+  document.addEventListener('visibilitychange', handleVisibilityChange)
   void load()
 })
 onBeforeUnmount(() => {
   disposed = true
+  ++version
   unsubscribe?.()
-  if (refreshTimer) clearTimeout(refreshTimer)
+  document.removeEventListener('visibilitychange', handleVisibilityChange)
+  clearRefreshTimer()
 })
 </script>
 

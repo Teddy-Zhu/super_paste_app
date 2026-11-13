@@ -19,27 +19,6 @@ pub fn textual_content(snapshot: &ClipboardSnapshot) -> Value {
     Value::Object(value)
 }
 
-pub fn from_content(value: &Value) -> Result<ClipboardSnapshot, String> {
-    let image = value
-        .get("image")
-        .filter(|v| !v.is_null())
-        .map(|v| serde_json::from_value(v.clone()).map_err(|e| e.to_string()))
-        .transpose()?;
-    let files = value
-        .get("files")
-        .filter(|v| !v.is_null())
-        .map(|v| serde_json::from_value(v.clone()).map_err(|e| e.to_string()))
-        .transpose()?
-        .unwrap_or_default();
-    Ok(ClipboardSnapshot {
-        text: value.get("text").and_then(Value::as_str).map(str::to_owned),
-        html: value.get("html").and_then(Value::as_str).map(str::to_owned),
-        rtf: value.get("rtf").and_then(Value::as_str).map(str::to_owned),
-        image,
-        files,
-    })
-}
-
 pub(super) fn formats(snapshot: &ClipboardSnapshot) -> Vec<&'static str> {
     let mut formats = Vec::new();
     if snapshot.text.as_ref().is_some_and(|v| !v.is_empty()) {
@@ -123,15 +102,11 @@ pub(super) fn primary_type(snapshot: &ClipboardSnapshot) -> &'static str {
     "text"
 }
 
-pub fn plain_text(content: &Value) -> Result<String, String> {
-    if let Some(text) = content
-        .get("text")
-        .and_then(Value::as_str)
-        .filter(|v| !v.trim().is_empty())
-    {
+pub fn plain_text(snapshot: &ClipboardSnapshot) -> Result<String, String> {
+    if let Some(text) = snapshot.text.as_deref().filter(|v| !v.trim().is_empty()) {
         return Ok(text.to_owned());
     }
-    if let Some(html) = content.get("html").and_then(Value::as_str) {
+    if let Some(html) = snapshot.html.as_deref() {
         let html = regex::Regex::new(r"(?is)<script[^>]*>.*?</script>")
             .expect("constant script regex")
             .replace_all(html, "");
@@ -153,7 +128,7 @@ pub fn plain_text(content: &Value) -> Result<String, String> {
             return Ok(text);
         }
     }
-    if let Some(rtf) = content.get("rtf").and_then(Value::as_str) {
+    if let Some(rtf) = snapshot.rtf.as_deref() {
         let rtf = regex::Regex::new(r"\\[a-z]+[0-9]*\s?")
             .expect("constant RTF regex")
             .replace_all(rtf, "");
@@ -168,17 +143,8 @@ pub fn plain_text(content: &Value) -> Result<String, String> {
             return Ok(text);
         }
     }
-    if let Some(files) = content
-        .get("files")
-        .and_then(Value::as_array)
-        .filter(|v| !v.is_empty())
-    {
-        return files
-            .iter()
-            .map(|v| v.as_str().ok_or("无效文件路径"))
-            .collect::<Result<Vec<_>, _>>()
-            .map(|v| v.join("\n"))
-            .map_err(str::to_owned);
+    if !snapshot.files.is_empty() {
+        return Ok(snapshot.files.join("\n"));
     }
     Err("该记录没有可恢复的纯文本".into())
 }

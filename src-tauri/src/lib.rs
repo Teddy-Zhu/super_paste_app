@@ -1,4 +1,5 @@
 mod commands;
+mod clipboard_media;
 mod config;
 mod core;
 pub mod credentials;
@@ -76,6 +77,7 @@ pub fn run() {
                 tauri::async_runtime::spawn(async move{if let Err(error)=runtime.windows.toggle(None).await{tracing::error!(%error,"global shortcut activation failed");}});
             }
         }).build())
+        .register_asynchronous_uri_scheme_protocol("clipboard-media", clipboard_media::handle)
         .invoke_handler(commands::handler())
         .setup(move|app|{
             #[cfg(target_os="macos")]

@@ -37,7 +37,7 @@ export interface ClipboardPreview {
   url: { href: string; host: string; detail: string } | null
   color: string | null
   colorFormats: ClipboardColor | null
-  image?: Uint8Array
+  image?: string
   formats: string[]
   summary: string
 }

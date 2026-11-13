@@ -39,8 +39,11 @@ CREATE TABLE IF NOT EXISTS clipboard_history (
     updated_at INTEGER NOT NULL
 ) WITHOUT ROWID;
 
-CREATE INDEX IF NOT EXISTS clipboard_history_timestamp ON clipboard_history(timestamp DESC);
-CREATE INDEX IF NOT EXISTS clipboard_history_last_used ON clipboard_history(last_used DESC);
+-- The record id makes cursor pagination deterministic when timestamps are equal.
+CREATE INDEX IF NOT EXISTS clipboard_history_timestamp_cursor ON clipboard_history(timestamp DESC, content_id DESC);
+CREATE INDEX IF NOT EXISTS clipboard_history_last_used_cursor ON clipboard_history(last_used DESC, content_id DESC);
+DROP INDEX IF EXISTS clipboard_history_timestamp;
+DROP INDEX IF EXISTS clipboard_history_last_used;
 CREATE INDEX IF NOT EXISTS clipboard_history_type ON clipboard_history(primary_type);
 CREATE INDEX IF NOT EXISTS clipboard_history_source ON clipboard_history(source_app);
 CREATE INDEX IF NOT EXISTS clipboard_history_ocr ON clipboard_history(content_ocr);

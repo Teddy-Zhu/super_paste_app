@@ -11,9 +11,9 @@ const emit = defineEmits<PreviewEvents>()
 
 <template>
   <template v-if="preview.image">
-    <div class="image-frame checkerboard">
+    <div class="image-frame checkerboard" :class="{ expanded }">
       <ImageDisplay
-        :image-data="preview.image"
+        :image-src="preview.image"
         :alt="PREVIEW_LABELS.image"
         image-class="preview-image"
         @load="emit('imageLoad', $event)"
@@ -33,7 +33,9 @@ const emit = defineEmits<PreviewEvents>()
 
 <style scoped>
 .image-frame {
-  flex: 1;
+  position: relative;
+  flex: 1 1 0;
+  min-width: 0;
   min-height: 0;
   overflow: hidden;
   border-radius: 8px;
@@ -42,6 +44,8 @@ const emit = defineEmits<PreviewEvents>()
   justify-content: center;
 }
 .image-frame :deep(.preview-image) {
+  position: absolute;
+  inset: 0;
   display: block;
   width: 100%;
   height: 100%;
@@ -86,6 +90,7 @@ const emit = defineEmits<PreviewEvents>()
   overflow: visible;
 }
 .image-frame.expanded :deep(.preview-image) {
+  position: static;
   width: auto;
   height: auto;
   max-width: 100%;

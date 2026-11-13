@@ -1,21 +1,8 @@
 import type { ClipboardHistoryResult, ClipboardItem } from '@renderer/api/types'
 
-// IPC 会复制对象和图片字节；按值比较并复用旧引用，避免无变化时触发渲染和图片解码。
+// 复用未变化的对象引用，使卡片解析缓存和组件渲染跨分页刷新保持有效。
 function reuseUnchanged(previous: unknown, incoming: unknown): unknown {
   if (previous === incoming) return previous
-
-  if (previous instanceof Uint8Array || incoming instanceof Uint8Array) {
-    if (
-      !(previous instanceof Uint8Array) ||
-      !(incoming instanceof Uint8Array) ||
-      previous.byteLength !== incoming.byteLength
-    )
-      return incoming
-    for (let index = 0; index < incoming.byteLength; index++) {
-      if (previous[index] !== incoming[index]) return incoming
-    }
-    return previous
-  }
 
   if (Array.isArray(previous) || Array.isArray(incoming)) {
     if (!Array.isArray(previous) || !Array.isArray(incoming)) return incoming

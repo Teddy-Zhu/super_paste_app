@@ -665,17 +665,18 @@ impl OcrService {
         let item = self
             .inner
             .storage
-            .get_clipboard(content_id)
+            .get_history_metadata(content_id)
             .await?
             .ok_or_else(|| "未找到指定的剪贴板项目".to_owned())?;
         let primary_type = item
+            .fields
             .get("primaryType")
             .and_then(Value::as_str)
             .unwrap_or_default();
         if !matches!(primary_type, "text" | "html" | "url") {
             return Err("只有文本类型的内容才能生成二维码".to_owned());
         }
-        let content = item.get("content").unwrap_or(&Value::Null);
+        let content = &item.content;
         let mut text = content
             .get("text")
             .and_then(Value::as_str)

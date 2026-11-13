@@ -1,12 +1,14 @@
 <script setup lang="ts">
 import type { ClipboardItem, TagGroup, AppInfo } from '@renderer/api/types'
-import { computed, ref, toRef, watch } from 'vue'
+import { computed, onUnmounted, ref, shallowRef, watch } from 'vue'
 import IconExpand from '~icons/mdi/arrow-expand'
 import { useContextMenu } from '@renderer/composables/useContextMenu'
-import { useDeferredPreview } from '@renderer/composables/useDeferredPreview'
 import { createClipboardPreview } from '@renderer/features/clipboard/preview'
 import { createClipboardMenu } from '@renderer/features/clipboard/menu'
 import { PREVIEW_LABELS, PREVIEW_TYPES } from '@renderer/constants/clipboard-preview'
+import { formatByteSize } from '@renderer/features/clipboard/preview/providers/image'
+import { clipboard } from '@renderer/api/renderer-api'
+import { showMessage } from '@renderer/api/dialog'
 import ClipboardPreviewContent from './ClipboardPreviewContent.vue'
 import ClipboardPreviewDialog from './ClipboardPreviewDialog.vue'
 import ClipboardSourceApp from './ClipboardSourceApp.vue'
@@ -36,9 +38,6 @@ const ocrStatusText = computed(() => {
   if (props.ocrStatus?.state === 'error') return props.ocrStatus.error || OCR_MANAGE_TEXT.error
   return ''
 })
-const cardRef = ref<HTMLElement>()
-const previewVisible = useDeferredPreview(cardRef, toRef(props, 'previewsActive'))
-
 const emit = defineEmits<{
   click: [itemId: string]
   restoreAsText: [itemId: string]
@@ -50,10 +49,15 @@ const emit = defineEmits<{
 }>()
 
 const detailsOpen = ref(false)
+const fullItem = shallowRef<ClipboardItem>()
 const imageDimensions = ref<{ width: number; height: number } | null>(null)
-// 大文本解析和图片解码继续受可见区域控制。
-const preview = computed(() =>
-  previewVisible.value || detailsOpen.value ? createClipboardPreview(props.item) : null
+const detailsLoading = ref(false)
+let detailRequestId = 0
+let componentActive = true
+// 列表已按视口虚拟化，挂载卡片即准备预览，让图片读取与面板动画并行。
+const preview = computed(() => (props.previewsActive ? createClipboardPreview(props.item) : null))
+const detailPreview = computed(() =>
+  detailsOpen.value && fullItem.value ? createClipboardPreview(fullItem.value) : null
 )
 const presentation = computed(
   () => preview.value || PREVIEW_TYPES[props.item.primaryType] || PREVIEW_TYPES.empty
@@ -61,31 +65,108 @@ const presentation = computed(
 const sourceAppInfo = computed(() =>
   props.item.source_app ? props.apps?.[props.item.source_app] : undefined
 )
-const summary = computed(() =>
-  [
-    imageDimensions.value && preview.value?.kind === 'image'
-      ? `${imageDimensions.value.width} × ${imageDimensions.value.height}`
-      : '',
-    preview.value?.summary
-  ]
-    .filter(Boolean)
-    .join(' · ')
+const summary = computed(() => {
+  const item = props.item
+  if (preview.value?.kind === 'image' || (!preview.value && item.primaryType === 'image')) {
+    return [
+      PREVIEW_LABELS.image,
+      typeof item.imageBytes === 'number' ? formatByteSize(item.imageBytes) : ''
+    ]
+      .filter(Boolean)
+      .join(' · ')
+  }
+  if (preview.value?.kind === 'files' && typeof item.filesCount === 'number') {
+    return `${item.filesCount.toLocaleString()} 个文件`
+  }
+  return preview.value?.summary || ''
+})
+const detailSummary = computed(() => {
+  const item = fullItem.value
+  const preview = detailPreview.value
+  if (!item || !preview) return ''
+  if (preview.kind === 'image') {
+    return [
+      PREVIEW_LABELS.image,
+      imageDimensions.value
+        ? `${imageDimensions.value.width} × ${imageDimensions.value.height}`
+        : '',
+      typeof item.imageBytes === 'number' ? formatByteSize(item.imageBytes) : ''
+    ]
+      .filter(Boolean)
+      .join(' · ')
+  }
+  if (preview.kind === 'files' && typeof item.filesCount === 'number') {
+    return `${item.filesCount.toLocaleString()} 个文件`
+  }
+  return preview.summary
+})
+
+const formatLabels: Record<string, string> = {
+  text: PREVIEW_LABELS.text,
+  html: 'HTML',
+  image: PREVIEW_LABELS.image,
+  rtf: 'RTF',
+  files: '文件'
+}
+const contentFormats = computed(() =>
+  props.item.availableFormats.map((format) => formatLabels[format] || format).join(' · ')
 )
 
-watch([() => props.item.id, () => props.item.content.image], () => {
+watch([() => props.item.id, () => props.item.contentVersion], () => {
+  detailRequestId++
+  detailsOpen.value = false
+  detailsLoading.value = false
+  fullItem.value = undefined
   imageDimensions.value = null
 })
-const handleImageLoad = (event: Event): void => {
-  const image = event.target as HTMLImageElement
-  imageDimensions.value = { width: image.naturalWidth, height: image.naturalHeight }
-}
+
+onUnmounted(() => {
+  componentActive = false
+  detailRequestId++
+  fullItem.value = undefined
+  imageDimensions.value = null
+})
 
 watch(
   [() => props.previewsActive, () => props.overlayActive],
   ([previewsActive, overlayActive]) => {
-    if (!previewsActive || !overlayActive) detailsOpen.value = false
+    if (!previewsActive || !overlayActive) closeDetails()
   }
 )
+
+const closeDetails = (): void => {
+  detailsOpen.value = false
+  fullItem.value = undefined
+  imageDimensions.value = null
+  detailsLoading.value = false
+  detailRequestId++
+}
+
+const openDetails = async (): Promise<void> => {
+  const requestId = ++detailRequestId
+  const { id, contentVersion } = props.item
+  detailsLoading.value = true
+  try {
+    const result = await clipboard.getItem(id)
+    if (
+      requestId !== detailRequestId ||
+      !componentActive ||
+      props.item.id !== id ||
+      props.item.contentVersion !== contentVersion
+    )
+      return
+    fullItem.value = result
+    detailsOpen.value = true
+  } catch (error) {
+    if (requestId === detailRequestId && componentActive) {
+      await showMessage(
+        `读取剪贴板详情失败: ${error instanceof Error ? error.message : String(error)}`
+      )
+    }
+  } finally {
+    if (requestId === detailRequestId) detailsLoading.value = false
+  }
+}
 
 const formatTime = (timestamp: number): string => {
   if (!Number.isFinite(timestamp)) return ''
@@ -103,24 +184,31 @@ const handleClick = (): void => {
   emit('click', props.item.id)
 }
 
+const handleImageLoad = (event: Event): void => {
+  if (!detailsOpen.value || !fullItem.value) return
+  const image = event.target as HTMLImageElement
+  imageDimensions.value = { width: image.naturalWidth, height: image.naturalHeight }
+}
+
 const handleContextMenu = (event: MouseEvent): void => {
+  event.preventDefault()
+  const item = props.item
   const menuItems = createClipboardMenu({
-    item: props.item,
-    preview: preview.value || createClipboardPreview(props.item),
+    item,
+    preview: createClipboardPreview(item),
     ocrBusy: ocrBusy.value,
     allTags: props.allTags,
     activeTagId: props.activeTagId,
     callbacks: {
-      restoreAsText: (id) => emit('restoreAsText', id),
-      restoreOcrText: (id) => emit('restoreOcrText', id),
-      parseOcr: (id) => emit('parseOcr', id),
-      parseQRCode: (id) => emit('parseQRCode', id),
-      generateQRCode: (id) => emit('generateQRCode', id),
-      deleted: (id) => emit('delete', id)
+      restoreAsText: (itemId) => emit('restoreAsText', itemId),
+      restoreOcrText: (itemId) => emit('restoreOcrText', itemId),
+      parseOcr: (itemId) => emit('parseOcr', itemId),
+      parseQRCode: (itemId) => emit('parseQRCode', itemId),
+      generateQRCode: (itemId) => emit('generateQRCode', itemId),
+      deleted: (itemId) => emit('delete', itemId)
     }
   })
-
-  showContextMenu(event, menuItems, `clipboard-card-${props.item.id}`)
+  showContextMenu(event, menuItems, `clipboard-card-${item.id}`)
 }
 
 const shortcutLabel = computed(() => {
@@ -136,9 +224,9 @@ const shortcutLabel = computed(() => {
 
 <template>
   <div
-    ref="cardRef"
     class="clipboard-card"
     :class="[`theme-${presentation.theme}`, { selected: isSelected }]"
+    :aria-busy="detailsLoading"
     @click="handleClick"
     @contextmenu="handleContextMenu"
   >
@@ -147,7 +235,7 @@ const shortcutLabel = computed(() => {
         <span class="type-label">{{ presentation.label }}</span>
         <span
           v-if="ocrStatusText"
-          class="time-label"
+          class="time-label ocr-status"
           :class="{ 'ocr-error': ocrStatus?.state === 'error' }"
           :title="ocrStatus?.error"
           role="status"
@@ -163,23 +251,24 @@ const shortcutLabel = computed(() => {
     <div class="preview-toolbar">
       <span
         class="content-formats"
-        :title="`${PREVIEW_LABELS.formats} · ${preview?.formats.join(' · ') || presentation.label}`"
-        >{{ preview?.formats.join(' · ') }}</span
+        :title="`${PREVIEW_LABELS.formats} · ${contentFormats || presentation.label}`"
+        >{{ contentFormats }}</span
       >
       <button
-        v-if="preview && preview.kind !== 'empty'"
+        v-if="item.availableFormats.length"
         type="button"
         class="details-button"
-        @click.stop="detailsOpen = true"
+        :disabled="detailsLoading"
+        @click.stop="openDetails"
         @keydown.enter.stop
         @keydown.space.stop
       >
-        {{ PREVIEW_LABELS.details }}<IconExpand />
+        {{ detailsLoading ? '加载中' : PREVIEW_LABELS.details }}<IconExpand />
       </button>
     </div>
 
     <div class="card-main">
-      <ClipboardPreviewContent v-if="preview" :preview="preview" @image-load="handleImageLoad" />
+      <ClipboardPreviewContent v-if="preview" :preview="preview" />
       <div v-else class="preview-placeholder" aria-hidden="true">
         <span></span><span></span><span></span>
       </div>
@@ -209,11 +298,12 @@ const shortcutLabel = computed(() => {
       >
     </div>
     <ClipboardPreviewDialog
-      v-if="detailsOpen && preview && overlayActive"
-      :preview="preview"
+      v-if="detailsOpen && detailPreview && overlayActive"
+      :preview="detailPreview"
       :source="sourceAppInfo"
-      :summary="summary"
-      @close="detailsOpen = false"
+      :summary="detailSummary"
+      @image-load="handleImageLoad"
+      @close="closeDetails"
     />
   </div>
 </template>
@@ -227,8 +317,9 @@ const shortcutLabel = computed(() => {
   border-radius: var(--radius-sm);
   cursor: pointer;
   transition: box-shadow var(--duration-fast);
-  display: flex;
-  flex-direction: column;
+  /* 固定信息区域，图片和任务状态不参与各行高度的计算。 */
+  display: grid;
+  grid-template-rows: 68px 26px minmax(0, 1fr) 40px;
   position: relative;
   overflow: hidden;
   box-shadow: var(--shadow-soft-xs);
@@ -302,26 +393,32 @@ const shortcutLabel = computed(() => {
   align-items: center;
   gap: 12px;
   padding: 10px 12px 8px;
-  flex-shrink: 0;
+  min-height: 0;
 }
 .header-left {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 5px;
+  flex: 1;
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  align-items: center;
+  column-gap: 6px;
+  row-gap: 5px;
   min-width: 0;
+}
+.header-left > time {
+  grid-column: 1 / -1;
+  grid-row: 2;
+}
+.ocr-status {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .time-label.ocr-error {
   color: var(--color-danger);
-  white-space: normal;
-  overflow-wrap: anywhere;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
 }
 .type-label {
   font-size: 11px;
+  line-height: 15px;
   font-weight: 600;
   display: inline-flex;
   align-items: center;
@@ -338,15 +435,16 @@ const shortcutLabel = computed(() => {
 }
 .time-label {
   font-size: 11px;
+  line-height: 15px;
+  white-space: nowrap;
   color: var(--color-text-secondary);
 }
 .preview-toolbar {
   display: flex;
   align-items: center;
   gap: 6px;
-  min-height: 25px;
+  min-height: 0;
   padding: 0 10px 5px;
-  flex-shrink: 0;
   border-bottom: 1px solid var(--color-border-light);
 }
 .content-formats {
@@ -380,7 +478,6 @@ const shortcutLabel = computed(() => {
   outline-offset: 1px;
 }
 .card-main {
-  flex: 1;
   min-height: 0;
   min-width: 0;
   padding: 12px;
@@ -410,10 +507,9 @@ const shortcutLabel = computed(() => {
   align-items: center;
   gap: 7px;
   padding: 8px 10px;
-  height: 40px;
+  min-height: 0;
   box-sizing: border-box;
   border-top: 1px solid var(--color-border-light);
-  flex-shrink: 0;
   background: var(--color-bg-tertiary);
 }
 .tag-dots {

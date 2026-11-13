@@ -87,7 +87,8 @@ export function useScrollAndTags(
   currentAnimationState: Ref<AnimationState>,
   loadClipboardHistory: (options?: ClipboardHistoryQueryOptions) => Promise<void>,
   getSearchText: () => string,
-  isVerticalLayout: Ref<boolean>
+  isVerticalLayout: Ref<boolean>,
+  onViewportChange: (offset: number, size: number, stride: number) => void
 ): ScrollAndTagsManager {
   // ==================== 状态管理 ====================
 
@@ -148,6 +149,7 @@ export function useScrollAndTags(
       clipboardScrollRef.value?.isConnected
     ) {
       scrollbarInstance.update()
+      notifyViewport()
       return
     }
 
@@ -169,6 +171,8 @@ export function useScrollAndTags(
     try {
       // 仅初始化 scrollbar 实例，样式在 overlay.vue 的 CSS 中定义
       scrollbarInstance = Scrollbar.init(clipboardScrollRef.value, SCROLLBAR_OPTIONS)
+      scrollbarInstance.addListener(notifyViewport)
+      notifyViewport()
     } catch (error) {
       console.error('[滚动标签管理] smooth-scrollbar 初始化失败:', error)
       scrollbarInstance = null
@@ -199,14 +203,6 @@ export function useScrollAndTags(
     } else {
       clipboardScrollRef.value?.scrollTo({ left: 0, top: 0, behavior: 'instant' })
     }
-  }
-
-  const getSelectedCardElement = (): HTMLElement | null => {
-    if (!clipboardScrollRef.value || selectedIndex.value < 0) {
-      return null
-    }
-
-    return clipboardScrollRef.value.querySelector<HTMLElement>('.clipboard-card.selected')
   }
 
   const getScrollMetrics = (): {
@@ -241,6 +237,33 @@ export function useScrollAndTags(
       contentHeight: clipboardScrollRef.value.scrollHeight
     }
   }
+
+  // 卡片在两个布局方向都使用固定主轴尺寸，离屏卡片由等尺寸占位替代。
+  const cardStride = (): number => Math.min(300, window.innerWidth - 24) + 10
+  const notifyViewport = (): void => {
+    const metrics = getScrollMetrics()
+    if (!metrics) return
+    onViewportChange(
+      isVerticalLayout.value ? metrics.scrollTop : metrics.scrollLeft,
+      (isVerticalLayout.value
+        ? clipboardScrollRef.value?.clientHeight
+        : clipboardScrollRef.value?.clientWidth) ||
+        (isVerticalLayout.value ? metrics.containerHeight : metrics.containerWidth),
+      cardStride()
+    )
+  }
+  const resizeObserver = new ResizeObserver(notifyViewport)
+  watch(
+    clipboardScrollRef,
+    (element, previous) => {
+      previous?.removeEventListener('scroll', notifyViewport)
+      if (previous) resizeObserver.unobserve(previous)
+      element?.addEventListener('scroll', notifyViewport, { passive: true })
+      if (element) resizeObserver.observe(element)
+    },
+    { flush: 'post' }
+  )
+  window.addEventListener('resize', notifyViewport)
 
   const isAtStart = (): boolean => {
     const metrics = getScrollMetrics()
@@ -488,9 +511,8 @@ export function useScrollAndTags(
     ) {
       initializeScrollbar()
     }
-    const selectedCardElement = getSelectedCardElement()
     const metrics = getScrollMetrics()
-    if (!selectedCardElement || !metrics) {
+    if (!metrics) {
       return
     }
 
@@ -500,12 +522,8 @@ export function useScrollAndTags(
     const contentSize = verticalLayout ? metrics.contentHeight : metrics.contentWidth
     const maxScroll = Math.max(0, contentSize - containerSize)
 
-    const selectedStart = verticalLayout
-      ? selectedCardElement.offsetTop
-      : selectedCardElement.offsetLeft
-    const selectedSize = verticalLayout
-      ? selectedCardElement.offsetHeight
-      : selectedCardElement.offsetWidth
+    const selectedStart = selectedIndex.value * cardStride()
+    const selectedSize = cardStride() - 10
     const selectedEnd = selectedStart + selectedSize
     const containerEnd = containerStart + containerSize
 
@@ -532,9 +550,8 @@ export function useScrollAndTags(
       return false
     }
 
-    const selectedCardElement = getSelectedCardElement()
     const metrics = getScrollMetrics()
-    if (!selectedCardElement || !metrics) {
+    if (!metrics) {
       return false
     }
 
@@ -543,12 +560,8 @@ export function useScrollAndTags(
     const containerSize = verticalLayout ? metrics.containerHeight : metrics.containerWidth
     const containerEnd = containerStart + containerSize
 
-    const selectedStart = verticalLayout
-      ? selectedCardElement.offsetTop
-      : selectedCardElement.offsetLeft
-    const selectedSize = verticalLayout
-      ? selectedCardElement.offsetHeight
-      : selectedCardElement.offsetWidth
+    const selectedStart = selectedIndex.value * cardStride()
+    const selectedSize = cardStride() - 10
     const selectedEnd = selectedStart + selectedSize
 
     // 检查是否完全在可视区域内（包含边距）
@@ -692,7 +705,7 @@ export function useScrollAndTags(
       await loadClipboardHistory({
         tagIds: currentTagIds,
         searchText: currentSearchText,
-        limit: 50,
+        limit: 24,
         orderBy: 'last_used',
         orderDirection: 'DESC'
       })
@@ -717,6 +730,9 @@ export function useScrollAndTags(
   // ==================== 清理 ====================
 
   onUnmounted(() => {
+    resizeObserver.disconnect()
+    clipboardScrollRef.value?.removeEventListener('scroll', notifyViewport)
+    window.removeEventListener('resize', notifyViewport)
     destroyScrollbar()
   })
 

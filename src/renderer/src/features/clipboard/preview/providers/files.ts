@@ -53,7 +53,7 @@ export function getFilePreviews(item: ClipboardItem): FilePreview[] {
 
 export const filesPreview: PreviewProvider = ({ item, preview }) => {
   const files = preview.files
-  if (!files.length || (item.primaryType !== 'files' && item.content.image?.byteLength)) return null
+  if (!files.length || (item.primaryType !== 'files' && item.content.image)) return null
   preview.kind = 'files'
   preview.summary = `${files.length.toLocaleString()} 个文件`
   return 'files'

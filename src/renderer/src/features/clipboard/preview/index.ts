@@ -1,4 +1,4 @@
-import type { ClipboardItem } from '@renderer/api/types'
+import type { ClipboardContent, ClipboardItem } from '@renderer/api/types'
 import type { ClipboardPreview, PreviewProvider } from './types'
 import { PREVIEW_LABELS, PREVIEW_TYPES } from '@renderer/constants/clipboard-preview'
 import { filesPreview, getFilePreviews } from './providers/files'
@@ -29,7 +29,13 @@ const providers: readonly PreviewProvider[] = [
   textPreview
 ]
 
+// 解析结果依赖同一内容版本的类型和统计字段；OCR 或内容变化会创建新 content。
+const previewCache = new WeakMap<ClipboardContent, ClipboardPreview>()
+
 export function createClipboardPreview(item: ClipboardItem): ClipboardPreview {
+  const cached = previewCache.get(item.content)
+  if (cached) return cached
+
   const { content } = item
   const text = content.text || ''
   const trimmed = text.trim()
@@ -46,7 +52,7 @@ export function createClipboardPreview(item: ClipboardItem): ClipboardPreview {
     url: getUrl(trimmed),
     color: null,
     colorFormats: null,
-    image: content.image,
+    image: typeof content.image === 'string' && content.image ? content.image : undefined,
     formats: [],
     summary: ''
   }
@@ -54,7 +60,9 @@ export function createClipboardPreview(item: ClipboardItem): ClipboardPreview {
   if (text) preview.formats.push(PREVIEW_LABELS.text)
   if (content.html) preview.formats.push('HTML')
   if (content.rtf) preview.formats.push('RTF')
-  if (content.image?.byteLength) preview.formats.push(PREVIEW_LABELS.image)
+  if (typeof content.image === 'string' && content.image) {
+    preview.formats.push(PREVIEW_LABELS.image)
+  }
   if (files.length) preview.formats.push(PREVIEW_LABELS.file)
 
   const context = { item, preview, text, trimmed }
@@ -66,19 +74,26 @@ export function createClipboardPreview(item: ClipboardItem): ClipboardPreview {
     }
   }
 
-  if (!preview.summary && preview.text) {
-    let characters = 0
-    let lines = 1
-    let previous = ''
+  let previewCharacters = 0
+  let lines = 1
+  let previous = ''
+  if (preview.text && (!preview.summary || item.textLength !== undefined)) {
     for (const character of preview.text) {
-      characters++
+      previewCharacters++
       if (character === '\r' || (character === '\n' && previous !== '\r')) lines++
       previous = character
     }
+  }
+  const textWasTruncated =
+    typeof item.textLength === 'number' && item.textLength > previewCharacters
+  if (!preview.summary && preview.text) {
+    const characters = item.textLength ?? previewCharacters
     preview.summary = preview.table
       ? `${preview.table.rows.length} 行 × ${preview.table.columns} 列`
-      : `${characters.toLocaleString()} 字符${lines > 1 ? ` · ${lines.toLocaleString()} 行` : ''}`
+      : `${characters.toLocaleString()} 字符${!textWasTruncated && lines > 1 ? ` · ${lines.toLocaleString()} 行` : ''}`
   }
+  if (item.previewTruncated || textWasTruncated) preview.notice = PREVIEW_LABELS.previewExcerpt
   Object.assign(preview, PREVIEW_TYPES[type] || PREVIEW_TYPES.text)
+  previewCache.set(item.content, preview)
   return preview
 }

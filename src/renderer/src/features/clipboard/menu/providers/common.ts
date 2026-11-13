@@ -9,13 +9,14 @@ import { separator } from '../separator'
 export const commonMenu: ClipboardMenuProvider = {
   matches: () => true,
   createItems: ({ item, callbacks }) => {
-    const { text, html, rtf, files } = item.content
     return [
       {
         label: PREVIEW_ACTIONS.restoreAsText,
         icon: IconTextBox,
         action: () => callbacks.restoreAsText(item.id),
-        disabled: !(text?.trim() || html?.trim() || rtf?.trim() || files?.length)
+        disabled: !item.availableFormats.some((format) =>
+          ['text', 'html', 'rtf', 'files'].includes(format)
+        )
       }
     ]
   }

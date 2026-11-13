@@ -95,8 +95,26 @@ impl Storage {
         clipboard::upsert_clipboard_with_image(self, item, image).await
     }
 
-    pub async fn get_clipboard(&self, content_id: &str) -> Result<Option<Value>, String> {
-        clipboard::get_clipboard(self, content_id, true).await
+    pub async fn get_clipboard_snapshot(
+        &self,
+        content_id: &str,
+        text_only: bool,
+        ocr_only: bool,
+    ) -> Result<Option<clipboard_core::ClipboardSnapshot>, String> {
+        clipboard::get_clipboard_snapshot(self, content_id, text_only, ocr_only).await
+    }
+
+    pub async fn get_clipboard_item(&self, content_id: &str) -> Result<Option<Value>, String> {
+        clipboard::get_clipboard_item(self, content_id).await
+    }
+
+    pub async fn get_clipboard_media(
+        &self,
+        kind: &str,
+        content_id: &str,
+        digest: &str,
+    ) -> Result<Option<Vec<u8>>, String> {
+        clipboard::get_clipboard_media(self, kind, content_id, digest).await
     }
 
     pub async fn get_clipboard_image(&self, content_id: &str) -> Result<Option<Vec<u8>>, String> {

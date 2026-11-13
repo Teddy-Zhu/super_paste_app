@@ -1,9 +1,9 @@
 import { invoke } from './ipc'
+import { convertFileSrc } from '@tauri-apps/api/core'
 import { OCR_MANAGE_TEXT } from '@renderer/constants/ocr'
 import type {
   ClipboardOperations,
   ClipboardItem,
-  ClipboardItemDto,
   ClipboardStatus,
   ClipboardManagerConfig,
   ClipboardIpcResponse,
@@ -11,18 +11,21 @@ import type {
   ClipboardHistoryResult
 } from './types'
 
-function decodeClipboardItem(item: ClipboardItemDto): ClipboardItem {
-  const { image, ...content } = item.content
-  return {
-    ...item,
-    content: image === undefined ? content : { ...content, image: new Uint8Array(image) }
-  }
+function resolveClipboardMedia(item: ClipboardItem): ClipboardItem {
+  if (item.content.image)
+    item.content.image = `${convertFileSrc('', 'clipboard-media')}${item.content.image}`
+  return item
 }
 
 /**
  * 剪贴板操作封装
  */
 export const clipboard: ClipboardOperations = {
+  async getItem(id: string): Promise<ClipboardItem> {
+    const result = await invoke('clipboard-get-item', { id })
+    if (!result.success || !result.data) throw new Error(result.error || '获取剪贴板内容失败')
+    return resolveClipboardMedia(result.data)
+  },
   async copyColor(text: string): Promise<void> {
     const result: ClipboardIpcResponse = await invoke('clipboard-copy-color', text)
     if (!result.success) throw new Error(result.error || '复制颜色失败')
@@ -34,14 +37,16 @@ export const clipboard: ClipboardOperations = {
     // 向后兼容：如果传入的是数字，转换为 limit 参数
     const queryOptions = typeof options === 'number' ? { limit: options } : options
 
-    const result: ClipboardIpcResponse<ClipboardItemDto[]> = await invoke(
+    const result: ClipboardIpcResponse<ClipboardItem[]> = await invoke(
       'clipboard-get-history',
       queryOptions
     )
     if (result.success) {
       return {
-        items: (result.data || []).map(decodeClipboardItem),
-        apps: result.apps || {}
+        items: (result.data || []).map(resolveClipboardMedia),
+        apps: result.apps || {},
+        hasMore: result.hasMore ?? false,
+        nextCursor: result.nextCursor ?? null
       }
     }
     throw new Error(result.error || '获取剪贴板历史失败')

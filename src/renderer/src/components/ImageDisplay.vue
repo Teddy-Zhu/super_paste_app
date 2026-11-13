@@ -1,9 +1,9 @@
 <template>
   <img
-    v-if="imageSrc"
+    v-if="imageSrc && !hasError"
     :src="imageSrc"
     :alt="alt"
-    :class="imageClass"
+    :class="[imageClass, { 'image-pending': !ready }]"
     decoding="async"
     @load="handleLoad"
     @error="handleError"
@@ -14,12 +14,11 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onUnmounted, watch } from 'vue'
-import { acquireClipboardImageURL } from '@renderer/utils/clipboard-image-urls'
+import { onBeforeUnmount, ref, watch } from 'vue'
 import { PREVIEW_LABELS } from '@renderer/constants/clipboard-preview'
 
 interface Props {
-  imageData: Uint8Array
+  imageSrc: string
   alt?: string
   imageClass?: string
   errorClass?: string
@@ -36,62 +35,52 @@ const emit = defineEmits<{
   error: [event: Event]
 }>()
 
-// 状态管理
-const imageSrc = ref<string>('')
 const hasError = ref<boolean>(false)
-let imageURL: ReturnType<typeof acquireClipboardImageURL> | undefined
+const ready = ref(false)
+let requestVersion = 0
 
-// Blob URL 避免 Array.from/map/join/base64 的多次分配与主线程编码。
-const processImage = (): void => {
-  cleanupObjectURL()
-  imageSrc.value = ''
-  hasError.value = false
+// 使用同一个图片节点读取和解码，完整可绘制后直接显示，不展示渐进绘制过程。
+const handleLoad = async (event: Event): Promise<void> => {
+  const image = event.target as HTMLImageElement
+  const version = requestVersion
+  const isCurrent = (): boolean =>
+    version === requestVersion && image.getAttribute('src') === props.imageSrc
   try {
-    imageURL = acquireClipboardImageURL(props.imageData)
-    imageSrc.value = imageURL.url
-  } catch (error) {
-    hasError.value = true
-    console.warn('剪贴板图片预览失败:', error)
+    await image.decode()
+  } catch {
+    if (isCurrent()) handleError(event)
+    return
   }
-}
+  if (!isCurrent()) return
 
-// 清理 Object URL
-const cleanupObjectURL = (): void => {
-  imageURL?.release()
-  imageURL = undefined
-}
-
-// 处理图片加载成功
-const handleLoad = (event: Event): void => {
-  hasError.value = false
-
+  ready.value = true
   emit('load', event)
 }
 
 // 处理图片加载失败
 const handleError = (event: Event): void => {
+  ready.value = false
   hasError.value = true
-  imageSrc.value = ''
-  cleanupObjectURL()
   emit('error', event)
 }
 
-// 监听图片数据变化
 watch(
-  () => props.imageData,
+  () => props.imageSrc,
   () => {
-    processImage()
+    requestVersion++
+    ready.value = false
+    hasError.value = false
   },
-  { immediate: true }
+  { flush: 'sync' }
 )
 
-// 组件卸载时清理资源
-onUnmounted(() => {
-  cleanupObjectURL()
-})
+onBeforeUnmount(() => requestVersion++)
 </script>
 
 <style scoped>
+.image-pending {
+  visibility: hidden;
+}
 .image-error {
   display: flex;
   align-items: center;

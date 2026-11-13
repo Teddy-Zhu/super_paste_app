@@ -413,8 +413,7 @@ impl WindowManager {
         if !["top", "bottom", "left", "right"].contains(&position.as_str()) {
             return Err("浮层位置无效".into());
         }
-        let area = self.work_area().await?;
-        let monitor_signature = self.monitor_signature().await?;
+        let (area, monitor_signature) = self.work_area_and_signature().await?;
         self.place(&area, &position).await?;
         let id = {
             let mut state = self
@@ -695,11 +694,13 @@ impl WindowManager {
             state.wants_visible = false;
             state.deferred_blur = false;
         }
-        self.source.freeze(false);
         // Clear native opacity before unmapping so the compositor cannot animate
         // a stale visible strip after the renderer has completed its slide-out.
         let opacity = super::native_frame::opacity(&self.app, "overlay", 0.).await;
-        let hidden = self.window("overlay")?.hide().map_err(|e| e.to_string());
+        let hidden = self
+            .window("overlay")
+            .and_then(|window| window.hide().map_err(|e| e.to_string()));
+        self.source.freeze(false);
         let notified = emit_window(&self.app, "overlay", "overlay-hidden", vec![json!(id)]);
         opacity.and(hidden).and(notified)
     }
@@ -815,6 +816,37 @@ impl WindowManager {
             .collect::<Vec<_>>();
         values.sort();
         Ok(values)
+    }
+
+    async fn work_area_and_signature(&self) -> Result<(WorkArea, Vec<String>), String> {
+        #[cfg(target_os = "linux")]
+        if clipboard_core::is_wayland_session() {
+            return tokio::task::spawn_blocking(|| {
+                let snapshot = super::kwin::work_area_snapshot().map_err(|e| e.to_string())?;
+                let area = snapshot.cursor_area;
+                let mut signature = snapshot
+                    .areas
+                    .into_iter()
+                    .map(|area| {
+                        json!([area.display_id, area.x, area.y, area.width, area.height])
+                            .to_string()
+                    })
+                    .collect::<Vec<_>>();
+                signature.sort();
+                Ok((
+                    WorkArea {
+                        x: area.x,
+                        y: area.y,
+                        width: area.width,
+                        height: area.height,
+                    },
+                    signature,
+                ))
+            })
+            .await
+            .map_err(|e| e.to_string())?;
+        }
+        Ok((self.work_area().await?, self.monitor_signature().await?))
     }
 
     async fn place(&self, area: &WorkArea, position: &str) -> Result<(), String> {

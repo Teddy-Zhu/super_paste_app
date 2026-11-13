@@ -8,7 +8,10 @@ import ClipboardPreviewContent from './ClipboardPreviewContent.vue'
 import ClipboardSourceApp from './ClipboardSourceApp.vue'
 
 const props = defineProps<{ preview: ClipboardPreview; source?: AppInfo; summary?: string }>()
-const emit = defineEmits<{ close: [] }>()
+const emit = defineEmits<{
+  close: []
+  imageLoad: [event: Event]
+}>()
 const dialog = ref<HTMLDialogElement>()
 const plain = ref(false)
 const canToggle = computed(
@@ -61,7 +64,12 @@ onBeforeUnmount(() => dialog.value?.close())
           </button>
         </header>
         <div class="dialog-body">
-          <ClipboardPreviewContent :preview="preview" :plain="plain" expanded />
+          <ClipboardPreviewContent
+            :preview="preview"
+            :plain="plain"
+            expanded
+            @image-load="emit('imageLoad', $event)"
+          />
         </div>
       </div>
     </dialog>

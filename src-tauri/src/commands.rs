@@ -217,6 +217,7 @@ desktop_commands! {
     },
     Storage {
         clipboard_get_history => "clipboard-get-history",
+        clipboard_get_item => "clipboard-get-item",
         clipboard_delete_item => "clipboard-delete-item",
         clipboard_clear_history => "clipboard-clear-history",
         get_all_tags => "get-all-tags",
