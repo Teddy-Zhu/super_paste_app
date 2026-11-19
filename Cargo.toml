@@ -1,7 +1,7 @@
 [workspace]
 members = ["apps/desktop", "crates/data-format", "crates/app-core", "crates/desktop-platform", "vendor/clipboard-core"]
 resolver = "3"
-exclude = ["vendor/taffy", "vendor/zune-jpeg", "vendor/png", "vendor/cosmic-text", "vendor/skrifa", "vendor/oar-ocr-core", "vendor/gpui-pre", "vendor/gpui-pre-linux", "vendor/gpui-pre-macos", "vendor/gpui-pre-windows", "vendor/gpui-pre-apple", "vendor/gpui-pre-wgpu", "vendor/gpui-component", "vendor/gpui-base", "vendor/ksni"]
+exclude = ["vendor/taffy", "vendor/zune-jpeg", "vendor/png", "vendor/cosmic-text", "vendor/skrifa", "vendor/oar-ocr-core", "vendor/gpui-pre", "vendor/gpui-pre-linux", "vendor/gpui-pre-macos", "vendor/gpui-pre-windows", "vendor/gpui-pre-apple", "vendor/gpui-pre-wgpu", "vendor/gpui-component", "vendor/gpui-base", "vendor/ksni", "vendor/clipboard-rs"]
 
 [workspace.package]
 version = "1.0.3"
@@ -67,6 +67,7 @@ gpui-kit-assets = "=0.9.0"
 gpui-component-macros = "=0.9.0"
 
 [patch.crates-io]
+clipboard-rs = { path = "vendor/clipboard-rs" }
 wl-clipboard-rs = { path = "vendor/wl-clipboard-rs" }
 taffy = { path = "vendor/taffy" }
 zune-jpeg = { path = "vendor/zune-jpeg" }

@@ -248,9 +248,6 @@ pub fn write_owned(snapshot: ClipboardSnapshot) -> ClipboardResult<()> {
 fn write_native(snapshot: ClipboardSnapshot) -> ClipboardResult<()> {
     let mut contents = Vec::new();
 
-    // Windows' clipboard-rs backend clears the clipboard while installing an
-    // image. Install it before the other representations so they remain
-    // available as part of the same clipboard operation.
     if let Some(image) = snapshot.image {
         let image = match image {
             ClipboardImage::Encoded(bytes) => RustImageData::from_bytes(&bytes)?,

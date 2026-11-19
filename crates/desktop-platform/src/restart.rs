@@ -1,27 +1,35 @@
 //! The replacement process waits on its parent's pipe, consuming no polling
 //! timer. The desktop authorizes it only after accepted work has drained; main
 //! releases the pipe after final cleanup and single-instance ownership ends.
-use std::{io::{Read, Write}, path::PathBuf, process::Stdio, sync::Arc, time::Duration};
+use std::{io::{self, Read, Write}, path::{Path, PathBuf}, process::Stdio, sync::Arc, time::Duration};
 use super_paste_core::{Error, Result};
 use tokio::{io::{AsyncReadExt, AsyncWriteExt}, process::Child, sync::Mutex};
 
 const ARGUMENT: &str = "--super-paste-rs-restart-handoff";
 const READY: u8 = 0x52;
 const COMMIT: u8 = 0x47;
-#[derive(Default)]
-pub struct Restart { state: Mutex<State> }
+pub struct Restart {
+    launch_path: Result<PathBuf>,
+    state: Mutex<State>,
+}
 #[derive(Default)]
 struct State { closed: bool, replacement: Option<Child> }
 pub struct PreparedRestart { child: Option<Child> }
 impl Restart {
-    pub fn new() -> Arc<Self> { Arc::new(Self::default()) }
+    pub fn new() -> Arc<Self> {
+        // Keep the installed path before a package update replaces the running
+        // executable. Starting it later loads the file installed at that path.
+        Arc::new(Self { launch_path: launch_path(), state: Mutex::default() })
+    }
+
     pub async fn prepare(&self) -> Result<PreparedRestart> {
         if self.state.lock().await.closed { return Err(Error::Cancelled); }
-        let mut command = tokio::process::Command::new(executable()?);
+        let executable = self.launch_path.as_ref().map_err(Clone::clone)?;
+        let mut command = tokio::process::Command::new(executable);
         command.args(std::env::args_os().skip(1).filter(|argument| argument != ARGUMENT)).arg(ARGUMENT)
             .stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::inherit());
         #[cfg(target_os = "windows")] { use std::os::windows::process::CommandExt; command.as_std_mut().creation_flags(0x08000000); }
-        let child = command.spawn()?;
+        let child = command.spawn().map_err(|error| launch_error(executable, error))?;
         let mut prepared = PreparedRestart { child: Some(child) };
         let child = prepared.child.as_mut().ok_or_else(protocol_error)?;
         let mut output = child.stdout.take().ok_or_else(protocol_error)?;
@@ -67,24 +75,53 @@ pub fn accept_handoff() -> Result<bool> {
     drop(input);
     // The readiness pipe must not become the application's stdout: its reader
     // belongs to the exiting process. Re-exec with ordinary detached stdio.
-    let mut command = std::process::Command::new(std::env::current_exe()?);
+    let executable = executable_path()?;
+    let mut command = std::process::Command::new(&executable);
     command.args(std::env::args_os().skip(1).filter(|argument| argument != ARGUMENT))
         .stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::inherit());
     #[cfg(unix)] {
         use std::os::unix::process::CommandExt;
         // Preserve the PID that an AppImage launcher waits for, and therefore
         // its mount lifetime. No shell or external restart helper is needed.
-        return Err(command.exec().into());
+        return Err(launch_error(&executable, command.exec()));
     }
-    #[cfg(windows)] { command.spawn()?; Ok(false) }
+    #[cfg(windows)] {
+        command.spawn().map_err(|error| launch_error(&executable, error))?;
+        Ok(false)
+    }
 }
-fn executable() -> Result<PathBuf> {
+
+fn executable_path() -> Result<PathBuf> {
     let executable = std::env::current_exe()?;
     #[cfg(target_os = "linux")]
-    if let (Some(directory), Some(image)) = (std::env::var_os("APPDIR"), std::env::var_os("APPIMAGE")) {
-        let image = PathBuf::from(image);
-        if executable.starts_with(PathBuf::from(directory)) && image.is_file() { return Ok(image); }
+    {
+        use std::{ffi::OsStr, os::unix::ffi::OsStrExt};
+
+        // An update can also land before startup captures the path, or while a
+        // replacement is waiting for its parent to finish shutting down.
+        if let Some(path) = executable.as_os_str().as_bytes().strip_suffix(b" (deleted)") {
+            if !executable.try_exists()? {
+                return Ok(PathBuf::from(OsStr::from_bytes(path)));
+            }
+        }
     }
     Ok(executable)
 }
+
+pub(crate) fn launch_path() -> Result<PathBuf> {
+    let executable = executable_path()?;
+    #[cfg(target_os = "linux")]
+    if let (Some(directory), Some(image)) = (std::env::var_os("APPDIR"), std::env::var_os("APPIMAGE")) {
+        let image = PathBuf::from(image);
+        if executable.starts_with(PathBuf::from(directory)) && image.is_absolute() {
+            return Ok(image);
+        }
+    }
+    Ok(executable)
+}
+
+fn launch_error(executable: &Path, error: io::Error) -> Error {
+    Error::Io(format!("启动程序 {} 失败：{error}", executable.display()).into())
+}
+
 fn protocol_error() -> Error { Error::Platform("重启进程握手失败".into()) }

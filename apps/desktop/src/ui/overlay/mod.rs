@@ -217,6 +217,8 @@ impl OverlayView {
             window.set_layer_shell_keyboard_interactivity(layer_shell::KeyboardInteractivity::Exclusive).map_err(platform_error)?;
         }
         window.activate_window_with_token(self.activation_token.take().as_deref()).map_err(platform_error)?;
+        #[cfg(target_os = "macos")]
+        cx.activate(true);
         self.search.update(cx, |state, cx| state.focus(window, cx));
         Ok(())
     }

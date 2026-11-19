@@ -150,21 +150,45 @@ fn files(paths: &[String], kind: PrimaryType, text: &str, limit: usize) -> (Vec<
             if let Ok(url) = url::Url::parse(raw) {
                 path = decode_uri(url.path(), false);
                 if let Some(host) = url.host_str().filter(|host| *host != "localhost" && !host.is_empty()) { path = format!("//{host}{path}"); }
-                else if path.as_bytes().first() == Some(&b'/') && path.as_bytes().get(1).is_some_and(u8::is_ascii_alphabetic) && path.as_bytes().get(2) == Some(&b':') && path.as_bytes().get(3).is_some_and(|byte| matches!(byte, b'/' | b'\\')) { path.remove(0); }
+                else if path.strip_prefix('/').is_some_and(windows_drive_path) { path.remove(0); }
             }
         }
-        let normalized = path.replace('\\', "/"); let bytes = normalized.as_bytes();
-        let drive = bytes.first().is_some_and(u8::is_ascii_alphabetic) && bytes.get(1) == Some(&b':') && bytes.get(2) == Some(&b'/');
-        let key = if drive || normalized.starts_with("//") { normalized.to_lowercase() } else { normalized.clone() };
+        let drive = windows_drive_path(&path);
+        let windows_path = drive || path.starts_with("\\\\") || path.starts_with("//");
+        let normalized = if windows_path { path.replace('\\', "/") } else { path.clone() };
+        let key = if windows_path { normalized.to_lowercase() } else { normalized.clone() };
         let index = if let Some(index) = positions.get(&key) { *index } else { let index = positions.len(); positions.insert(key, index); index };
         if index >= limit { continue; }
         let root = normalized == "/" || drive && normalized.len() == 3;
         let without_trailing = normalized.trim_end_matches('/'); let separator = without_trailing.rfind('/');
         let name = if root { path.as_str() } else { without_trailing.get(separator.map_or(0, |position| position + 1)..).filter(|name| !name.is_empty()).unwrap_or("未命名文件") };
         let directory = if root { "" } else { &normalized[..separator.map_or(0, |position| position + 1)] };
-        let extension = if path.ends_with(['/', '\\']) { "文件夹".to_owned() } else { name.rfind('.').filter(|position| *position > 0).map(|position| name[position + 1..].to_uppercase()).unwrap_or_else(|| "文件".to_owned()) };
+        let extension = if normalized.ends_with('/') { "文件夹".to_owned() } else { name.rfind('.').filter(|position| *position > 0).map(|position| name[position + 1..].to_uppercase()).unwrap_or_else(|| "文件".to_owned()) };
         let file = FilePreview { name: name.into(), directory: directory.into(), extension: extension.into(), path: path.into() };
         if let Some(slot) = result.get_mut(index) { *slot = file; } else { result.push(file); }
     }
     (result, positions.len() as u64)
+}
+
+fn windows_drive_path(path: &str) -> bool {
+    matches!(path.as_bytes(), [drive, b':', b'/' | b'\\', ..] if drive.is_ascii_alphabetic())
+}
+
+#[cfg(test)]
+#[test]
+fn file_previews_preserve_unix_backslashes_and_merge_windows_separators() {
+    let paths = [
+        r"/tmp/nested\name.txt",
+        "/tmp/nested/name.txt",
+        "file:///tmp/end%5C",
+        r"C:\Work\name.txt",
+        "file:///c:/work/name.txt",
+    ].map(str::to_owned);
+    let (items, count) = files(&paths, PrimaryType::Files, "", 8);
+    assert_eq!(count, 4);
+    assert_eq!(items[0].name.as_ref(), r"nested\name.txt");
+    assert_eq!(items[0].directory.as_ref(), "/tmp/");
+    assert_eq!(items[2].name.as_ref(), r"end\");
+    assert_eq!(items[2].extension.as_ref(), "文件");
+    assert_eq!(items[3].directory.as_ref(), "c:/work/");
 }

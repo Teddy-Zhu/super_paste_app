@@ -123,7 +123,7 @@ async function main() {
   }
   const metadata = JSON.parse(run('cargo', ['metadata', '--manifest-path', path.join(root, 'apps', 'desktop', 'Cargo.toml'),
     '--locked', '--filter-platform', target, '--format-version', '1'], { capture: true }))
-  const desktop = metadata.packages.find(pkg => pkg.name === 'super-paste-desktop' && path.resolve(pkg.manifest_path) === path.join(root, 'apps', 'desktop', 'Cargo.toml'))
+  const desktop = metadata.packages.find(pkg => pkg.name === 'super-paste-desktop' && metadata.workspace_members.includes(pkg.id))
   if (!desktop) throw new Error('Independent desktop package is missing from workspace metadata')
   const version = desktop.version
   if (version !== workspaceVersion) throw new Error('Desktop version does not match workspace.package.version')

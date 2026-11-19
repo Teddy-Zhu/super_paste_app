@@ -27,6 +27,7 @@ fn main() {
 
 fn run() -> anyhow::Result<()> {
     if !super_paste_platform::restart::accept_handoff()? { return Ok(()); }
+    let restart = super_paste_platform::restart::Restart::new();
     let log = diagnostics::EventLog::new();
     tracing_subscriber::registry().with(tracing_subscriber::filter::LevelFilter::INFO)
         .with(tracing_subscriber::fmt::layer().with_writer(std::io::stderr)).with(log.layer()).try_init()
@@ -39,7 +40,6 @@ fn run() -> anyhow::Result<()> {
     let launch = LaunchRequest::from_environment()?;
     let InstanceRole::Primary { mut instance, activations, sender } = runtime.block_on(SingleInstance::acquire(&paths, launch.clone(), &handle))? else { return Ok(()); };
     let reopen_sender = sender.clone();
-    let restart = super_paste_platform::restart::Restart::new();
     let desktop_restart = restart.clone();
     let (main_thread, main_jobs) = MainThread::channel();
     let foreground_jobs = main_jobs.clone();

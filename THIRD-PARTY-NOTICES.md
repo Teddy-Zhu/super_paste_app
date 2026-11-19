@@ -71,6 +71,10 @@ Wayland reads additionally share a per-operation cancellation signal across the 
 wait and offer data pipes. Stopping an owned watch or abandoning a direct read wakes blocked
 pipe I/O without introducing a timer, polling thread, or intermediate clipboard payload.
 
+The published clipboard-rs 0.3.5 source and MIT license are retained in
+`vendor/clipboard-rs`. Its scoped Win32 and AppKit fixes are documented in
+`vendor/clipboard-rs/PATCHES.md`.
+
 `vendor/wl-clipboard-rs` retains the published 0.9.5 source and its MIT/Apache-2.0
 licenses. The scoped caller-owned connection constructor is documented in
 `vendor/wl-clipboard-rs/PATCHES.md`. Application initialization retains a temporary

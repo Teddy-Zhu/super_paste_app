@@ -44,12 +44,7 @@ impl NativeChange {
             .join("autostart").join(format!("{}.desktop", super_paste_format::APPLICATION_ID));
         let before = read_entry(&entry)?;
         let after = if enabled {
-            let executable = std::env::current_exe()?;
-            // Only trust APPIMAGE when this process actually runs inside its mount.
-            let executable = match (std::env::var_os("APPDIR"), std::env::var_os("APPIMAGE")) {
-                (Some(directory), Some(image)) if executable.starts_with(&directory) => PathBuf::from(image),
-                _ => executable,
-            };
+            let executable = crate::restart::launch_path()?;
             if !executable.is_absolute() || !executable.is_file() { return Err(Error::Platform("自启程序路径不可用".into())); }
             let executable = path_text(&executable)?;
             let icon = data.join("icons").join("autostart.png");
@@ -73,7 +68,7 @@ impl NativeChange {
             .join("Library").join("LaunchAgents").join(format!("{}.plist", super_paste_format::APPLICATION_ID));
         let before = read_entry(&entry)?;
         let after = if enabled {
-            let executable = std::env::current_exe()?;
+            let executable = crate::restart::launch_path()?;
             if !executable.is_absolute() || !executable.is_file() { return Err(Error::Platform("自启程序路径不可用".into())); }
             let executable = executable.to_str().ok_or_else(|| Error::Platform("自启路径不是有效的 UTF-8".into()))?;
             let mut path = String::with_capacity(executable.len());
@@ -167,7 +162,7 @@ impl NativeChange {
     }
     fn prepare(_: PathBuf, after: bool) -> Result<Self> {
         use auto_launch::AutoLaunchBuilder;
-        let executable = std::env::current_exe()?;
+        let executable = crate::restart::launch_path()?;
         let path = executable.to_str().ok_or_else(|| Error::Platform("自启路径不是有效的 UTF-8".into()))?;
         let mut builder = AutoLaunchBuilder::new();
         // auto-launch 0.6 appends arguments directly to its path. Registry
