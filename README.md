@@ -20,7 +20,7 @@ Super Paste 是一款使用 Rust 和 GPUI Kit 开发的桌面剪贴板管理器�
 | 平台 | 架构与系统要求 | 安装格式 |
 | --- | --- | --- |
 | Windows | x86_64，需安装 Microsoft Visual C++ x64 运行库 | `.exe` 安装程序、便携 `.zip` |
-| macOS | Intel 或 Apple Silicon，macOS 13.3 及以上 | `.dmg`、`.app.tar.gz` |
+| macOS | Intel 或 Apple Silicon，macOS 13.4 及以上 | `.dmg`、`.app.tar.gz` |
 | Linux | x86_64，支持 X11 和 KDE Plasma 6 Wayland | `.deb`、`.AppImage`、便携 `.tar.xz`、Arch `.pkg.tar.zst` |
 
 Arch Linux 可通过 AUR 安装。 [super-paste-bin](https://aur.archlinux.org/packages/super-paste-bin)
@@ -58,7 +58,7 @@ Arch Linux 可通过 AUR 安装。 [super-paste-bin](https://aur.archlinux.org/p
 | --- | --- |
 | Windows | Visual Studio C++ 生成工具和 Windows SDK。在 x64 MSVC 开发者终端中构建，并确保 `rc.exe` 和 `fxc.exe` 可用。 |
 | macOS | Xcode 和 Metal 工具链。在与目标架构一致的主机上构建。 |
-| Linux | C/C++ 工具链、CMake、Clang、pkg-config，以及 GTK 3、Fontconfig、FreeType、X11/XCB、xkbcommon、Wayland、EGL 和 Vulkan 开发库。 |
+| Linux | C/C++ 工具链、CMake、Clang、pkg-config、unzip，以及 GTK 3、Fontconfig、FreeType、X11/XCB、xkbcommon、Wayland、EGL 和 Vulkan 开发库。 |
 
 在仓库根目录运行以下命令。第一个命令准备并校验 ONNX Runtime。
 

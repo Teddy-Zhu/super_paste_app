@@ -5,9 +5,10 @@ use serde::Deserialize;
 const MANAGED_BY: &str = "super-paste-rs/scripts/prepare-ort.mjs";
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct RuntimeSpec { runtime_version: String, ort_api_version: u32, release_assets: BTreeMap<String, Release> }
+struct RuntimeSpec { ort_api_version: u32, release_assets: BTreeMap<String, Release> }
 #[derive(Deserialize)]
-struct Release { library: String }
+#[serde(rename_all = "camelCase")]
+struct Release { runtime_version: String, library: String }
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct Prepared { managed_by: String, runtime_version: String, ort_api_version: u32, target: String, libraries: Vec<File>, notices: Vec<File> }
@@ -29,7 +30,7 @@ pub fn resolve_ort_runtime() -> Result<PathBuf, String> {
         if metadata.len() > 256 * 1024 { return Err(format!("ONNX Runtime 清单过大: {}", manifest.display())); }
         let prepared: Prepared = serde_json::from_slice(&std::fs::read(&manifest).map_err(|error| error.to_string())?)
             .map_err(|error| format!("ONNX Runtime 清单无效 {}: {error}", manifest.display()))?;
-        if prepared.managed_by != MANAGED_BY || prepared.runtime_version != spec.runtime_version || prepared.ort_api_version != spec.ort_api_version || prepared.target != target {
+        if prepared.managed_by != MANAGED_BY || prepared.runtime_version != release.runtime_version || prepared.ort_api_version != spec.ort_api_version || prepared.target != target {
             return Err(format!("ONNX Runtime 清单与本应用版本/目标不匹配: {}", manifest.display()));
         }
         if !prepared.libraries.iter().any(|entry| entry.file == release.library)

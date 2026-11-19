@@ -7,7 +7,7 @@ import { readRuntimeManifest } from './ort-manifest.mjs'
 import { sha256File as sha256 } from './file-hash.mjs'
 import { appImageToolEnv, compressDeb, packageAppImage, stageLinuxDesktop, stageLinuxExecutable } from './package-linux.mjs'
 
-import { buildTools, binaryName, hostTarget, packageFormats, releaseTargets, version as workspaceVersion } from './project.mjs'
+import { buildTools, binaryName, hostTarget, packaging, packageFormats, releaseTargets, version as workspaceVersion } from './project.mjs'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const packagerVersion = buildTools.cargoPackager
@@ -138,7 +138,7 @@ async function main() {
     run(process.execPath, [path.join(root, 'scripts', 'prepare-ort.mjs'), '--target', target])
     run('cargo', ['build', '--manifest-path', path.join(root, 'Cargo.toml'), '--locked', '--release',
       '--package', desktop.name, '--bin', binaryName, '--target', target, '--target-dir', path.join(root, 'target')], {
-      env: process.platform === 'darwin' ? { MACOSX_DEPLOYMENT_TARGET: '13.3' } : {}
+      env: process.platform === 'darwin' ? { MACOSX_DEPLOYMENT_TARGET: packaging.macos.minimumSystemVersion } : {}
     })
     if (!existsSync(builtExecutable) || !statSync(builtExecutable).isFile()) throw new Error(`Release executable is missing: ${builtExecutable}`)
     const linuxBinary = process.platform === 'linux' ? stageLinuxExecutable(builtExecutable, stage, run) : null

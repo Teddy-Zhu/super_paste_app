@@ -29,7 +29,7 @@ const ortRoot = path.join(projectRoot, 'resources', 'ort')
 const runtimeSpec = JSON.parse(
   readFileSync(path.join(projectRoot, 'resources', 'ort-runtime.json'), 'utf8')
 )
-const { runtimeVersion, ortApiVersion, ortCommit, releaseAssets } = runtimeSpec
+const { archives, ortApiVersion, releaseAssets } = runtimeSpec
 const managedBy = ORT_MANAGED_BY
 const downloadAttempts = 5
 const downloadTimeoutMs = 5 * 60 * 1000
@@ -97,26 +97,6 @@ function run(command, args, options = {}) {
   if (result.status !== 0) throw new Error(`${command} exited with status ${result.status}`)
 }
 
-function listFiles(directory) {
-  const files = []
-  const pending = [directory]
-  while (pending.length > 0) {
-    const current = pending.pop()
-    for (const entry of readdirSync(current, { withFileTypes: true })) {
-      const item = path.join(current, entry.name)
-      if (entry.isDirectory()) pending.push(item)
-      else if (entry.isFile() || entry.isSymbolicLink()) {
-        try {
-          if (statSync(item).isFile()) files.push(item)
-        } catch {
-          // Broken links are not valid runtime files.
-        }
-      }
-    }
-  }
-  return files
-}
-
 function verifyExisting(target, directory) {
   const manifestPath = path.join(directory, 'runtime-manifest.json')
   if (!existsSync(manifestPath)) return false
@@ -130,40 +110,17 @@ function verifyExisting(target, directory) {
   return true
 }
 
-function runtimeFileName(target) {
-  return releaseAssets[target]?.library
-}
-
-function isMainLibrary(target, name) {
-  if (target.includes('windows')) return name.toLowerCase() === 'onnxruntime.dll'
-  if (target.includes('linux')) return /^libonnxruntime\.so(?:\..*)?$/.test(name)
-  return /^libonnxruntime(?:\.\d+(?:\.\d+)*)?\.dylib$/.test(name)
-}
-
 function isRuntimeLibrary(target, name) {
   if (target.includes('windows')) return name.toLowerCase().endsWith('.dll')
   if (target.includes('linux')) return /\.so(?:\..*)?$/.test(name)
   return name.endsWith('.dylib')
 }
 
-function findFile(root, predicate, label) {
-  const match = listFiles(root).find((file) => predicate(path.basename(file)))
-  if (!match) throw new Error(`official ORT package does not contain ${label}`)
-  return match
-}
-
-function findMainLibrary(root, target) {
-  const matches = listFiles(root).filter((file) => isMainLibrary(target, path.basename(file)))
-  matches.sort((left, right) => {
-    const expected = runtimeFileName(target)
-    return Number(path.basename(right) === expected) - Number(path.basename(left) === expected)
-  })
-  if (!matches[0]) throw new Error(`ONNX Runtime package has no primary library for ${target}`)
-  return matches[0]
-}
-
-function copyRuntimeLibraries(target, mainLibrary, destination) {
-  const sourceDirectory = path.dirname(mainLibrary)
+function copyRuntimeLibraries(target, sourceDirectory, destination) {
+  const primaryName = releaseAssets[target].library
+  if (!statSync(path.join(sourceDirectory, primaryName), { throwIfNoEntry: false })?.isFile()) {
+    throw new Error(`ONNX Runtime package is missing ${primaryName} for ${target}`)
+  }
   const files = readdirSync(sourceDirectory, { withFileTypes: true })
     .filter((entry) => {
       const item = path.join(sourceDirectory, entry.name)
@@ -176,29 +133,12 @@ function copyRuntimeLibraries(target, mainLibrary, destination) {
     })
     .map((entry) => path.join(sourceDirectory, entry.name))
 
-  const primaryName = runtimeFileName(target)
-  if (!primaryName || files.length === 0)
-    throw new Error(`no runtime libraries found for ${target}`)
-
-  const staged = new Map()
-  for (const file of files) {
+  return files.map(file => {
     const name = path.basename(file)
-    if (isMainLibrary(target, name)) continue
     const output = path.join(destination, name)
-    if (staged.has(name)) continue
-    copyFile(file, output)
-    staged.set(name, output)
-  }
-
-  const primaryPath = path.join(destination, primaryName)
-  copyFile(mainLibrary, primaryPath)
-  staged.set(primaryName, primaryPath)
-
-  return [...staged.entries()].map(([file, fullPath]) => ({ file, sha256: sha256(fullPath) }))
-}
-
-function copyFile(source, destination) {
-  copyFileSync(source, destination)
+    copyFileSync(file, output)
+    return { file: name, sha256: sha256(output) }
+  })
 }
 
 function isTransientNetworkError(error) {
@@ -290,68 +230,8 @@ function extractArchive(archive, destination) {
       }
     )
   } else {
-    run('tar', ['-xf', archive, '-C', destination])
+    run('unzip', ['-q', archive, '-d', destination])
   }
-}
-
-async function buildIntelMacRuntime(workDirectory) {
-  const sourceRoot = path.join(workDirectory, 'onnxruntime')
-  const repository = 'https://github.com/microsoft/onnxruntime.git'
-  run('git', [
-    'clone',
-    '--depth',
-    '1',
-    '--branch',
-    `v${runtimeVersion}`,
-    '--recurse-submodules',
-    '--shallow-submodules',
-    repository,
-    sourceRoot
-  ])
-  const revision = spawnSync('git', ['-C', sourceRoot, 'rev-parse', 'HEAD'], { encoding: 'utf8' })
-  if (revision.error || revision.status !== 0)
-    throw new Error('could not read the ONNX Runtime source revision')
-  if (revision.stdout.trim() !== ortCommit) {
-    throw new Error(`unexpected ONNX Runtime source commit: ${revision.stdout.trim()}`)
-  }
-
-  const buildEnvironment = { ...process.env, MACOSX_DEPLOYMENT_TARGET: '13.3' }
-  run(
-    path.join(sourceRoot, 'build.sh'),
-    [
-      '--config',
-      'Release',
-      '--build_shared_lib',
-      '--parallel',
-      '--compile_no_warning_as_error',
-      '--skip_submodule_sync',
-      '--cmake_extra_defines',
-      'CMAKE_OSX_ARCHITECTURES=x86_64'
-    ],
-    { cwd: sourceRoot, env: buildEnvironment }
-  )
-
-  const outputDirectory = path.join(sourceRoot, 'build', 'MacOS', 'Release')
-  const mainLibrary = findMainLibrary(outputDirectory, 'x86_64-apple-darwin')
-  return {
-    sourceRoot,
-    mainLibrary,
-    source: {
-      kind: 'official-source-build',
-      repository,
-      tag: `v${runtimeVersion}`,
-      commit: ortCommit,
-      build: 'CPU shared library; CMAKE_OSX_ARCHITECTURES=x86_64; MACOSX_DEPLOYMENT_TARGET=13.3'
-    }
-  }
-}
-
-function copyRequiredNotice(sourceRoot, destination, name) {
-  const directFile = path.join(sourceRoot, name)
-  const file = existsSync(directFile)
-    ? directFile
-    : findFile(sourceRoot, (basename) => basename === name, name)
-  copyFile(file, path.join(destination, name))
 }
 
 async function prepare(options) {
@@ -359,27 +239,34 @@ async function prepare(options) {
   const release = releaseAssets[target]
   if (!release) throw new Error(`unsupported release target: ${target}`)
 
+  const { runtimeVersion } = release
+  const archiveSpec = archives[runtimeVersion]
   const destination = path.join(ortRoot, target)
+  let existingManifest
   if (existsSync(destination)) {
     const existingManifestPath = path.join(destination, 'runtime-manifest.json')
     if (!existsSync(existingManifestPath)) {
       throw new Error(`refusing to replace an unmanaged ORT directory: ${destination}`)
     }
-    const existingManifest = JSON.parse(readFileSync(existingManifestPath, 'utf8'))
+    existingManifest = JSON.parse(readFileSync(existingManifestPath, 'utf8'))
     if (existingManifest.managedBy !== managedBy) {
       throw new Error(
         `refusing to replace an ORT directory not created by this script: ${destination}`
       )
     }
   }
+  const sameArchive = existingManifest?.runtimeVersion === runtimeVersion &&
+    existingManifest.source?.kind === 'official-nuget-package' &&
+    existingManifest.source?.url === archiveSpec.url &&
+    existingManifest.source.archiveSha256 === archiveSpec.sha256
   if (options.check) {
-    if (!verifyExisting(target, destination))
+    if (!sameArchive || !verifyExisting(target, destination))
       throw new Error(`ORT resources are not prepared for ${target}`)
     console.log(`verified ONNX Runtime ${runtimeVersion} for ${target}`)
     return
   }
 
-  if (!options.force && verifyExisting(target, destination)) {
+  if (!options.force && sameArchive && verifyExisting(target, destination)) {
     console.log(`ONNX Runtime ${runtimeVersion} is already prepared for ${target}`)
     return
   }
@@ -391,43 +278,21 @@ async function prepare(options) {
   mkdirSync(stageDirectory, { recursive: true })
 
   try {
-    let mainLibrary
-    let noticeRoot
-    let source
-
-    if (release.sourceBuild) {
-      const built = await buildIntelMacRuntime(workDirectory)
-      mainLibrary = built.mainLibrary
-      noticeRoot = built.sourceRoot
-      source = built.source
-    } else {
-      const archiveUrl = `https://github.com/microsoft/onnxruntime/releases/download/v${runtimeVersion}/${release.asset}`
-      // The asset API bypasses github.com's anonymous release-download gateway.
-      const downloadUrl = `https://api.github.com/repos/microsoft/onnxruntime/releases/assets/${release.assetId}`
-      const headers = {
-        Accept: 'application/octet-stream',
-        'User-Agent': 'super-paste-ort-build'
-      }
-      const token = process.env.GITHUB_TOKEN || process.env.GH_TOKEN
-      if (token) headers.Authorization = `Bearer ${token}`
-      const archive = path.join(workDirectory, release.asset)
-      await downloadAsset(downloadUrl, archive, headers)
-      const archiveSha256 = sha256(archive)
-      if (archiveSha256 !== release.sha256) {
-        throw new Error(
-          `official ONNX Runtime archive SHA256 mismatch: expected ${release.sha256}, got ${archiveSha256}`
-        )
-      }
-      const extracted = path.join(workDirectory, 'extracted')
-      extractArchive(archive, extracted)
-      mainLibrary = findMainLibrary(extracted, target)
-      noticeRoot = extracted
-      source = { kind: 'official-release-asset', url: archiveUrl, downloadUrl, archiveSha256 }
+    const archive = path.join(workDirectory, 'onnxruntime.zip')
+    await downloadAsset(archiveSpec.url, archive, { 'User-Agent': 'super-paste-ort-build' })
+    const archiveSha256 = sha256(archive)
+    if (archiveSha256 !== archiveSpec.sha256) {
+      throw new Error(
+        `official ONNX Runtime archive SHA256 mismatch: expected ${archiveSpec.sha256}, got ${archiveSha256}`
+      )
     }
-
-    const libraries = copyRuntimeLibraries(target, mainLibrary, stageDirectory)
-    copyRequiredNotice(noticeRoot, stageDirectory, 'LICENSE')
-    copyRequiredNotice(noticeRoot, stageDirectory, 'ThirdPartyNotices.txt')
+    const extracted = path.join(workDirectory, 'extracted')
+    extractArchive(archive, extracted)
+    const source = { kind: 'official-nuget-package', url: archiveSpec.url, archiveSha256 }
+    const libraries = copyRuntimeLibraries(target, path.join(extracted, release.nativeDirectory), stageDirectory)
+    for (const notice of ['LICENSE', 'ThirdPartyNotices.txt']) {
+      copyFileSync(path.join(extracted, notice), path.join(stageDirectory, notice))
+    }
     const notices = ['LICENSE', 'ThirdPartyNotices.txt'].map((file) => ({
       file,
       sha256: sha256(path.join(stageDirectory, file))

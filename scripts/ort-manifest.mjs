@@ -16,11 +16,15 @@ export function readRuntimeManifest(file, spec, target) {
   try { manifest = JSON.parse(bytes.toString('utf8')) } catch (cause) {
     throw new Error(`Invalid ORT manifest JSON: ${file}`, { cause })
   }
-  const library = spec.releaseAssets?.[target]?.library
+  const release = spec.releaseAssets?.[target]
+  const library = release?.library
+  const archive = spec.archives?.[release?.runtimeVersion]
   if (typeof library !== 'string' || !fileName.test(library) ||
       !manifest || typeof manifest !== 'object' || Array.isArray(manifest) ||
       manifest.managedBy !== ORT_MANAGED_BY || manifest.target !== target ||
-      manifest.runtimeVersion !== spec.runtimeVersion || manifest.ortApiVersion !== spec.ortApiVersion ||
+      manifest.runtimeVersion !== release?.runtimeVersion || manifest.ortApiVersion !== spec.ortApiVersion ||
+      !archive || manifest.source?.kind !== 'official-nuget-package' ||
+      manifest.source.url !== archive.url || manifest.source.archiveSha256 !== archive.sha256 ||
       !Array.isArray(manifest.libraries) || !Array.isArray(manifest.notices)) {
     throw new Error(`ORT manifest does not match this application's runtime and target: ${file}`)
   }

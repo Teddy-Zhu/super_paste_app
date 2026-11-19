@@ -1,29 +1,35 @@
 {
-  "runtimeVersion": "1.28.0",
   "ortApiVersion": 17,
-  "ortCommit": "da9b5e364c465de65c49d91e696cd6485270757f",
+  "archives": {
+    "1.28.0": {
+      "url": "https://api.nuget.org/v3-flatcontainer/microsoft.ml.onnxruntime/1.28.0/microsoft.ml.onnxruntime.1.28.0.nupkg",
+      "sha256": "769d1d3ea8ab6cd69f737c9dd4d4462aa4ad0ccfa106eaf506efc40d7bead5db"
+    },
+    "1.23.2": {
+      "url": "https://api.nuget.org/v3-flatcontainer/microsoft.ml.onnxruntime/1.23.2/microsoft.ml.onnxruntime.1.23.2.nupkg",
+      "sha256": "25fe172f7fcdf34f2b5b02c8b997f6b88abc282956849d4af4335af23d0c4e4a"
+    }
+  },
   "releaseAssets": {
     "x86_64-pc-windows-msvc": {
-      "asset": "onnxruntime-win-x64-1.28.0.zip",
-      "assetId": 489173573,
-      "sha256": "abef733dacbe2f571547a7150b479b5cb9cc0df22f96c24983a42cadb1b4f8bc",
+      "runtimeVersion": "1.28.0",
+      "nativeDirectory": "runtimes/win-x64/native",
       "library": "onnxruntime.dll"
     },
     "x86_64-unknown-linux-gnu": {
-      "asset": "onnxruntime-linux-x64-1.28.0.tgz",
-      "assetId": 489174677,
-      "sha256": "a3e1b79d7bb1bf09696ce675f49e4064e6c81f6202b8225624fff0e93f8d6407",
+      "runtimeVersion": "1.28.0",
+      "nativeDirectory": "runtimes/linux-x64/native",
       "library": "libonnxruntime.so"
     },
     "aarch64-apple-darwin": {
-      "asset": "onnxruntime-osx-arm64-1.28.0.tgz",
-      "assetId": 489174685,
-      "sha256": "1268b359718099bde2cedb55787f182a130067bc4f31e8c88478c445b850d3d8",
+      "runtimeVersion": "1.23.2",
+      "nativeDirectory": "runtimes/osx-arm64/native",
       "library": "libonnxruntime.dylib"
     },
     "x86_64-apple-darwin": {
-      "library": "libonnxruntime.dylib",
-      "sourceBuild": true
+      "runtimeVersion": "1.23.2",
+      "nativeDirectory": "runtimes/osx-x64/native",
+      "library": "libonnxruntime.dylib"
     }
   }
 }

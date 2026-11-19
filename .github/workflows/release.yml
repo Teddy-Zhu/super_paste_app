@@ -63,7 +63,6 @@ jobs:
             runner: macos-15
     runs-on: ${{ matrix.runner }}
     env:
-      MACOSX_DEPLOYMENT_TARGET: '13.3'
       RUSTUP_TOOLCHAIN: ${{ needs.prepare.outputs.rust }}
       CARGO_INCREMENTAL: '0'
       CARGO_BUILD_JOBS: '2'
@@ -87,12 +86,21 @@ jobs:
             libxcb-randr0-dev libxcb-render0-dev libxcb-shape0-dev \
             libxcb-xfixes0-dev libxcb-cursor-dev libxkbcommon-dev \
             libxkbcommon-x11-dev libwayland-dev libegl1-mesa-dev \
-            libvulkan-dev patchelf libarchive-tools binutils xz-utils zstd
+            libvulkan-dev patchelf libarchive-tools binutils unzip xz-utils zstd
       - name: Configure MSVC and Windows SDK tools
         if: runner.os == 'Windows'
         uses: ilammy/msvc-dev-cmd@v1
         with:
           arch: x64
+      - name: Select the MSVC linker for Cargo
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $linker = Join-Path $env:VCToolsInstallDir 'bin\Hostx64\x64\link.exe'
+          if (!(Test-Path -LiteralPath $linker -PathType Leaf)) {
+            throw "MSVC linker not found at $linker"
+          }
+          "CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_LINKER=$linker" >> $env:GITHUB_ENV
       - name: Prepare Metal compiler
         if: runner.os == 'macOS'
         run: |

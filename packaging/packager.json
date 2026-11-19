@@ -29,7 +29,7 @@
     ]
   },
   "macos": {
-    "minimumSystemVersion": "13.3",
+    "minimumSystemVersion": "13.4",
     "infoPlistPath": "packaging/macos/Info.plist"
   },
   "nsis": {

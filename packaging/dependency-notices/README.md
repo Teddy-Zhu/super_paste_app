@@ -12,7 +12,7 @@ the release's `.cargo_vcs_info.json`. Repository-root attribution files accompan
 the license texts where available. Published Cargo manifests retain the release's
 authors and original license declaration.
 
-Four releases require an explicit standard-text basis:
+Some releases require an explicit standard-text basis:
 
 - `simd_helpers 0.1.0` and `seahash 4.1.0`: the declared MIT license text comes
   from a pinned SPDX license-data revision. Its copyright placeholders remain
@@ -22,6 +22,11 @@ Four releases require an explicit standard-text basis:
   declarations permit Apache-2.0. Its standard text accompanies the original
   release attribution and declarations. The inventory preserves both declared
   alternatives; it does not claim that an absent MIT notice was recovered.
+- Newer objc2 crates provide a licensing statement that links to standard
+  license texts. The inventory includes that statement and the applicable
+  MIT or Apache-2.0 text from the pinned SPDX revision.
+- `file_icon_provider 1.0.2` declares MIT in its manifest. The inventory
+  includes the standard text and the original project manifest.
 
 When dependencies change, obtain the corresponding release and upstream materials,
 review their basis and update the explicit binding and hashes. Do not add a
