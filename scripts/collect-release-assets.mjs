@@ -1,85 +1,31 @@
-import { copyFileSync, existsSync, mkdirSync, readdirSync, statSync } from 'node:fs'
+import { execFileSync } from 'node:child_process'
+import { copyFileSync, existsSync, mkdirSync, readdirSync } from 'node:fs'
 import path from 'node:path'
-import { isCurrentInstaller, packageName, projectRoot, version } from './project.mjs'
+import { packageName, productName, projectRoot, version, releaseTargets } from './project.mjs'
 
 const [target, outputArgument = 'release-assets'] = process.argv.slice(2)
-if (!target) {
-  throw new Error('usage: collect-release-assets.mjs <target> [output-directory]')
-}
-
-const extensionByTarget = {
-  'x86_64-pc-windows-msvc': new Set(['.exe', '.msi']),
-  'x86_64-apple-darwin': new Set(['.dmg']),
-  'aarch64-apple-darwin': new Set(['.dmg']),
-  'x86_64-unknown-linux-gnu': new Set(['.deb', '.rpm', '.AppImage'])
-}
-const extensions = extensionByTarget[target]
-if (!extensions) throw new Error(`unsupported release target: ${target}`)
-
-function walk(directory) {
-  const files = []
-  for (const entry of readdirSync(directory, { withFileTypes: true })) {
-    const file = path.join(directory, entry.name)
-    if (entry.isDirectory()) files.push(...walk(file))
-    else if (entry.isFile()) files.push(file)
-  }
-  return files
-}
-
-const bundleRoot = path.join(projectRoot, 'target', 'release', 'bundle')
-if (!existsSync(bundleRoot)) throw new Error(`Tauri bundle output does not exist: ${bundleRoot}`)
-const installers = walk(bundleRoot).filter(
-  (file) => extensions.has(path.extname(file)) && isCurrentInstaller(file)
-)
-if (installers.length === 0) throw new Error(`no installer artifacts found for ${target}`)
-
-const migrationBinary = path.join(
-  projectRoot,
-  'target',
-  'release',
-  process.platform === 'win32' ? 'migrate-electron.exe' : 'migrate-electron'
-)
-if (!existsSync(migrationBinary) || !statSync(migrationBinary).isFile()) {
-  throw new Error(`migration utility binary is missing: ${migrationBinary}`)
-}
-
-const ortManifest = path.join(projectRoot, 'resources', 'ort', target, 'runtime-manifest.json')
-if (!existsSync(ortManifest)) throw new Error(`ORT runtime manifest is missing: ${ortManifest}`)
-
+const spec = releaseTargets[target]
+if (!spec) throw new Error('Usage: collect-release-assets.mjs <supported-target> [output-directory]')
+const directory = path.join(projectRoot, 'dist', target, version)
 const output = path.resolve(outputArgument)
 mkdirSync(output, { recursive: true })
-const portableDirectory = path.join(projectRoot, 'target', 'release', 'portable')
-const portableAssets = existsSync(portableDirectory)
-  ? readdirSync(portableDirectory, { withFileTypes: true })
-      .filter(
-        (entry) =>
-          entry.isFile() && entry.name.startsWith(`${packageName}_${version}_${target}_portable.`)
-      )
-      .map((entry) => ({
-        source: path.join(portableDirectory, entry.name),
-        name: entry.name
-      }))
-  : []
-const assets = [
-  ...installers.map((file) => ({
-    source: file,
-    name: `${packageName}_${version}_${target}${path.extname(file)}`
-  })),
-  {
-    source: migrationBinary,
-    name: `${packageName}-migrate-electron_${version}_${target}${process.platform === 'win32' ? '.exe' : ''}`
-  },
-  { source: ortManifest, name: `ort-runtime-manifest_${version}_${target}.json` },
-  ...portableAssets
-]
-
-if (new Set(assets.map((asset) => asset.name)).size !== assets.length) {
-  throw new Error('multiple installers map to the same release asset; separate build targets first')
+const files = readdirSync(directory, { withFileTypes: true }).filter(entry => entry.isFile()).map(entry => entry.name)
+for (const extension of spec.extensions) {
+  // Match this version exactly; cargo-packager uses different separators per format.
+  const candidates = files.filter(name => [packageName, productName, productName.replaceAll(' ', '_')].some(stem =>
+    name.startsWith(`${stem}_${version}_`) || name.startsWith(`${stem}-${version}-`) || name.startsWith(`${stem}_${version}.`)) && name.endsWith(extension))
+  const name = `${packageName}_${version}_${target}${extension}`
+  const destination = path.join(output, name)
+  if (extension === '.app.tar.gz') {
+    const apps = readdirSync(directory, { withFileTypes: true }).filter(entry => entry.isDirectory() && entry.name === `${productName}.app`)
+    if (apps.length !== 1) throw new Error(`Expected one macOS app bundle in ${directory}`)
+    execFileSync('tar', ['-czf', destination, '-C', directory, apps[0].name], { stdio: 'inherit' })
+  } else {
+    if (candidates.length !== 1) throw new Error(`Expected one ${extension} for ${target}, found ${candidates.length}`)
+    if (path.resolve(directory, candidates[0]) !== destination) copyFileSync(path.join(directory, candidates[0]), destination)
+  }
+  console.log(`Collected ${name}`)
 }
-
-for (const asset of assets) {
-  const destination = path.join(output, asset.name)
-  if (path.resolve(asset.source) !== path.resolve(destination))
-    copyFileSync(asset.source, destination)
-  console.log(`collected ${asset.name}`)
-}
+const manifest = path.join(projectRoot, 'resources', 'ort', target, 'runtime-manifest.json')
+if (!existsSync(manifest)) throw new Error(`ORT manifest missing: ${manifest}`)
+copyFileSync(manifest, path.join(output, `ort-runtime-manifest_${version}_${target}.json`))

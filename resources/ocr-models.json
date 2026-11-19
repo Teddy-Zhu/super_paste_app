@@ -39,7 +39,7 @@
       "description": "中英文移动版",
       "archive": "ppocr_v5_mobile.zip",
       "size": 18644132,
-      "sha256": null,
+      "sha256": "d0f37e8f301c873bd568c310df8b157049575f92201662a4c6cc4d2293fcda44",
       "optimizeSpace": false
     },
     {
@@ -49,7 +49,7 @@
       "description": "中英文服务器版",
       "archive": "ppocr_v5_server.zip",
       "size": 155631244,
-      "sha256": null,
+      "sha256": "188c8d45e1fd15a41900c2c4ee2a02dc8253a5894c5686d0ad83e7b124966cc0",
       "optimizeSpace": false
     },
     {
@@ -59,7 +59,7 @@
       "description": "中英文混合",
       "archive": "ch.zip",
       "size": 14365264,
-      "sha256": null,
+      "sha256": "57c3345ab7f30fce0363505bd6b6be9c25f45a72e0e95d533122fe21241351f4",
       "optimizeSpace": true
     },
     {
@@ -69,7 +69,7 @@
       "description": "中英文高精度版",
       "archive": "ch_v4_doc.zip",
       "size": 82735471,
-      "sha256": null,
+      "sha256": "fe25062643c5a12c43f2af35f68d7c29ce21e29236252b849c2c1f1bcb3f132e",
       "optimizeSpace": true
     },
     {
@@ -79,7 +79,7 @@
       "description": "中英文混合",
       "archive": "ch_v3.zip",
       "size": 11771073,
-      "sha256": null,
+      "sha256": "3009a80beb47f5648e44b2a6284e5347bced696a2266176c2e7fe3411f9bd640",
       "optimizeSpace": true
     },
     {
@@ -89,7 +89,7 @@
       "description": "繁体中文模型",
       "archive": "chinese_cht.zip",
       "size": 10126839,
-      "sha256": null,
+      "sha256": "b765baf878f11be4d7d39d42f8838354189215f5c0929918697d76a2fe5ba6b9",
       "optimizeSpace": true
     },
     {
@@ -99,7 +99,7 @@
       "description": "英文模型",
       "archive": "en.zip",
       "size": 8146377,
-      "sha256": null,
+      "sha256": "9423bfc78b29858562f7e9e6825212d0975888726b3bf0649ee0fe762f5c2d6e",
       "optimizeSpace": true
     },
     {
@@ -109,7 +109,7 @@
       "description": "日文模型",
       "archive": "japan.zip",
       "size": 9199755,
-      "sha256": null,
+      "sha256": "a3903ccacc72554745cb7918259858f622e15922b0b57faa3ee83d66fd6b3d40",
       "optimizeSpace": true
     },
     {
@@ -119,7 +119,7 @@
       "description": "韩文模型",
       "archive": "korean.zip",
       "size": 8952561,
-      "sha256": null,
+      "sha256": "9b86623207529c52d8e18522f24d8947b804abe170ba55766368801855039bdb",
       "optimizeSpace": true
     },
     {
@@ -129,7 +129,7 @@
       "description": "泰卢固文模型",
       "archive": "te.zip",
       "size": 8102565,
-      "sha256": null,
+      "sha256": "fe62f71bbf431ab2f162d42cbbdfb8f1dbb6fe54328a1251f82de88f6fe037cd",
       "optimizeSpace": true
     },
     {
@@ -139,7 +139,7 @@
       "description": "卡纳达文模型",
       "archive": "ka.zip",
       "size": 8286396,
-      "sha256": null,
+      "sha256": "f062c78563729f736dd442bb59a04bd8a4027ca843fbde513dd70363de9019dc",
       "optimizeSpace": true
     },
     {
@@ -149,7 +149,7 @@
       "description": "泰米尔文模型",
       "archive": "ta.zip",
       "size": 8354625,
-      "sha256": null,
+      "sha256": "2ba42298fc8e705b7362ef3939b85e16fde7fb9bd842a400e9d160e5e96d2759",
       "optimizeSpace": true
     },
     {
@@ -159,7 +159,7 @@
       "description": "拉丁字母模型",
       "archive": "latin.zip",
       "size": 8090341,
-      "sha256": null,
+      "sha256": "1b8813e9cf62324668734135d2a546f6c16484fe962b44dbcef0bca57f9fec94",
       "optimizeSpace": true
     },
     {
@@ -169,7 +169,7 @@
       "description": "阿拉伯字母模型",
       "archive": "arabic.zip",
       "size": 8124448,
-      "sha256": null,
+      "sha256": "20b286f54e6eaa2886d54e51a02a457cc7831959275781e17aaecd25e0a0bd3d",
       "optimizeSpace": true
     },
     {
@@ -179,7 +179,7 @@
       "description": "西里尔字母模型",
       "archive": "cyrillic.zip",
       "size": 8230331,
-      "sha256": null,
+      "sha256": "1522fbdeeb6395db1e1bb621819a8e8dfe07a61ffa975a9d8a60d0aae6f9570d",
       "optimizeSpace": true
     },
     {
@@ -189,7 +189,7 @@
       "description": "梵文字母模型",
       "archive": "devanagari.zip",
       "size": 8270883,
-      "sha256": null,
+      "sha256": "b12eb18d27ed3a4f775ce3ebabfa17a7dd19cb6ff758bb82ee6f3cbc18a1d220",
       "optimizeSpace": true
     }
   ]

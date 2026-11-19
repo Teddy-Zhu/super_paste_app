@@ -1,0 +1,29 @@
+{
+  "runtimeVersion": "1.28.0",
+  "ortApiVersion": 17,
+  "ortCommit": "da9b5e364c465de65c49d91e696cd6485270757f",
+  "releaseAssets": {
+    "x86_64-pc-windows-msvc": {
+      "asset": "onnxruntime-win-x64-1.28.0.zip",
+      "assetId": 489173573,
+      "sha256": "abef733dacbe2f571547a7150b479b5cb9cc0df22f96c24983a42cadb1b4f8bc",
+      "library": "onnxruntime.dll"
+    },
+    "x86_64-unknown-linux-gnu": {
+      "asset": "onnxruntime-linux-x64-1.28.0.tgz",
+      "assetId": 489174677,
+      "sha256": "a3e1b79d7bb1bf09696ce675f49e4064e6c81f6202b8225624fff0e93f8d6407",
+      "library": "libonnxruntime.so"
+    },
+    "aarch64-apple-darwin": {
+      "asset": "onnxruntime-osx-arm64-1.28.0.tgz",
+      "assetId": 489174685,
+      "sha256": "1268b359718099bde2cedb55787f182a130067bc4f31e8c88478c445b850d3d8",
+      "library": "libonnxruntime.dylib"
+    },
+    "x86_64-apple-darwin": {
+      "library": "libonnxruntime.dylib",
+      "sourceBuild": true
+    }
+  }
+}

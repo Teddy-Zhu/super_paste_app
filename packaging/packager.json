@@ -1,0 +1,41 @@
+{
+  "$schema": "https://raw.githubusercontent.com/crabnebula-dev/cargo-packager/cargo-packager-v0.11.8/crates/packager/schema.json",
+  "name": "super-paste",
+  "productName": "Super Paste",
+  "identifier": "com.v2dawn.superpaste.rs",
+  "publisher": "Teddy Zhu",
+  "authors": ["Teddy Zhu"],
+  "description": "Clipboard history manager",
+  "category": "Utility",
+  "licenseFile": "LICENSE",
+  "icons": ["resources/app-icon.png", "resources/app-icon.ico", "resources/app-icon.icns"],
+  "deb": {
+    "section": "utils",
+    "priority": "optional",
+    "desktopTemplate": "packaging/linux/super-paste.desktop.hbs",
+    "depends": [
+      "libc6", "libgcc-s1", "libstdc++6", "libfontconfig1", "libfreetype6",
+      "libx11-6", "libx11-xcb1", "libxcb1", "libxcb-xkb1", "libxcb-randr0",
+      "libxcb-render0", "libxcb-shape0", "libxcb-xfixes0", "libxcb-cursor0",
+      "libxkbcommon0", "libxkbcommon-x11-0", "libwayland-client0", "libwayland-cursor0",
+      "libegl1", "libgl1", "libvulkan1", "libgtk-3-0", "xdg-utils"
+    ]
+  },
+  "pacman": {
+    "depends": [
+      "glibc", "gcc-libs", "fontconfig", "freetype2", "libx11", "libxcb",
+      "xcb-util-cursor", "libxkbcommon", "libxkbcommon-x11", "wayland",
+      "libglvnd", "vulkan-icd-loader", "gtk3", "xdg-utils"
+    ]
+  },
+  "macos": {
+    "minimumSystemVersion": "13.3",
+    "infoPlistPath": "packaging/macos/Info.plist"
+  },
+  "nsis": {
+    "installMode": "currentUser",
+    "installerIcon": "resources/app-icon.ico",
+    "languages": ["SimpChinese", "English"],
+    "displayLanguageSelector": false
+  }
+}

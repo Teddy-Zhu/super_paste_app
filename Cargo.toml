@@ -1,14 +1,93 @@
 [workspace]
-members = ["src-tauri", "crates/data-format", "tools/migrate-electron"]
-exclude = ["src-tauri/vendor/clipboard-core", "src-tauri/vendor/oar-ocr-core"]
+members = ["apps/desktop", "crates/data-format", "crates/app-core", "crates/desktop-platform", "vendor/clipboard-core"]
 resolver = "3"
+exclude = ["vendor/taffy", "vendor/zune-jpeg", "vendor/png", "vendor/cosmic-text", "vendor/skrifa", "vendor/oar-ocr-core", "vendor/gpui-pre", "vendor/gpui-pre-linux", "vendor/gpui-pre-macos", "vendor/gpui-pre-windows", "vendor/gpui-pre-apple", "vendor/gpui-pre-wgpu", "vendor/gpui-component", "vendor/gpui-base", "vendor/ksni"]
+
+[workspace.package]
+version = "1.0.3"
+edition = "2024"
+rust-version = "1.95"
+license = "MIT"
+publish = false
+
+[workspace.dependencies]
+super-paste-format = { path = "crates/data-format" }
+super-paste-core = { path = "crates/app-core" }
+super-paste-platform = { path = "crates/desktop-platform" }
+serde = { version = "1", features = ["derive", "rc"] }
+serde_json = { version = "1", features = ["raw_value"] }
+rmcp = { version = "=3.8.0", default-features = false, features = ["server", "transport-streamable-http-server", "transport-streamable-http-server-session"] }
+axum = "0.8.9"
+hyper = { version = "1.12.0", features = ["server", "http1"] }
+hyper-util = { version = "0.1", features = ["tokio", "service"] }
+tower = { version = "0.5", features = ["util"] }
+subtle = "2.6"
+thiserror = "2"
+uuid = { version = "1", features = ["v4", "v5", "serde"] }
+sha2 = "0.10"
+bytes = "1"
+base64 = "0.22"
+chrono = { version = "0.4", features = ["serde"] }
+lyon = "1.0"
+bitflags = { version = "2", features = ["serde"] }
+regex = "1"
+unicode-bidi = "=0.3.18"
+url = "2"
+tokio = { version = "1", features = ["rt-multi-thread", "sync", "time", "fs", "macros", "io-util", "net", "signal", "process"] }
+tokio-util = { version = "0.7", features = ["rt"] }
+tokio-rusqlite = { version = "=0.8.0", features = ["bundled"] }
+rusqlite = { version = "0.40", features = ["bundled", "fallible_uint", "hooks"] }
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "webp", "bmp", "tiff", "ico"] }
+zune-core = "=0.5.3"
+zune-jpeg = "=0.5.15"
+png = "=0.18.1"
+moxcms = { version = "=0.8.1", features = ["extended_range"] }
+gainforge = { version = "=0.4.1", default-features = false }
+crc32fast = "=1.5.5"
+imagesize = "=0.14.0"
+futures-util = "0.3"
+async-trait = "0.1"
+zeroize = "1"
+keyring-core = "=1.0.1"
+dirs = "6"
+qrcode = { version = "0.14", default-features = false }
+rqrr = "0.10"
+tracing = "0.1"
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json", "multipart", "stream"] }
+zip = { version = "8.6", default-features = false, features = ["deflate-flate2"] }
+crossbeam-channel = "0.5"
+oar-ocr = { version = "=0.10.2", default-features = false, features = ["simd"] }
+oar-ocr-core = { version = "=0.10.2", default-features = false }
+ort = { version = "=2.0.0-rc.13", default-features = false, features = ["std", "load-dynamic", "api-17"] }
+gpui-kit = "=0.9.0"
+# Upstream layer requirements use caret ranges. Resolve the whole Kit family together.
+gpui-base = "=0.9.0"
+gpui-component = "=0.9.0"
+gpui-kit-assets = "=0.9.0"
+gpui-component-macros = "=0.9.0"
 
 [patch.crates-io]
-oar-ocr-core = { path = "src-tauri/vendor/oar-ocr-core" }
+wl-clipboard-rs = { path = "vendor/wl-clipboard-rs" }
+taffy = { path = "vendor/taffy" }
+zune-jpeg = { path = "vendor/zune-jpeg" }
+png = { path = "vendor/png" }
+cosmic-text = { path = "vendor/cosmic-text" }
+skrifa = { path = "vendor/skrifa" }
+ksni = { path = "vendor/ksni" }
+gpui-base = { path = "vendor/gpui-base" }
+gpui-component = { path = "vendor/gpui-component" }
+oar-ocr-core = { path = "vendor/oar-ocr-core" }
+gpui-pre = { path = "vendor/gpui-pre" }
+gpui-pre-linux = { path = "vendor/gpui-pre-linux" }
+gpui-pre-macos = { path = "vendor/gpui-pre-macos" }
+gpui-pre-windows = { path = "vendor/gpui-pre-windows" }
+gpui-pre-apple = { path = "vendor/gpui-pre-apple" }
+gpui-pre-wgpu = { path = "vendor/gpui-pre-wgpu" }
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
 
 [profile.release]
+lto = "thin"
 codegen-units = 1
-lto = true
-opt-level = 3
-panic = "abort"
-strip = true
+strip = "debuginfo"

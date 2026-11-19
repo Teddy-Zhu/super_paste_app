@@ -1,10 +1,10 @@
-import { createHash } from 'node:crypto'
 import { execFileSync } from 'node:child_process'
-import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { githubApi, tagCommit } from './github.mjs'
-import { githubRepository, productName, projectRoot, verifyReleaseTag } from './project.mjs'
+import { githubRepository, productName, projectRoot, releaseAssetNames, verifyReleaseTag } from './project.mjs'
+import { sha256File } from './file-hash.mjs'
 import { generateReleaseNotes } from './release-notes.mjs'
 
 const releaseRoot = path.resolve(process.argv[2] ?? 'release-assets')
@@ -42,9 +42,13 @@ const assets = walk(releaseRoot)
 if (assets.length === 0) throw new Error(`no release assets found in ${releaseRoot}`)
 if (new Set(assets.map((file) => path.basename(file))).size !== assets.length)
   throw new Error('release asset filenames must be unique')
+const expected = new Set(releaseAssetNames())
+const actual = new Set(assets.map(file => path.basename(file)))
+for (const name of expected) if (!actual.has(name)) throw new Error(`Required release asset missing: ${name}`)
+for (const name of actual) if (!expected.has(name)) throw new Error(`Unexpected release asset: ${name}`)
 const sums = assets
   .map((file) => {
-    const hash = createHash('sha256').update(readFileSync(file)).digest('hex')
+    const hash = sha256File(file)
     return `${hash}  ${path.basename(file)}`
   })
   .join('\n')

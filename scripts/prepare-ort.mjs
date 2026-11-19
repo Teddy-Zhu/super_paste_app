@@ -1,4 +1,5 @@
-import { createHash } from 'node:crypto'
+// Adapted from Super Paste, fc90106d5a25233fe45a6ec9facd1ad3ffc4823b; MIT.
+import { randomUUID } from 'node:crypto'
 import { spawnSync } from 'node:child_process'
 import {
   copyFileSync,
@@ -19,14 +20,17 @@ import { fileURLToPath } from 'node:url'
 import { Readable } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
 import { setTimeout as delay } from 'node:timers/promises'
+import { ORT_MANAGED_BY, readRuntimeManifest } from './ort-manifest.mjs'
+import { sha256File as sha256 } from './file-hash.mjs'
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url))
 const projectRoot = path.resolve(scriptDir, '..')
 const ortRoot = path.join(projectRoot, 'resources', 'ort')
-const runtimeVersion = '1.28.0'
-const ortApiVersion = 17
-const ortCommit = 'da9b5e364c465de65c49d91e696cd6485270757f'
-const managedBy = 'scripts/prepare-ort.mjs'
+const runtimeSpec = JSON.parse(
+  readFileSync(path.join(projectRoot, 'resources', 'ort-runtime.json'), 'utf8')
+)
+const { runtimeVersion, ortApiVersion, ortCommit, releaseAssets } = runtimeSpec
+const managedBy = ORT_MANAGED_BY
 const downloadAttempts = 5
 const downloadTimeoutMs = 5 * 60 * 1000
 const maxRetryDelayMs = 60 * 1000
@@ -45,31 +49,6 @@ const transientNetworkCodes = new Set([
   'UND_ERR_BODY_TIMEOUT',
   'UND_ERR_SOCKET'
 ])
-
-const releaseAssets = {
-  'x86_64-pc-windows-msvc': {
-    asset: 'onnxruntime-win-x64-1.28.0.zip',
-    assetId: 489173573,
-    sha256: 'abef733dacbe2f571547a7150b479b5cb9cc0df22f96c24983a42cadb1b4f8bc',
-    library: 'onnxruntime.dll'
-  },
-  'x86_64-unknown-linux-gnu': {
-    asset: 'onnxruntime-linux-x64-1.28.0.tgz',
-    assetId: 489174677,
-    sha256: 'a3e1b79d7bb1bf09696ce675f49e4064e6c81f6202b8225624fff0e93f8d6407',
-    library: 'libonnxruntime.so'
-  },
-  'aarch64-apple-darwin': {
-    asset: 'onnxruntime-osx-arm64-1.28.0.tgz',
-    assetId: 489174685,
-    sha256: '1268b359718099bde2cedb55787f182a130067bc4f31e8c88478c445b850d3d8',
-    library: 'libonnxruntime.dylib'
-  },
-  'x86_64-apple-darwin': {
-    library: 'libonnxruntime.dylib',
-    sourceBuild: true
-  }
-}
 
 function parseArgs(argv) {
   const options = { target: detectHostTarget(), force: false, check: false }
@@ -138,25 +117,13 @@ function listFiles(directory) {
   return files
 }
 
-function sha256(file) {
-  return createHash('sha256').update(readFileSync(file)).digest('hex')
-}
-
 function verifyExisting(target, directory) {
   const manifestPath = path.join(directory, 'runtime-manifest.json')
   if (!existsSync(manifestPath)) return false
-  const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'))
-  if (
-    manifest.managedBy !== managedBy ||
-    manifest.runtimeVersion !== runtimeVersion ||
-    manifest.ortApiVersion !== ortApiVersion ||
-    manifest.target !== target
-  ) {
-    throw new Error(`existing ORT directory has an incompatible manifest: ${manifestPath}`)
-  }
-  for (const entry of [...manifest.libraries, ...manifest.notices]) {
+  const { entries } = readRuntimeManifest(manifestPath, runtimeSpec, target)
+  for (const entry of entries) {
     const file = path.join(directory, entry.file)
-    if (!existsSync(file) || sha256(file) !== entry.sha256) {
+    if (!existsSync(file) || sha256(file) !== entry.sha256.toLowerCase()) {
       throw new Error(`staged ORT resource failed SHA256 verification: ${file}`)
     }
   }
@@ -387,12 +354,10 @@ function copyRequiredNotice(sourceRoot, destination, name) {
   copyFile(file, path.join(destination, name))
 }
 
-async function main() {
-  const options = parseArgs(process.argv.slice(2))
+async function prepare(options) {
   const target = options.target
   const release = releaseAssets[target]
   if (!release) throw new Error(`unsupported release target: ${target}`)
-  assertHostTarget(target)
 
   const destination = path.join(ortRoot, target)
   if (existsSync(destination)) {
@@ -481,6 +446,7 @@ async function main() {
       path.join(stageDirectory, 'runtime-manifest.json'),
       `${JSON.stringify(manifest, null, 2)}\n`
     )
+    readRuntimeManifest(path.join(stageDirectory, 'runtime-manifest.json'), runtimeSpec, target)
 
     if (existsSync(destination)) {
       const previous = JSON.parse(
@@ -491,14 +457,38 @@ async function main() {
           `refusing to replace an ORT directory not created by this script: ${destination}`
         )
       }
-      rmSync(destination, { recursive: true, force: true })
+      const backup = path.join(ortRoot, `.previous-${target}-${randomUUID()}`)
+      renameSync(destination, backup)
+      try {
+        renameSync(stageDirectory, destination)
+      } catch (installError) {
+        try { renameSync(backup, destination) } catch (restoreError) {
+          throw new AggregateError([installError, restoreError], `ORT replacement and restoration failed; previous resources remain at ${backup}`)
+        }
+        throw installError
+      }
+      rmSync(backup, { recursive: true, force: true })
+    } else {
+      renameSync(stageDirectory, destination)
     }
-    renameSync(stageDirectory, destination)
     console.log(`prepared ONNX Runtime ${runtimeVersion} CPU library: ${destination}`)
   } finally {
     rmSync(workDirectory, { recursive: true, force: true })
     rmSync(stageRoot, { recursive: true, force: true })
   }
+}
+
+async function main() {
+  const options = parseArgs(process.argv.slice(2))
+  assertHostTarget(options.target)
+  if (!releaseAssets[options.target]) throw new Error(`unsupported release target: ${options.target}`)
+  mkdirSync(ortRoot, { recursive: true })
+  const lock = path.join(ortRoot, `.lock-${options.target}`)
+  try { mkdirSync(lock) } catch (error) {
+    if (error.code === 'EEXIST') throw new Error(`ORT preparation is already locked: ${lock}`)
+    throw error
+  }
+  try { await prepare(options) } finally { rmSync(lock, { recursive: true, force: true }) }
 }
 
 main().catch((error) => {

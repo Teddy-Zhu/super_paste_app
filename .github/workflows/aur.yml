@@ -7,6 +7,17 @@ on:
         description: 'Published v<version> release; leave empty for the latest stable release'
         type: string
         required: false
+  workflow_call:
+    inputs:
+      release_tag:
+        type: string
+        required: true
+      source_ref:
+        type: string
+        required: true
+    secrets:
+      AUR_SSH_PRIVATE_KEY:
+        required: true
 
 permissions:
   contents: read
@@ -29,7 +40,7 @@ jobs:
         run: pacman -Syu --noconfirm --needed git openssh nodejs libarchive
       - uses: actions/checkout@v7
         with:
-          ref: ${{ github.event.repository.default_branch }}
+          ref: ${{ inputs.source_ref || github.sha }}
           persist-credentials: false
       - name: Prepare publishing user and SSH credentials
         env:
@@ -48,13 +59,11 @@ jobs:
             exit 1
           fi
           chown -R aur-builder:aur-builder /home/aur-builder/.ssh "$GITHUB_WORKSPACE"
-      - name: Publish release metadata to AUR
+      - name: Publish verified release metadata to AUR
         env:
           GITHUB_TOKEN: ${{ github.token }}
           AUR_RELEASE_TAG: ${{ inputs.release_tag }}
           AUR_GIT_NAME: ${{ vars.AUR_GIT_NAME }}
           AUR_GIT_EMAIL: ${{ vars.AUR_GIT_EMAIL }}
           GIT_SSH_COMMAND: ssh -i /home/aur-builder/.ssh/id_ed25519 -o BatchMode=yes -o StrictHostKeyChecking=yes
-        run: |
-          runuser -u aur-builder -- node scripts/sync-version.mjs
-          runuser -u aur-builder -- node scripts/publish-aur.mjs
+        run: runuser -u aur-builder -- node scripts/publish-aur.mjs

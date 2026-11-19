@@ -1,0 +1,40 @@
+[package]
+name = "super-paste-desktop"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+default-run = "super-paste"
+
+[[bin]]
+name = "super-paste"
+path = "src/main.rs"
+
+[dependencies]
+super-paste-format.workspace = true
+super-paste-core.workspace = true
+super-paste-platform.workspace = true
+gpui-kit.workspace = true
+gpui-base.workspace = true
+gpui-component.workspace = true
+gpui-kit-assets.workspace = true
+gpui-component-macros.workspace = true
+tokio.workspace = true
+tokio-util.workspace = true
+tracing.workspace = true
+uuid.workspace = true
+chrono.workspace = true
+lyon.workspace = true
+anyhow = "1"
+futures-util.workspace = true
+keycode = "=1.0.0"
+serde.workspace = true
+serde_json.workspace = true
+dirs.workspace = true
+tempfile = "3"
+sysinfo = { version = "=0.40.1", default-features = false, features = ["system"] }
+tracing-subscriber = { version = "0.3", default-features = false, features = ["fmt", "ansi", "tracing-log"] }
+
+[lints]
+workspace = true

@@ -1,0 +1,61 @@
+[package]
+name = "super-paste-core"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+super-paste-format.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+rmcp.workspace = true
+axum.workspace = true
+hyper.workspace = true
+hyper-util.workspace = true
+tower.workspace = true
+subtle.workspace = true
+thiserror.workspace = true
+uuid.workspace = true
+sha2.workspace = true
+bytes.workspace = true
+base64.workspace = true
+chrono.workspace = true
+tokio.workspace = true
+tokio-util.workspace = true
+tokio-rusqlite.workspace = true
+rusqlite.workspace = true
+image.workspace = true
+zune-core.workspace = true
+zune-jpeg.workspace = true
+png.workspace = true
+moxcms.workspace = true
+gainforge.workspace = true
+crc32fast.workspace = true
+imagesize.workspace = true
+futures-util.workspace = true
+async-trait.workspace = true
+zeroize.workspace = true
+qrcode.workspace = true
+rqrr.workspace = true
+tracing.workspace = true
+regex.workspace = true
+unicode-bidi.workspace = true
+url.workspace = true
+html5ever = "=0.27.0"
+markup5ever_rcdom = "=0.3.0"
+rtf-grimoire = "=0.2.1"
+encoding_rs = "0.8"
+csscolorparser = "=0.9.1"
+color = "=0.3.3"
+cssparser = "=0.36.0"
+reqwest.workspace = true
+zip.workspace = true
+crossbeam-channel.workspace = true
+oar-ocr.workspace = true
+oar-ocr-core.workspace = true
+ort.workspace = true
+
+[lints]
+workspace = true

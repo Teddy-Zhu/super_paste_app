@@ -1,12 +1,21 @@
 [package]
-name = "data-format"
-version = "0.1.0"
-edition = "2021"
+name = "super-paste-format"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
 
 [dependencies]
-image = { version = "0.25", default-features = false, features = ["bmp", "gif", "jpeg", "png", "tiff", "webp"] }
-serde = { version = "1", features = ["derive"] }
-serde_json = "1"
-sha2 = "0.10"
-rusqlite = { version = "0.40", features = ["bundled"] }
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+uuid.workspace = true
+bitflags.workspace = true
+regex.workspace = true
+url.workspace = true
+bytes.workspace = true
+
+[lints]
+workspace = true
 

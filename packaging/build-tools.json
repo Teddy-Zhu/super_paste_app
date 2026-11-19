@@ -1,0 +1,19 @@
+{
+  "cargoPackager": "0.11.8",
+  "linux": [
+    {
+      "name": "linuxdeploy",
+      "repository": "linuxdeploy/linuxdeploy",
+      "assetId": 313839329,
+      "bytes": 19421688,
+      "sha256": "c20cd71e3a4e3b80c3483cef793cda3f4e990aca14014d23c544ca3ce1270b4d"
+    },
+    {
+      "name": "appimagetool",
+      "repository": "AppImage/appimagetool",
+      "assetId": 715388534,
+      "bytes": 15133176,
+      "sha256": "e8c1169c4af66c3184d7ee110713d4be04befe671fa358e2c1591ee840553b03"
+    }
+  ]
+}

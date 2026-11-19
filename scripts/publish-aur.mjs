@@ -15,7 +15,7 @@ import path from 'node:path'
 import { Readable } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
 import { githubApi } from './github.mjs'
-import { archVersion, githubRepository, packageName, projectRoot } from './project.mjs'
+import { archVersion, aurName, githubRepository, packageName, projectRoot } from './project.mjs'
 
 const requestedTag = process.env.AUR_RELEASE_TAG?.trim()
 if (requestedTag && !/^v\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(requestedTag))
@@ -31,7 +31,6 @@ if (repository.private)
 if (release.draft || !/^v\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(release.tag_name))
   throw new Error('AUR requires a published v<version> release')
 const upstreamVersion = release.tag_name.slice(1)
-const aurName = `${packageName}-bin`
 const debName = `${packageName}_${upstreamVersion}_x86_64-unknown-linux-gnu.deb`
 const recipeName = `${aurName}.PKGBUILD`
 const metadataName = `${aurName}.SRCINFO`
@@ -99,6 +98,7 @@ try {
     return text
   }
   const next = writeSrcinfo()
+  if (next !== readFileSync(path.join(work, metadataName), 'utf8')) throw new Error('Published .SRCINFO does not match PKGBUILD')
   const nextVersion = value(next, 'pkgver')
   const nextEpoch = value(next, 'epoch') ?? '0'
   const expectedSource = `${debName}::${upstream}/releases/download/${release.tag_name}/${debName}`

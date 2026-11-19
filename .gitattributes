@@ -1,0 +1,2 @@
+# Keep upstream notice bytes intact for the packaged SHA-256 inventory.
+packaging/dependency-notices/texts/*.txt -text
